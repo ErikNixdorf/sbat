@@ -12,7 +12,7 @@ dateparse = lambda x: datetime.strptime(x, '%Y-%m-%d')
 
 #%% load data 
 gauge_ts=pd.read_csv(os.path.join(os.path.dirname(__file__),'input','pegel_ts.csv'),
-                     index_col=0,usecols=[0,2,3,4,5,6],
+                     index_col=0,
                      parse_dates=['Datum'], 
                      date_parser=dateparse)
 
@@ -23,7 +23,8 @@ sbat=model(gauge_time_series=gauge_ts,
            gauge_network=gpd.GeoDataFrame(),
            gauge_metadata=gauge_meta,
            valid_datapairs_only=True,
-           decadal_stats=True)
+           decadal_stats=True,
+           dropna_axis=0)
 
 #get discharge data
 sbat.get_discharge_stats()
@@ -33,7 +34,7 @@ sbat.get_baseflow(methods=['UKIH','Fixed'],
                   compute_bfi=True, update_metadata=True,plot=False)
 
 #compute the master recession curve
-sbat.get_recession_curve(curve_type='baseflow',plot=True)
+sbat.get_recession_curve(curve_type='baseflow',plot=False)
 
 
 

@@ -443,7 +443,7 @@ def map_network_sections(network_dict=dict(),
 
 
 #add a function for time series manipulation
-def aggregate_time_series(data_ts=pd.DataFrame(),analyse_option='overall_mean',dropna=True):
+def aggregate_time_series(data_ts=pd.DataFrame(),analyse_option='overall_mean'):
     
     if analyse_option is None:
         print('No data aggregation option select, continue with original time series')
@@ -480,11 +480,6 @@ def aggregate_time_series(data_ts=pd.DataFrame(),analyse_option='overall_mean',d
         ts_stats=data_ts.copy()
         ts_stats.index=ts_stats.index.strftime("%Y-%m-%d")
 
-    #drop data with nan
-    if dropna:
-        #only select time steps where all gauges are available
-        ts_stats=ts_stats.dropna(axis=0,how='any')
-        print(ts_stats.shape[0], 'time steps with data for all selected gauges')
     
     return ts_stats
 
@@ -497,7 +492,6 @@ def get_section_water_balance(gauge_data=pd.DataFrame(),
                           distributary_connections=pd.DataFrame(),
                           confidence_acceptance_level=0.05,
                           ts_analyse_option='overall_mean',
-                          dropna=True,
                               ):
     """
     
@@ -529,7 +523,7 @@ def get_section_water_balance(gauge_data=pd.DataFrame(),
     
 
     #%% We do some small data manipulations
-    ts_stats=aggregate_time_series(data_ts=data_ts,analyse_option=ts_analyse_option,dropna=dropna)
+    ts_stats=aggregate_time_series(data_ts=data_ts,analyse_option=ts_analyse_option)
     
     #synchrnonize our datasets
     gauge_data=gauge_data.loc[gauge_data.index.isin(ts_stats.columns),:]

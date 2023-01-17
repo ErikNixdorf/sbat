@@ -17,8 +17,8 @@ class model:
                  gauge_metadata=pd.DataFrame(),                 
                  output_dir=None,valid_datapairs_only=True,
                  decadal_stats=True,
-                 start_date='1890-01-01',
-                 end_date='2021-12-31',dropna=True):
+                 start_date='1990-01-01',
+                 end_date='2021-12-31',dropna_axis=0):
         """
         
 
@@ -72,6 +72,24 @@ class model:
         
         #reduce to time steps
         self.gauge_ts=self.gauge_ts.loc[datetime.strptime(start_date,'%Y-%m-%d'):datetime.strptime(end_date,'%Y-%m-%d'),:]
+        
+        #remove nan values
+        if dropna_axis==None:
+            print('No Nan Values are removed from time series data prior to computation')
+        elif dropna_axis == 1:
+            print('Remove Gauges which contain a nan entry')
+            self.gauge_ts.dropna(axis=1,how='any').dropna(axis=0,how='any')
+        elif dropna_axis == 0:
+            print('Remove Gauges which contain a nan entry')
+            self.gauge_ts.dropna(axis=0,how='any').dropna(axis=1,how='any')
+            
+        if len(self.gauge_ts)==0:
+            raise ValueError('No data left after drop NA Values, consider to define dropna_axis as None or changing start date and end_date')
+            
+            
+            
+        
+        
         
         if valid_datapairs_only:
             #reduce the metadata to the gauges for which we have actual time data
