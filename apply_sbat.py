@@ -12,7 +12,7 @@ dateparse = lambda x: datetime.strptime(x, '%Y-%m-%d')
 
 #%% load data 
 gauge_ts=pd.read_csv(os.path.join(os.path.dirname(__file__),'input','pegel_ts.csv'),
-                     index_col=0,
+                     index_col=0,usecols=[0,1,2,3],
                      parse_dates=['Datum'], 
                      date_parser=dateparse)
 
@@ -37,12 +37,12 @@ sbat.get_baseflow(methods=['UKIH','Fixed'],
 sbat.get_recession_curve(curve_type='baseflow',plot=False)
 
 
-
+"""
 sections_meta,q_diff,gdf_network_map = sbat.get_waterbalance(network_geometry=gpd.read_file(os.path.join(os.path.dirname(__file__),'input','Network_z.shp')),
                                                              tributary_connections=pd.read_csv(os.path.join(os.path.dirname(__file__),'input','zufluesse.csv')),
                                                              distributary_connections=pd.read_csv(os.path.join(os.path.dirname(__file__),'input','abfluesse.csv')),
                                                              flow_type='baseflow',
                                                              confidence_acceptance_level=0.05,
                                                              ts_analysis_option='daily')
-
+"""
 
