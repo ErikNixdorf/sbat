@@ -268,12 +268,15 @@ class model:
         if self.decadal_stats==False:
         #we loop trough all gauges to get the recession curve
             for gauge_name in Q:
-                Q0,n,r_mrc,recession_limbs=analyse_recession_curves(Q[gauge_name],mrc_algorithm=mrc_algorithm,
+                recession_limbs,mrc_out=analyse_recession_curves(Q[gauge_name],mrc_algorithm=mrc_algorithm,
                     recession_algorithm=recession_algorithm,
                     moving_average_filter_steps=moving_average_filter_steps,
                     minimum_recession_curve_length=minimum_recession_curve_length
                     )
                 
+                Q0_mrc=mrc_out[0]
+                n_mrc=mrc_out[1]
+                r_mrc=mrc_out[2]
                 #add to meta_data
                 #get number of limbs
                 n_limbs=len(recession_limbs.section_id.unique())
@@ -282,12 +285,12 @@ class model:
                 #if no_of limbs is below threshold results are not representative
                 if n_limbs<minimum_limbs:
                     print('Number of recession limbs for gauge ',gauge_name,' below threshold of ',minimum_limbs)
-                    self.gauge_meta.loc[gauge_name,'Q0']=np.nan
-                    self.gauge_meta.loc[gauge_name,'n']=np.nan
+                    self.gauge_meta.loc[gauge_name,'Q0_mrc']=np.nan
+                    self.gauge_meta.loc[gauge_name,'n_mrc']=np.nan
                     self.gauge_meta.loc[gauge_name,'pearson_r']=np.nan                    
                 else:
-                    self.gauge_meta.loc[gauge_name,'Q0']=Q0
-                    self.gauge_meta.loc[gauge_name,'n']=n
+                    self.gauge_meta.loc[gauge_name,'Q0_mrc']=Q0_mrc
+                    self.gauge_meta.loc[gauge_name,'n_mrc']=n_mrc
                     self.gauge_meta.loc[gauge_name,'pearson_r']=r_mrc
                 
                     #add also data to the limb time series
@@ -312,11 +315,14 @@ class model:
                 #we loop trough all gauges to get the recession curve
                 for gauge_name in Q:
 
-                    Q0,n,r_mrc,recession_limbs=analyse_recession_curves(Q[gauge_name],mrc_algorithm=mrc_algorithm,
+                    recession_limbs,mrc_out=analyse_recession_curves(Q[gauge_name],mrc_algorithm=mrc_algorithm,
                         recession_algorithm=recession_algorithm,
                         moving_average_filter_steps=moving_average_filter_steps,
                         minimum_recession_curve_length=minimum_recession_curve_length
                         )
+                    Q0_mrc=mrc_out[0]
+                    n_mrc=mrc_out[1]
+                    r_mrc=mrc_out[2]
                     
                     #add to meta_data
                     #get number of limbs
@@ -325,12 +331,12 @@ class model:
                     
                     if n_limbs<minimum_limbs:
                         print('Number of recession limbs for gauge ',gauge_name,'and decade ',decade,' below threshold of ',minimum_limbs)
-                        self.gauge_meta_decadal.loc[(gauge_name,decade),'Q0']=np.nan
-                        self.gauge_meta_decadal.loc[(gauge_name,decade),'n']=np.nan
+                        self.gauge_meta_decadal.loc[(gauge_name,decade),'Q0_mrc']=np.nan
+                        self.gauge_meta_decadal.loc[(gauge_name,decade),'n_mrc']=np.nan
                         self.gauge_meta_decadal.loc[(gauge_name,decade),'pearson_r']=np.nan                    
                     else:
-                        self.gauge_meta_decadal.loc[(gauge_name,decade),'Q0']=Q0
-                        self.gauge_meta_decadal.loc[(gauge_name,decade),'n']=n
+                        self.gauge_meta_decadal.loc[(gauge_name,decade),'Q0_mrc']=Q0_mrc
+                        self.gauge_meta_decadal.loc[(gauge_name,decade),'n_mrc']=n_mrc
                         self.gauge_meta_decadal.loc[(gauge_name,decade),'pearson_r']=r_mrc
                         #add also data to the limb time series
                         recession_limbs['gauge']=gauge_name
@@ -346,7 +352,7 @@ class model:
         if plot==True:
             print('plot_results')
             plot_recession_results(meta_data=self.gauge_meta,meta_data_decadal=self.gauge_meta_decadal,
-                                parameters_to_plot=['Q0','pearson_r','n'],
+                                parameters_to_plot=['Q0_mrc','pearson_r','n'],
                                 streams_to_plot=['spree','lausitzer_neisse','schwarze_elster'],
                                 output_dir=os.path.join(self.output_dir,'recession_analysis','figures'),
                                 decadal_plots=self.decadal_stats,

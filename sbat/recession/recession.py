@@ -203,6 +203,8 @@ def analyse_recession_curves(Q,mrc_algorithm='demuth',
 
     """
 
+    #%% we define output mrc_data, first two are master curve fit para, third is performance
+    mrc_out=tuple((np.nan,np.nan,np.nan))
     #%% Clean
     Q=clean_gauge_ts(Q)
     
@@ -241,16 +243,46 @@ def analyse_recession_curves(Q,mrc_algorithm='demuth',
     
     if len(Q)==0:
         print('No Recession limb within the dataset')
-        return None,None,None,pd.DataFrame(columns=['section_id'])
+        return pd.DataFrame(columns=['section_id']),mrc_out
+    
+    #%% if mrc_algorithm is zero, we just compute_individual branches
+   #%% if we are not interested in a master_recession curve we just calculate single coefficients
+    limb_sections=pd.DataFrame()
+    for _,limb in Q.groupby('section_id'):
+        if recession_algorithm=='boussinesq':
+            #raise ValueError('Implementation for Christoph is Missing')
+            fit_parameter, pcov=fit_boussinesq(limb['section_time'].values, limb['Q'].values, limb['Q0'].iloc[0],constant_Q_0=True)            
+            #calculate the fitted link
+            limb_interp=bousinesq_func(limb['section_time'].values,fit_parameter[0],fit_parameter[1])  
+
+
+        elif recession_algorithm=='maillet':
+            fit_parameter, pcov=fit_maillet(limb['section_time'].values, limb['Q'].values, limb['Q0'].iloc[0],constant_Q_0=True)
+            limb_interp=maillet_func(limb['section_time'].values,fit_parameter[0],fit_parameter[1])
+            
+
+        else:
+            raise ValueError('Recession Method ',recession_algorithm, 'have not been implemented')
+        
+        #add data to the section
+        limb['section_n']=fit_parameter[1]
+        limb['section_corr']=np.corrcoef(limb['Q'].values,limb_interp)[0,1]
+        
+        #merge sections
+        limb_sections=pd.concat([limb_sections,limb])
+    #reset index and overwrite Q
+    Q=limb_sections.copy().reset_index()
     
     #%% master Recession Curve, either matching Strip or correlation Method
+       
+    
     if  mrc_algorithm == 'matching_strip':
         
         if recession_algorithm=='boussinesq':
             initDf=True
             
             
-            for _,limb in Q.groupby('Q0_inv'):
+            for _,limb in Q.groupby('section_id'):
                 #we calculate the fit for the initial recession limb
                 if initDf:
                     Q_data=limb['Q'].values
@@ -282,7 +314,7 @@ def analyse_recession_curves(Q,mrc_algorithm='demuth',
             
         if recession_algorithm=='maillet':
             initDf=True
-            for _,limb in Q.groupby('Q0_inv'):
+            for _,limb in Q.groupby('section_id'):
                 #we calculate the fit for the initial recession limb
                 if initDf:
                     Q_data=limb['Q'].values
@@ -312,6 +344,10 @@ def analyse_recession_curves(Q,mrc_algorithm='demuth',
             df_rec_merged['Q_data']=Q_data
             r_mrc=df_rec_merged.corr().to_numpy()[0,1]
             
+        #update the output_data
+        mrc_out=((fit_parameter[0],fit_parameter[1],r_mrc))
+        print('pearson r of method',mrc_algorithm, 'with recession model',recession_algorithm, ' is ', np.round(r_mrc,2))
+                    
     
             
     if mrc_algorithm == 'demuth':
@@ -327,7 +363,7 @@ def analyse_recession_curves(Q,mrc_algorithm='demuth',
             Q0_max=Q['Q0'].max()
             # Every recession limb will be shifted in t_direction on the new base limp
             df_merged=pd.Series(dtype=float)
-            for _,limb in Q.groupby('Q0_inv'):
+            for _,limb in Q.groupby('section_id'):
                 t_shift= bousinesq_func_inv(limb['Q0'].iloc[0],Q0_max,fit_parameter[1])
                 #add t_shift to section time
                 limb['section_time']=limb['section_time']+t_shift
@@ -351,7 +387,7 @@ def analyse_recession_curves(Q,mrc_algorithm='demuth',
             Q0_max=Q['Q0'].max()
             # Every recession limb will be shifted in t_direction on the new base limp
             df_merged=pd.Series(dtype=float)
-            for _,limb in Q.groupby('Q0_inv'):
+            for _,limb in Q.groupby('section_id'):
                 t_shift= maillet_func_inv(limb['Q0'].iloc[0],Q0_max,fit_parameter[1])
                 #add t_shift to section time
     
@@ -365,11 +401,12 @@ def analyse_recession_curves(Q,mrc_algorithm='demuth',
             Q_rec_merged=maillet_func(df_merged.index.values,fit_parameter[0],fit_parameter[1])
             r_mrc=np.corrcoef(df_merged.values,Q_rec_merged)[0,1]
     
+        #update the output_data
+        mrc_out=((fit_parameter[0],fit_parameter[1],r_mrc))
+        print('pearson r of method',mrc_algorithm, 'with recession model',recession_algorithm, ' is ', np.round(r_mrc,2))
+        
 
-    print('pearson r of method',mrc_algorithm, 'with recession model',recession_algorithm, ' is ', np.round(r_mrc,2))
-    
-
-    return fit_parameter[0],fit_parameter[1],r_mrc,Q
+    return Q,mrc_out
 
 
 

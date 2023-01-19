@@ -34,8 +34,8 @@ sbat.get_baseflow(methods=['UKIH','Fixed'],
                   compute_bfi=True, update_metadata=True,plot=False)
 
 #compute the master recession curve
-sbat.get_recession_curve(curve_type='baseflow',plot=False)
-
+sbat.get_recession_curve(curve_type='baseflow',plot=False,mrc_algorithm=None)
+haha
 
 """
 sections_meta,q_diff,gdf_network_map = sbat.get_waterbalance(network_geometry=gpd.read_file(os.path.join(os.path.dirname(__file__),'input','Network_z.shp')),
