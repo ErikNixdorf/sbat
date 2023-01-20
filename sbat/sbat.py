@@ -104,12 +104,14 @@ class model:
     def get_baseflow(self,methods='all',
                      compute_bfi=True,
                      update_metadata=True,
-                     plot=True):
+                     plot=True,
+                     calculate_monthly=True):
         
         
         #first we compute the baseflow
         self.bf_output=compute_baseflow(self.gauge_ts,self.gauge_meta,
-                         methods=methods,compute_bfi=compute_bfi)
+                         methods=methods,compute_bfi=compute_bfi,
+                         calculate_monthly=calculate_monthly)
         
         #second we update the medatadata if required
         if update_metadata:

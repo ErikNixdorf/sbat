@@ -267,7 +267,7 @@ def analyse_recession_curves(Q,mrc_algorithm='demuth',
         #add data to the section
         limb['section_n']=fit_parameter[1]
         limb['section_corr']=np.corrcoef(limb['Q'].values,limb_interp)[0,1]
-        
+        limb['Q_interp']=limb_interp
         #merge sections
         limb_sections=pd.concat([limb_sections,limb])
     #reset index and overwrite Q

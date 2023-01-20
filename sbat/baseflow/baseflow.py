@@ -66,7 +66,11 @@ def call_bf_package(Q,methods='all',area=None):
     #interpolate the Nans and convert to 0D Array
     Q_array=Q.interpolate().values.astype(float).flatten()
     
-    b, KGEs = bf_package.separation(Q_array, date, area=area/1000/1000,method=methods)
+    if area is not None:
+        print('Assume that area is in km2, recompute to m2')
+        area=area/1000/1000
+    
+    b, KGEs = bf_package.separation(Q_array, date, area=area,method=methods)
     
     #convert results back to DataFrame
     bf_daily=pd.DataFrame.from_records(b)
@@ -107,7 +111,8 @@ def melt_gauges(df,additional_columns=dict({'a':'b'})):
 
 #%%We calculate baseflows using the baseflow package
 def compute_baseflow(data_ts,data_meta,methods='all',
-                     compute_bfi=True):
+                     compute_bfi=True,
+                     calculate_monthly=True):
     
     #prepare the output data
     bf_output=dict()
@@ -132,65 +137,76 @@ def compute_baseflow(data_ts,data_meta,methods='all',
             print('No calculation possible for gauge',gauge)
             continue
         #call the baseflow module
-        bf_daily,KGEs=call_bf_package(Q,methods=methods,area=data_meta.loc[Q.name,'basin_area'])
-    
-               
-        #get monthly values
-        #from previous methods
-        bf_monthly=bf_daily.resample('m').mean()
-        #compute demuth method
-        if methods =='all' or 'demuth' in methods:
-            #merge with monthly values from Demuth
-            bf_demuth=baseflow_demuth(Q.to_frame(),gauge_name=gauge)
-            #if demuth has wrong curve type, we just write the data nan
-            if bf_demuth.curve_type.iloc[0]==2:
-                print('Demuth Curve Typ 2, write values to NaN')        
-                bf_demuth[gauge]=np.nan
-            bf_monthly=pd.concat([bf_monthly,bf_demuth.rename(columns={gauge:'demuth'})['demuth']],axis=1)
+        if 'basin_area' in data_meta.columns:
+            basin_area=data_meta.loc[Q.name,'basin_area']
+        else:
+            basin_area=None
             
+        bf_daily,KGEs=call_bf_package(Q,methods=methods,area=basin_area)
         
-        #append daily and monthly data
-        #monthly
-        bfs_monthly=pd.concat([bfs_monthly,melt_gauges(bf_monthly,additional_columns=dict({'gauge':gauge}))])
-        #daily
+        
         bf_daily_melted=bf_daily.reset_index().melt(id_vars='Datum')
         bf_daily_melted['gauge']=gauge
-        bfs_daily=pd.concat([bfs_daily,bf_daily_melted])        
+        bfs_daily=pd.concat([bfs_daily,bf_daily_melted])  
         
-        #compute the statistics per gauge
-        KGE_cols=['kge_'+col for col in bf_daily]
-        gauge_attributes=pd.DataFrame(dict(zip(KGE_cols,KGEs)),index=[gauge])
-        if methods =='all' or 'demuth' in methods:
-            gauge_attributes['demuth_curve_type']=bf_demuth['curve_type'].iloc[0]
-        else:
-            gauge_attributes['demuth_curve_type']=np.nan
-        gauge_attributes[['nmq_mean_'+col for col in bf_monthly]]=bf_monthly.mean()
-        gauge_attributes[['nmq_std_'+col for col in bf_monthly]]=bf_monthly.std()
-
+        bf_output.update({'bf_daily':bfs_daily.set_index('Datum')})     
         
-        #bfi computation if requested        
-        if compute_bfi:
-            #we compute the BFI
-            bfi_monthly=bf_monthly.divide(Q.resample('m').mean(),axis=0)
-            #append
-            bfis_monthly=pd.concat([bfis_monthly,melt_gauges(bfi_monthly,additional_columns=dict({'gauge':gauge})).set_index('Datum')])
-            #compute gauge attributes
-            gauge_attributes[['bfi_mean_'+col for col in bf_monthly]]=bfi_monthly.mean()
-            gauge_attributes[['bfi_std_'+col for col in bf_monthly]]=bfi_monthly.std()
+    
+        if calculate_monthly:
+            #get monthly values
+            #from previous methods
+            bf_monthly=bf_daily.resample('m').mean()
+            #compute demuth method
+            if methods =='all' or 'demuth' in methods:
+                #merge with monthly values from Demuth
+                bf_demuth=baseflow_demuth(Q.to_frame(),gauge_name=gauge)
+                #if demuth has wrong curve type, we just write the data nan
+                if bf_demuth.curve_type.iloc[0]==2:
+                    print('Demuth Curve Typ 2, write values to NaN')        
+                    bf_demuth[gauge]=np.nan
+                bf_monthly=pd.concat([bf_monthly,bf_demuth.rename(columns={gauge:'demuth'})['demuth']],axis=1)
+                
             
+            #append daily and monthly data
+            #monthly
+            bfs_monthly=pd.concat([bfs_monthly,melt_gauges(bf_monthly,additional_columns=dict({'gauge':gauge}))])
+            #daily
+      
+            
+            #compute the statistics per gauge
+            KGE_cols=['kge_'+col for col in bf_daily]
+            gauge_attributes=pd.DataFrame(dict(zip(KGE_cols,KGEs)),index=[gauge])
+            if methods =='all' or 'demuth' in methods:
+                gauge_attributes['demuth_curve_type']=bf_demuth['curve_type'].iloc[0]
+            else:
+                gauge_attributes['demuth_curve_type']=np.nan
+            gauge_attributes[['nmq_mean_'+col for col in bf_monthly]]=bf_monthly.mean()
+            gauge_attributes[['nmq_std_'+col for col in bf_monthly]]=bf_monthly.std()
+    
+            
+            #bfi computation if requested        
+            if compute_bfi:
+                #we compute the BFI
+                bfi_monthly=bf_monthly.divide(Q.resample('m').mean(),axis=0)
+                #append
+                bfis_monthly=pd.concat([bfis_monthly,melt_gauges(bfi_monthly,additional_columns=dict({'gauge':gauge})).set_index('Datum')])
+                #compute gauge attributes
+                gauge_attributes[['bfi_mean_'+col for col in bf_monthly]]=bfi_monthly.mean()
+                gauge_attributes[['bfi_std_'+col for col in bf_monthly]]=bfi_monthly.std()
+                
+                
+                bf_output.update({'bfi_monthly':bfis_monthly})
+            
+            #append the gauge attributes
+            gauges_attributes=pd.concat([gauges_attributes,gauge_attributes])
         
-        #append the gauge attributes
-        gauges_attributes=pd.concat([gauges_attributes,gauge_attributes])
-    
-        print('compute baseflow for gauge....',gauge,'...done')
-    
-    #update the dictionary
-    bf_output.update({'bf_attributes':gauges_attributes,
-                      'bf_daily':bfs_daily.set_index('Datum'),
-                      'bf_monthly':bfs_monthly.set_index('Datum'),
-                      'bfi_monthly':bfis_monthly
-                      }
-                     )
+            print('compute baseflow for gauge....',gauge,'...done')
+        
+        #update the dictionary
+            bf_output.update({'bf_attributes':gauges_attributes,
+                              'bf_monthly':bfs_monthly.set_index('Datum')
+                              }
+                             )
     return bf_output
 
 
@@ -273,6 +289,8 @@ def plot_bf_results(data=dict(),meta_data=pd.DataFrame(),meta_data_decadal=pd.Da
     # first we plot some histogram and boxplots
     for parameter in parameters_to_plot:
         if parameter in data.keys():
+            if parameter=='bf_attributes':
+                continue
             #reset index
             subset=data[parameter].reset_index()
             #histogram over all data
