@@ -1,6 +1,6 @@
 build/
-/output/
+/output/*
 /info/
 /hooks/
 test_schuettung_q.py
-/input/
+/input/*
