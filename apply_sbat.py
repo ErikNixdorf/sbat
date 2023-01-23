@@ -34,7 +34,7 @@ sbat.get_baseflow(methods=['UKIH','Fixed'],
                   compute_bfi=True, update_metadata=True,plot=False)
 
 #compute the master recession curve
-sbat.get_recession_curve(curve_type='baseflow',plot=False,mrc_algorithm=None)
+sbat.get_recession_curve(curve_type='baseflow',plot=False,mrc_algorithm='demuth')
 haha
 
 """
