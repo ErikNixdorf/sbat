@@ -17,6 +17,10 @@ import numpy as np
 dateparse_q = lambda x: datetime.strptime(x, '%Y-%m-%d')
 dateparse_p = lambda x: datetime.strptime(x, '%Y%m%d')
 from scipy.optimize import curve_fit
+from scipy.signal import savgol_filter
+
+def round_up_to_odd(f):
+    return np.ceil(f) // 2 * 2 + 1
 
 def get_rmse(simulations, evaluation):
     """Root Mean Square Error (RMSE).
@@ -172,10 +176,82 @@ def fit_maillet(t,Q,Q_0,constant_Q_0=True):
 
 
 
+def find_recession_limbs(Q,smooth_window_size=15,
+                         minimum_recession_curve_length=10,
+                         multiple_aquifers_per_recession=True):
+    """
+    
+
+    Parameters
+    ----------
+    Q : TYPE
+        DESCRIPTION.
+    smooth_window_size : TYPE, optional
+        DESCRIPTION. 0.05*len(Q) is recommended
+    minimum_recession_curve_length : TYPE, optional
+        DESCRIPTION. The default is 10.
+    multiple_aquifers_per_recession : TYPE, optional
+        DESCRIPTION. The default is True.
+
+    Raises
+    ------
+    ValueError
+        DESCRIPTION.
+
+    Returns
+    -------
+    Q : TYPE
+        DESCRIPTION.
+
+    """
+    #%% Clean
+    Q=clean_gauge_ts(Q)
+    Q=Q.rename('Q')
+    Q=Q.to_frame()    
+    #%% We apply a  savgol filter
+    if smooth_window_size>0:
+        Q['Q']=savgol_filter(Q.values.flatten(), int(round_up_to_odd(smooth_window_size)), 2)
+        
+
+    
+    #%% Get numbers for all slopes with the same direction
+    #inspired by https://stackoverflow.com/questions/55133427/pandas-splitting-data-frame-based-on-the-slope-of-data
+
+    Q['diff']=Q.diff().fillna(0)
+    Q.loc[Q['diff'] < 0, 'diff'] = -1
+    Q.loc[Q['diff'] > 0, 'diff'] = 1
+    
+
+    
+    Q['section_id'] = (~(Q['diff'] == Q['diff'].shift(1))).cumsum()
+    
+    #remove all sections which are ascending, rising limb of hydrograph
+    Q=Q[Q['diff']==-1]
+    #we check for sections with a minum length
+    section_length=Q.groupby('section_id').size()
+    Q['section_length']=Q['section_id']
+    Q['section_length']=Q['section_length'].replace(section_length)
+    #remove all below threshold
+    Q=Q[Q['section_length']>=minimum_recession_curve_length]
+    
+    #replace each section length by ascending numbers (the event length)
+    Q['section_time'] = Q.groupby('section_id').cumcount()
+    
+    #get the largest discharge for each sedgment
+    Q0= Q[['Q','section_id']].groupby('section_id').max().squeeze()
+    Q['Q0']=Q['section_id'].replace(Q0)
+    Q['Q0_inv']=1/Q['Q0']           
+
+        
+    return Q
+
+
+
 def analyse_recession_curves(Q,mrc_algorithm='demuth',
                              recession_algorithm='boussinesq',
-                             moving_average_filter_steps=3,
-                             minimum_recession_curve_length=10
+                             smooth_window_size=3,
+                             minimum_recession_curve_length=10,
+                             define_falling_limb_intervals=True
                              ):
     """
     
@@ -205,45 +281,22 @@ def analyse_recession_curves(Q,mrc_algorithm='demuth',
 
     #%% we define output mrc_data, first two are master curve fit para, third is performance
     mrc_out=tuple((np.nan,np.nan,np.nan))
-    #%% Clean
-    Q=clean_gauge_ts(Q)
     
-    #%% Apply filter for rolling mean
-    if moving_average_filter_steps>0:
-        Q=Q.rolling(int(moving_average_filter_steps)).mean()
-    #%% Get numbers for all slopes with the same direction
-    #inspired by https://stackoverflow.com/questions/55133427/pandas-splitting-data-frame-based-on-the-slope-of-data
-    Q=Q.rename('Q')
-    Q=Q.to_frame()
-    Q['diff']=Q.diff().fillna(0)
-    Q.loc[Q['diff'] < 0, 'diff'] = -1
-    Q.loc[Q['diff'] > 0, 'diff'] = 1
-    Q['section_id'] = (~(Q['diff'] == Q['diff'].shift(1))).cumsum()
+    if isinstance(Q,pd.Series):
+        Q=Q.rename('Q').to_frame()    
     
-    #remove all sections which are ascending, rising limb of hydrograph
-    Q=Q[Q['diff']==-1]
-    #we check for sections with a minum length
-    section_length=Q.groupby('section_id').size()
-    Q['section_length']=Q['section_id']
-    Q['section_length']=Q['section_length'].replace(section_length)
-    #remove all below threshold
-    Q=Q[Q['section_length']>=minimum_recession_curve_length]
-    
-    #replace each section length by ascending numbers (the event length)
-    Q['section_time'] = Q.groupby('section_id').cumcount()
-    
-    #get the largest discharge for each sedgment
-    Q0= Q[['Q','section_id']].groupby('section_id').max().squeeze()
-    Q['Q0']=Q['section_id'].replace(Q0)
-    Q['Q0_inv']=1/Q['Q0']
-    
+    #%% First we check whether we need to compute the section intervals
+    if define_falling_limb_intervals==True or 'section_id' not in Q.columns:
+        print('Find the recession parts of the time series prior to fitting')
 
-    #sort them in decending style
-    #Q_sorted=Q.sort_values(['Q0','section_id'],ascending=False)
+
+        Q=find_recession_limbs(Q['Q'],smooth_window_size=smooth_window_size,
+                                     minimum_recession_curve_length=minimum_recession_curve_length)
     
+    #if there are no falling limbs within the interval we just return the data
     if len(Q)==0:
-        print('No Recession limb within the dataset')
-        return pd.DataFrame(columns=['section_id']),mrc_out
+        print('No Recession limb within the dataset')        
+        return Q,mrc_out
     
     #%% if mrc_algorithm is zero, we just compute_individual branches
    #%% if we are not interested in a master_recession curve we just calculate single coefficients

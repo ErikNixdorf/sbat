@@ -319,7 +319,7 @@ class model:
 
                     recession_limbs,mrc_out=analyse_recession_curves(Q[gauge_name],mrc_algorithm=mrc_algorithm,
                         recession_algorithm=recession_algorithm,
-                        moving_average_filter_steps=moving_average_filter_steps,
+                        smooth_window_size=moving_average_filter_steps,
                         minimum_recession_curve_length=minimum_recession_curve_length
                         )
                     Q0_mrc=mrc_out[0]
