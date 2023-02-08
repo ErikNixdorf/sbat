@@ -221,7 +221,8 @@ class model:
     #the function to call the resession curves
     def get_recession_curve(self,curve_type='baseflow',mrc_algorithm='demuth',
                             recession_algorithm='boussinesq',
-                            moving_average_filter_steps=3,
+                            smooth_window_size=3,
+                            maximum_reservoirs=3,
                             minimum_recession_curve_length=10,
                             minimum_limbs = 20,
                             plot=True):
@@ -272,8 +273,9 @@ class model:
             for gauge_name in Q:
                 recession_limbs,mrc_out=analyse_recession_curves(Q[gauge_name],mrc_algorithm=mrc_algorithm,
                     recession_algorithm=recession_algorithm,
-                    moving_average_filter_steps=moving_average_filter_steps,
-                    minimum_recession_curve_length=minimum_recession_curve_length
+                    smooth_window_size=smooth_window_size,
+                    minimum_recession_curve_length=minimum_recession_curve_length,
+                    maximum_reservoirs=maximum_reservoirs,
                     )
                 
                 Q0_mrc=mrc_out[0]
@@ -319,8 +321,9 @@ class model:
 
                     recession_limbs,mrc_out=analyse_recession_curves(Q[gauge_name],mrc_algorithm=mrc_algorithm,
                         recession_algorithm=recession_algorithm,
-                        smooth_window_size=moving_average_filter_steps,
-                        minimum_recession_curve_length=minimum_recession_curve_length
+                        smooth_window_size=smooth_window_size,
+                        minimum_recession_curve_length=minimum_recession_curve_length,
+                        maximum_reservoirs=maximum_reservoirs,
                         )
                     Q0_mrc=mrc_out[0]
                     n_mrc=mrc_out[1]

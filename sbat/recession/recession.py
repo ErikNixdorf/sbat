@@ -18,6 +18,7 @@ dateparse_q = lambda x: datetime.strptime(x, '%Y-%m-%d')
 dateparse_p = lambda x: datetime.strptime(x, '%Y%m%d')
 from scipy.optimize import curve_fit
 from scipy.signal import savgol_filter
+from copy import copy
 
 def round_up_to_odd(f):
     return np.ceil(f) // 2 * 2 + 1
@@ -62,13 +63,22 @@ def clean_gauge_ts(Q):
     return Q
 
 #define the regression function
-def bousinesq_func(x,Q_0,n):
+#https://ngwa.onlinelibrary.wiley.com/doi/epdf/10.1111/j.1745-6584.2002.tb02539.x
+def boussinesq_1(x,Q_0,n):
         return Q_0/np.power((1+n*x),2)
+def boussinesq_2(x,Q_0,n_0,Q_1,n_1):
+        return Q_0/np.power((1+n_0*x),2)+Q_1/np.power((1+n_1*x),2)
+def boussinesq_3(x,Q_0,n_0,Q_1,n_1,Q_2,n_2):
+        return Q_0/np.power((1+n_0*x),2)+Q_1/np.power((1+n_1*x),2)+Q_2/np.power((1+n_2*x),2)
     
-def maillet_func(x,Q_0,n):
+def maillet_1(x,Q_0,n):
         return Q_0*np.exp(-n*x)
+def maillet_2(x,Q_0,n_0,Q_1,n_1):
+        return Q_0*np.exp(-n_0*x)+Q_1*np.exp(-n_1*x)
+def maillet_3(x,Q_0,n_0,Q_1,n_1,Q_2,n_2):
+        return Q_0*np.exp(-n_0*x)+Q_1*np.exp(-n_1*x)+Q_2*np.exp(-n_2*x)
     
-def bousinesq_func_inv(Q,Q_0,n):
+def boussinesq_inv(Q,Q_0,n):
     """
     Inverted function to get the time where the value appears
 
@@ -91,7 +101,7 @@ def bousinesq_func_inv(Q,Q_0,n):
     return t
 
 
-def maillet_func_inv(Q,Q_0,n):
+def maillet_inv(Q,Q_0,n):
     """
     Inverted function to get the time where the value appears    
 
@@ -113,7 +123,11 @@ def maillet_func_inv(Q,Q_0,n):
     return t
     
     
-def fit_boussinesq (t,Q,Q_0,constant_Q_0=True):
+def fit_reservoir_function (t,Q,Q_0,
+                            constant_Q_0=True,
+                            no_of_partial_sums=3,
+                            min_improvement_ratio=1.05,
+                            recession_algorithm='boussinesq'):
     """
     proposes the analytical solution of the nonlinear
     differential flow equation assuming a Depuit–Boussinesq
@@ -138,47 +152,72 @@ def fit_boussinesq (t,Q,Q_0,constant_Q_0=True):
         DESCRIPTION.
 
     """
-    if constant_Q_0:
-        popt, pcov = curve_fit(bousinesq_func, t, Q, bounds=([Q_0*0.9999, 0], [Q_0*1.0001, 1]))
-    else:
-        popt, pcov = curve_fit(bousinesq_func, t, Q, bounds=([0, 0.001], [1000, 1]))
     
-    return popt,pcov
-
-def fit_maillet(t,Q,Q_0,constant_Q_0=True):
-    """
-    assumes a linear relationship between storage
-    and flow (𝑆 = 𝑘𝑄) so that the recession curve can be adjusted by
-    an exponential model:
-
-    Parameters
-    ----------
-    t : TYPE
-        DESCRIPTION.
-    Q : TYPE
-        DESCRIPTION.
-    Q_0 : TYPE
-        DESCRIPTION.
-    constant_Q_0 : TYPE, optional
-        DESCRIPTION. The default is True.
-
-    Returns
-    -------
-    None.
-
-    """
-    if constant_Q_0:
-        popt, pcov = curve_fit(maillet_func, t, Q, bounds=([Q_0*0.9999, 0], [Q_0*1.0001, 1]))
-    else:
-        popt, pcov = curve_fit(maillet_func, t, Q, bounds=([0, 0.001], [1000, 1]))
+    #define the acceptable maximum of partial sums
+    max_sums=3
     
-    return popt,pcov
+    
+    # we first check whether the user requests more than the maximum of three partial sums
+    if no_of_partial_sums>3:
+        print('Maximum of partial sums is three, we reduce to allowed maximum')
+        no_of_partial_sums=max_sums
+    
+    #next we overwrite Q_0 if it is not constant, this makes only sene if there is one reservoir only
+    if constant_Q_0 and no_of_partial_sums==1:
+        Q_0_min=Q_0*0.9999
+        Q_0_max=Q_0*1.0001
+    else:        
+        Q_0_min=0.001
+        Q_0_max=1000
+        
+    #define also n min and n max
+    n_min=10e-10
+    n_max=10
+    
+    bounds_min=[Q_0_min,n_min]
+    bounds_max=[Q_0_max,n_max]
+    # depending on the number of number of reservoirs and the curve type we do a different fitting
+    r_cor_old=0.0001
+    output=tuple()
+    for reservoirs in range(0,max_sums):
+        if reservoirs>no_of_partial_sums:
+            continue
+        # we calculate for each individual case
+        model_function=globals()[recession_algorithm+'_'+str(reservoirs+1)]
 
+        fit_parameter, pcov = curve_fit(model_function, t, Q, bounds=(bounds_min*(reservoirs+1), bounds_max*(reservoirs+1)))
+
+        #here I do not know an elegant way how to call it, maybe with *args, but I am not sure whether curve fit will accept it
+        if reservoirs==0:
+            Q_int=model_function(t,fit_parameter[0],fit_parameter[1])
+        elif reservoirs==1:
+            Q_int=model_function(t,fit_parameter[0],fit_parameter[1],fit_parameter[2],fit_parameter[3])
+        elif reservoirs==2:
+            Q_int=model_function(t,fit_parameter[0],fit_parameter[1],fit_parameter[2],fit_parameter[3],fit_parameter[4],fit_parameter[5])        
+        #get the correlation
+        r_cor=np.corrcoef(Q,Q_int)[0,1]
+        
+        #if correlation does not improve we refuse to add more reservoirs
+        if abs(r_cor/r_cor_old)<min_improvement_ratio:            
+            break
+        else:
+            #we write the output tuple
+            output=(fit_parameter,Q_int,r_cor,reservoirs+1)
+            r_cor_old=copy(r_cor)
+            
+    #we return the results:
+    return output
+        
+            
+        
+        
+        
+        
+    return fit_parameter,Q_int
 
 
 def find_recession_limbs(Q,smooth_window_size=15,
-                         minimum_recession_curve_length=10,
-                         multiple_aquifers_per_recession=True):
+                         minimum_recession_curve_length=10):
     """
     
 
@@ -251,7 +290,8 @@ def analyse_recession_curves(Q,mrc_algorithm='demuth',
                              recession_algorithm='boussinesq',
                              smooth_window_size=3,
                              minimum_recession_curve_length=10,
-                             define_falling_limb_intervals=True
+                             define_falling_limb_intervals=True,
+                             maximum_reservoirs=3,
                              ):
     """
     
@@ -287,7 +327,7 @@ def analyse_recession_curves(Q,mrc_algorithm='demuth',
     
     #%% First we check whether we need to compute the section intervals
     if define_falling_limb_intervals==True or 'section_id' not in Q.columns:
-        print('Find the recession parts of the time series prior to fitting')
+        #print('Find the recession parts of the time series prior to fitting')
 
 
         Q=find_recession_limbs(Q['Q'],smooth_window_size=smooth_window_size,
@@ -302,158 +342,116 @@ def analyse_recession_curves(Q,mrc_algorithm='demuth',
    #%% if we are not interested in a master_recession curve we just calculate single coefficients
     limb_sections=pd.DataFrame()
     for _,limb in Q.groupby('section_id'):
-        if recession_algorithm=='boussinesq':
             #raise ValueError('Implementation for Christoph is Missing')
-            fit_parameter, pcov=fit_boussinesq(limb['section_time'].values, limb['Q'].values, limb['Q0'].iloc[0],constant_Q_0=True)            
-            #calculate the fitted link
-            limb_interp=bousinesq_func(limb['section_time'].values,fit_parameter[0],fit_parameter[1])  
+        fit_parameter,limb_int,r_coef,reservoirs=fit_reservoir_function(limb['section_time'].values, limb['Q'].values, limb['Q0'].iloc[0],constant_Q_0=True,
+                                      recession_algorithm=recession_algorithm,no_of_partial_sums=maximum_reservoirs)            
 
-
-        elif recession_algorithm=='maillet':
-            fit_parameter, pcov=fit_maillet(limb['section_time'].values, limb['Q'].values, limb['Q0'].iloc[0],constant_Q_0=True)
-            limb_interp=maillet_func(limb['section_time'].values,fit_parameter[0],fit_parameter[1])
-            
-
-        else:
-            raise ValueError('Recession Method ',recession_algorithm, 'have not been implemented')
         
         #add data to the section
-        limb['section_n']=fit_parameter[1]
-        limb['section_corr']=np.corrcoef(limb['Q'].values,limb_interp)[0,1]
-        limb['Q_interp']=limb_interp
+        for reservoir in range(0,reservoirs):
+            limb['section_n_'+str(reservoir)]=fit_parameter[2*(reservoir+1)-1]
+            limb['section_Q0_'+str(reservoir)]=fit_parameter[2*(reservoir+1)-2]
+        limb['section_corr']=r_coef
+        limb['Q_interp']=limb_int
         #merge sections
         limb_sections=pd.concat([limb_sections,limb])
     #reset index and overwrite Q
     Q=limb_sections.copy().reset_index()
     
     #%% master Recession Curve, either matching Strip or correlation Method
+    #we first find the inversion function to stick the recession curves together
+    #define the inversion_function
+    inv_func=globals()[recession_algorithm+'_inv']    
        
     
     if  mrc_algorithm == 'matching_strip':
         
-        if recession_algorithm=='boussinesq':
-            initDf=True
+        #we first get the order of recession beginning with the highest initial values
+        section_order=Q.groupby('section_id')['Q0'].max().sort_values(ascending=False).index.tolist()
+        initDf=True
+        for section_id in section_order:
             
-            
-            for _,limb in Q.groupby('section_id'):
-                #we calculate the fit for the initial recession limb
-                if initDf:
-                    Q_data=limb['Q'].values
-                    Q_0=limb['Q0'].iloc[0]            
-                    fit_parameter, pcov=fit_boussinesq(limb['section_time'].values, limb['Q'].values, Q_0)
-                    Q_rec_merged=bousinesq_func(limb['section_time'].values,Q_0,fit_parameter[1])
-                    df_rec_merged=pd.Series(Q_rec_merged,limb['section_time'].values).rename('Q')
-                    
-                    initDf=False
-                else:
-                    
-                    #fit the proper location in the already merged part
-                    t_shift= bousinesq_func_inv(limb['Q0'].iloc[0],fit_parameter[0],fit_parameter[1])
-                    #add t_shift to section time
-                    limb['section_time']=limb['section_time']+t_shift
-                    #add the limb with shifted time to the extending dataset
-                    df_merged=pd.concat([pd.Series(Q_data,df_rec_merged.index).rename('Q'),limb.set_index('section_time')['Q']]).sort_index()
-        
-                    #compute the recession curve and parameters for the combined ones
-                    fit_parameter, pcov=fit_boussinesq(df_merged.index.values, df_merged.values, Q_0)
-                    Q_rec_merged=bousinesq_func(df_merged.index.values,Q_0,fit_parameter[1])
-                    df_rec_merged=pd.Series(Q_rec_merged,df_merged.index.values).rename('Q')
-                    Q_data=np.append(Q_data,limb['Q'].values)
-    
-            #after we got the final regression line we can calculate some performance
-            df_rec_merged=df_rec_merged.to_frame()
-            df_rec_merged['Q_data']=Q_data
-            r_mrc=df_rec_merged.corr().to_numpy()[0,1]
-            
-        if recession_algorithm=='maillet':
-            initDf=True
-            for _,limb in Q.groupby('section_id'):
-                #we calculate the fit for the initial recession limb
-                if initDf:
-                    Q_data=limb['Q'].values
-                    Q_0=limb['Q0'].iloc[0]            
-                    fit_parameter, pcov=fit_maillet(limb['section_time'].values, limb['Q'].values, Q_0)
-                    Q_rec_merged=maillet_func(limb['section_time'].values,Q_0,fit_parameter[1])
-                    df_rec_merged=pd.Series(Q_rec_merged,limb['section_time'].values).rename('Q')
-                    
-                    initDf=False
-                else:
-                    
-                    #fit the proper location in the already merged part
-                    t_shift= maillet_func_inv(limb['Q0'].iloc[0],fit_parameter[0],fit_parameter[1])
-                    #add t_shift to section time
-                    limb['section_time']=limb['section_time']+t_shift
-                    #add the limb with shifted time to the extending dataset
-                    df_merged=pd.concat([pd.Series(Q_data,df_rec_merged.index).rename('Q'),limb.set_index('section_time')['Q']]).sort_index()
-        
-                    #compute the recession curve and parameters for the combined ones
-                    fit_parameter, pcov=fit_maillet(df_merged.index.values, df_merged.values, Q_0)
-                    Q_rec_merged=maillet_func(df_merged.index.values,Q_0,fit_parameter[1])
-                    df_rec_merged=pd.Series(Q_rec_merged,df_merged.index.values).rename('Q')
-                    Q_data=np.append(Q_data,limb['Q'].values)
-    
-            #after we got the final regression line we can calculate some performance
-            df_rec_merged=df_rec_merged.to_frame()
-            df_rec_merged['Q_data']=Q_data
-            r_mrc=df_rec_merged.corr().to_numpy()[0,1]
+            limb=Q[Q['section_id']==section_id]
+            #we calculate the fit for the initial recession limb
+            if initDf:
+                Q_data=limb['Q'].values
+                Q_0=limb['Q0'].iloc[0]
+                fit_parameter,Q_rec_merged,r_coef,_=fit_reservoir_function(limb['section_time'].values, 
+                                                                       limb['Q'].values, 
+                                                                       limb['Q0'].iloc[0],
+                                                                       constant_Q_0=True,
+                                                                       no_of_partial_sums=1,
+                                                                       recession_algorithm=recession_algorithm)
+                df_rec_merged=pd.Series(Q_rec_merged,limb['section_time'].values).rename('Q')
+                
+                initDf=False
+            else:
+                
+                #fit the proper location in the already merged part
+                t_shift= inv_func(limb['Q0'].iloc[0],fit_parameter[0],fit_parameter[1])
+                #add t_shift to section time
+                limb.loc[:,'section_time']=limb.loc[:,'section_time']+t_shift
+                #add the limb with shifted time to the extending dataset
+                df_merged=pd.concat([pd.Series(Q_data,df_rec_merged.index).rename('Q'),limb.set_index('section_time')['Q']]).sort_index()
+
+                fit_parameter,Q_rec_merged,r_coef,_=fit_reservoir_function(df_merged.index.values, 
+                                                                           df_merged.values, 
+                                                                           Q_0,
+                                                                           constant_Q_0=True,
+                                                                           no_of_partial_sums=1,
+                                                                           recession_algorithm=recession_algorithm)
+
+                #compute the recession curve and parameters for the combined ones
+                df_rec_merged=pd.Series(Q_rec_merged,df_merged.index.values).rename('Q')
+                Q_data=np.append(Q_data,limb['Q'].values)
+
+        #after we got the final regression line we can calculate some performance
+        df_rec_merged=df_rec_merged.to_frame()
+        df_rec_merged['Q_data']=Q_data
+        r_mrc=df_rec_merged.corr().to_numpy()[0,1]
             
         #update the output_data
         mrc_out=((fit_parameter[0],fit_parameter[1],r_mrc))
         print('pearson r of method',mrc_algorithm, 'with recession model',recession_algorithm, ' is ', np.round(r_mrc,2))
                     
-    
-            
+
     if mrc_algorithm == 'demuth':
         #According to demuth method we first compute an initial fit for all data
-        if recession_algorithm=='boussinesq':
-            Q_data=Q['Q'].values
-            Q_0=Q['Q0'].mean()            
-            fit_parameter, pcov=fit_boussinesq(Q['section_time'].values, Q['Q'].values, Q_0,constant_Q_0=False)
-            Q_rec=bousinesq_func(Q['section_time'].values,Q_0,fit_parameter[1])
-            r_init=np.corrcoef(Q_data,Q_rec)
-            #we replace the first fit parameter with the actual Q_0, moving in upward direction
-    
-            Q0_max=Q['Q0'].max()
-            # Every recession limb will be shifted in t_direction on the new base limp
-            df_merged=pd.Series(dtype=float)
-            for _,limb in Q.groupby('section_id'):
-                t_shift= bousinesq_func_inv(limb['Q0'].iloc[0],Q0_max,fit_parameter[1])
-                #add t_shift to section time
-                limb['section_time']=limb['section_time']+t_shift
-                df_merged=df_merged.append(limb.set_index('section_time')['Q'])
-            
-            #we compute a new mean fitting model of the shifted time series
-            df_merged=df_merged.sort_index()
-            fit_parameter, pcov=fit_boussinesq(df_merged.index.values, df_merged.values, Q0_max,constant_Q_0=True)
-            
-            Q_rec_merged=bousinesq_func(df_merged.index.values,fit_parameter[0],fit_parameter[1])
-            r_mrc=np.corrcoef(df_merged.values,Q_rec_merged)[0,1]
-            
-        if recession_algorithm=='maillet':
-            Q_data=Q['Q'].values
-            Q_0=Q['Q0'].mean()            
-            fit_parameter, pcov=fit_maillet(Q['section_time'].values, Q['Q'].values, Q_0,constant_Q_0=False)
-            Q_rec=maillet_func(Q['section_time'].values,Q_0,fit_parameter[1])
-            r_init=np.corrcoef(Q_data,Q_rec)
-            #we replace the first fit parameter with the actual Q_0, moving in upward direction
-    
-            Q0_max=Q['Q0'].max()
-            # Every recession limb will be shifted in t_direction on the new base limp
-            df_merged=pd.Series(dtype=float)
-            for _,limb in Q.groupby('section_id'):
-                t_shift= maillet_func_inv(limb['Q0'].iloc[0],Q0_max,fit_parameter[1])
-                #add t_shift to section time
-    
-                limb['section_time']=limb['section_time']+t_shift
-                df_merged=df_merged.append(limb.set_index('section_time')['Q'])
-            
-            #we compute a new mean fitting model of the shifted time series
-            df_merged=df_merged.sort_index()
-            fit_parameter, pcov=fit_maillet(df_merged.index.values, df_merged.values, Q0_max,constant_Q_0=True)
-            
-            Q_rec_merged=maillet_func(df_merged.index.values,fit_parameter[0],fit_parameter[1])
-            r_mrc=np.corrcoef(df_merged.values,Q_rec_merged)[0,1]
-    
+
+        Q_data=Q['Q'].values
+        Q_0=Q['Q0'].mean()
+        fit_parameter,Q_rec,r_init,_=fit_reservoir_function(Q['section_time'].values, 
+                                                               Q_data, 
+                                                               Q_0,
+                                                               constant_Q_0=False,
+                                                               no_of_partial_sums=1,
+                                                               min_improvement_ratio=1.05,
+                                                               recession_algorithm=recession_algorithm)
+        
+
+        #we replace the first fit parameter with the actual Q_0, moving in upward direction
+        Q0_max=Q['Q0'].max()
+        
+
+        # Every recession limb will be shifted in t_direction on the new base limp
+        df_merged=pd.Series(dtype=float)
+        for _,limb in Q.groupby('section_id'):
+            t_shift= inv_func(limb['Q0'].iloc[0],Q0_max,fit_parameter[1])
+            #add t_shift to section time
+            limb['section_time']=limb['section_time']+t_shift
+            df_merged=df_merged.append(limb.set_index('section_time')['Q'])
+        
+        #we compute a new mean fitting model of the shifted time series
+        df_merged=df_merged.sort_index()
+
+        fit_parameter,Q_rec_merged,r_mrc,_=fit_reservoir_function(df_merged.index.values, 
+                                                               df_merged.values, 
+                                                               Q0_max,
+                                                               constant_Q_0=True,
+                                                               no_of_partial_sums=1,
+                                                               min_improvement_ratio=1.05,
+                                                               recession_algorithm=recession_algorithm) 
+   
         #update the output_data
         mrc_out=((fit_parameter[0],fit_parameter[1],r_mrc))
         print('pearson r of method',mrc_algorithm, 'with recession model',recession_algorithm, ' is ', np.round(r_mrc,2))
