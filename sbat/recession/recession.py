@@ -64,19 +64,19 @@ def clean_gauge_ts(Q):
 
 #define the regression function
 #https://ngwa.onlinelibrary.wiley.com/doi/epdf/10.1111/j.1745-6584.2002.tb02539.x
-def boussinesq_1(x,Q_0,n):
-        return Q_0/np.power((1+n*x),2)
-def boussinesq_2(x,Q_0,n_0,Q_1,n_1):
-        return Q_0/np.power((1+n_0*x),2)+Q_1/np.power((1+n_1*x),2)
-def boussinesq_3(x,Q_0,n_0,Q_1,n_1,Q_2,n_2):
-        return Q_0/np.power((1+n_0*x),2)+Q_1/np.power((1+n_1*x),2)+Q_2/np.power((1+n_2*x),2)
+def boussinesq_1(x,Q_0,n_0,x_0):
+        return Q_0/np.power((1+n_0*(x-x_0)),2)
+def boussinesq_2(x,Q_0,n_0,x_0,Q_1,n_1,x_1):
+        return Q_0/np.power((1+n_0*(x-x_0)),2)+Q_1/np.power((1+n_1*(x-x_1)),2)
+def boussinesq_3(x,Q_0,n_0,x_0,Q_1,n_1,x_1,Q_2,n_2,x_2):
+        return Q_0/np.power((1+n_0*(x-x_0)),2)+Q_1/np.power((1+n_1*(x-x_1)),2)+Q_2/np.power((1+n_2*(x-x_2)),2)
     
-def maillet_1(x,Q_0,n):
-        return Q_0*np.exp(-n*x)
-def maillet_2(x,Q_0,n_0,Q_1,n_1):
-        return Q_0*np.exp(-n_0*x)+Q_1*np.exp(-n_1*x)
-def maillet_3(x,Q_0,n_0,Q_1,n_1,Q_2,n_2):
-        return Q_0*np.exp(-n_0*x)+Q_1*np.exp(-n_1*x)+Q_2*np.exp(-n_2*x)
+def maillet_1(x,Q_0,n_0,x_0):
+        return Q_0*np.exp(-n_0*(x-x_0))
+def maillet_2(x,Q_0,n_0,x_0,Q_1,n_1,x_1):
+        return Q_0*np.exp(-n_0*(x-x_0))+Q_1*np.exp(-n_1*(x-x_1))
+def maillet_3(x,Q_0,n_0,x_0,Q_1,n_1,x_1,Q_2,n_2,x_2):
+        return Q_0*np.exp(-n_0*(x-x_0))+Q_1*np.exp(-n_1*(x-x_1))+Q_2*np.exp(-n_2*(x-x_2))
     
 def boussinesq_inv(Q,Q_0,n):
     """
@@ -126,7 +126,7 @@ def maillet_inv(Q,Q_0,n):
 def fit_reservoir_function (t,Q,Q_0,
                             constant_Q_0=True,
                             no_of_partial_sums=3,
-                            min_improvement_ratio=1.05,
+                            min_improvement_ratio=1.01,
                             recession_algorithm='boussinesq'):
     """
     proposes the analytical solution of the nonlinear
@@ -174,26 +174,48 @@ def fit_reservoir_function (t,Q,Q_0,
     n_min=10e-10
     n_max=10
     
-    bounds_min=[Q_0_min,n_min]
-    bounds_max=[Q_0_max,n_max]
+    #we further define t0 whichh defines the time lag of certain reservoir
+    t0_min=0
+    t0_max=t.max()
+    
     # depending on the number of number of reservoirs and the curve type we do a different fitting
     r_cor_old=0.0001
     output=tuple()
-    for reservoirs in range(0,max_sums):
+    for reservoirs in range(0,no_of_partial_sums):
         if reservoirs>no_of_partial_sums:
             continue
         # we calculate for each individual case
         model_function=globals()[recession_algorithm+'_'+str(reservoirs+1)]
-
-        fit_parameter, pcov = curve_fit(model_function, t, Q, bounds=(bounds_min*(reservoirs+1), bounds_max*(reservoirs+1)))
+        
 
         #here I do not know an elegant way how to call it, maybe with *args, but I am not sure whether curve fit will accept it
         if reservoirs==0:
-            Q_int=model_function(t,fit_parameter[0],fit_parameter[1])
+            p0=[Q_0,0.05,0]
+            fit_parameter, pcov = curve_fit(model_function, t, Q,p0=p0, 
+                                            bounds=([Q_0_min,n_min,t0_min], [Q_0_max,n_max,t0_min+0.0000001]),
+                                            maxfev=5000,
+                                            )            
+            Q_int=model_function(t,fit_parameter[0],fit_parameter[1],fit_parameter[2])
         elif reservoirs==1:
-            Q_int=model_function(t,fit_parameter[0],fit_parameter[1],fit_parameter[2],fit_parameter[3])
+            p0=[Q_0,0.05,0,Q_0/2,0.005,int(t.mean())]
+            fit_parameter, pcov = curve_fit(model_function, t, Q,p0,
+                                            bounds=([Q_0_min,n_min,t0_min]*(reservoirs+1), [Q_0_max,n_max,t0_max]*(reservoirs+1)),
+                                            maxfev=5000,
+                                            )  
+            Q_int=model_function(t,fit_parameter[0],fit_parameter[1],fit_parameter[2],
+                                 fit_parameter[3],fit_parameter[4],fit_parameter[5]
+                                 )
         elif reservoirs==2:
-            Q_int=model_function(t,fit_parameter[0],fit_parameter[1],fit_parameter[2],fit_parameter[3],fit_parameter[4],fit_parameter[5])        
+            p0=[Q_0,0.05,0,Q_0/(1/3),0.005,int(t.mean()/2),Q_0/(2/3),0.0005,int(t.mean()*1.5)]
+            fit_parameter, pcov = curve_fit(model_function, t, Q, p0,
+                                            bounds=([Q_0_min,n_min,t0_min]*(reservoirs+1), [Q_0_max,n_max,t0_max]*(reservoirs+1)),
+                                            maxfev=20000,
+                                            )
+
+            Q_int=model_function(t,fit_parameter[0],fit_parameter[1],fit_parameter[2],
+                                 fit_parameter[3],fit_parameter[4],fit_parameter[5],
+                                 fit_parameter[6],fit_parameter[7],fit_parameter[8]
+                                 )        
         #get the correlation
         r_cor=np.corrcoef(Q,Q_int)[0,1]
         
@@ -207,17 +229,11 @@ def fit_reservoir_function (t,Q,Q_0,
             
     #we return the results:
     return output
-        
-            
-        
-        
-        
-        
-    return fit_parameter,Q_int
 
 
 def find_recession_limbs(Q,smooth_window_size=15,
-                         minimum_recession_curve_length=10):
+                         minimum_recession_curve_length=10,
+                         split_at_inflection_points=True):
     """
     
 
@@ -272,6 +288,77 @@ def find_recession_limbs(Q,smooth_window_size=15,
     Q['section_length']=Q['section_length'].replace(section_length)
     #remove all below threshold
     Q=Q[Q['section_length']>=minimum_recession_curve_length]
+    
+    if len(Q)<minimum_recession_curve_length:
+        return Q
+    
+    
+    if split_at_inflection_points:
+        #we compute the inflection_points of the dataset
+        #https://stackoverflow.com/questions/62537703/how-to-find-inflection-point-in-python
+        d2y_dx2=np.gradient(np.gradient(Q['Q'].values.flatten()))
+        d2y_dx2=np.nan_to_num(d2y_dx2)
+        infls0 = np.where(np.diff(np.sign(d2y_dx2)))[0]
+        
+        #remove all reflection points which are too close to each other
+        infl=[infls0[0]]
+        for infl0 in infls0:
+            if infl0-infl[-1]>minimum_recession_curve_length:
+                infl.append(infl0)
+        
+        #we add the inflection points to the dataset
+        Q=Q.reset_index()
+        Q['inflection_point']=False        
+        Q.loc[infl,'inflection_point']=True
+        
+        #we make an very ugly loop which allows us to split sections by their inflection point
+        section_id_new=0
+        Q_with_inflection=pd.DataFrame()
+        for _,section in Q.groupby('section_id'):
+            #get location of inflection points
+            #section=section.reset_index()
+            inflection_ids=section.index[section['inflection_point'] == True].tolist()
+            
+            #if it zero we add and continue
+            if len(inflection_ids)==0:
+                df_subsection=section.copy()
+                df_subsection['section_id_new']=section_id_new
+                section_id_new+=1
+                Q_with_inflection=pd.concat([Q_with_inflection,section])
+                continue                
+        
+            if inflection_ids[0]-section.index[0]<minimum_recession_curve_length:
+                section.loc[inflection_ids[0],'inflection_point']=False
+                inflection_ids[0]=section.index[0]
+            if section.index[-1]-inflection_ids[-1]<minimum_recession_curve_length:
+                section.loc[inflection_ids[-1],'inflection_point']=False
+                inflection_ids[-1]=section.index[-1]
+            
+            #loop through the row ids
+            if len(inflection_ids)>1:
+                for i in range(len(inflection_ids)-1):     
+                    df_subsection=section.loc[inflection_ids[i]:inflection_ids[i+1]]
+                    df_subsection['section_id_new']=section_id_new
+                    section_id_new+=1
+                    #merge
+                    Q_with_inflection=pd.concat([Q_with_inflection,df_subsection])
+            else:
+                df_subsection=section.copy()
+                df_subsection['inflection_point']=False
+                df_subsection['section_id_new']=section_id_new
+                section_id_new+=1                
+                Q_with_inflection=pd.concat([Q_with_inflection,df_subsection])
+        
+        #rebuild the function
+        Q=Q_with_inflection.copy(deep=True)
+        Q['section_id']=Q['section_id_new']
+        Q=Q.set_index('Datum').drop(columns=['section_id_new'])
+        section_length=Q.groupby('section_id').size()
+        Q['section_length']=Q['section_id']
+        Q['section_length']=Q['section_length'].replace(section_length)
+
+    
+
     
     #replace each section length by ascending numbers (the event length)
     Q['section_time'] = Q.groupby('section_id').cumcount()
@@ -349,8 +436,9 @@ def analyse_recession_curves(Q,mrc_algorithm='demuth',
         
         #add data to the section
         for reservoir in range(0,reservoirs):
-            limb['section_n_'+str(reservoir)]=fit_parameter[2*(reservoir+1)-1]
-            limb['section_Q0_'+str(reservoir)]=fit_parameter[2*(reservoir+1)-2]
+            limb['section_n_'+str(reservoir)]=fit_parameter[3*(reservoir+1)-2]
+            limb['section_Q0_'+str(reservoir)]=fit_parameter[3*(reservoir+1)-3]
+            limb['section_x_'+str(reservoir)]=fit_parameter[3*(reservoir+1)-1]
         limb['section_corr']=r_coef
         limb['Q_interp']=limb_int
         #merge sections

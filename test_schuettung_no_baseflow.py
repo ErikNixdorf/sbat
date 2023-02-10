@@ -130,10 +130,11 @@ sbat=model(gauge_time_series=gauge_ts,
            dropna_axis=0)
 
 sbat.get_recession_curve(curve_type='discharge',plot=False,mrc_algorithm=None,
-                         minimum_limbs = 1,multiple_aquifers_per_recession=True,
-                         minimum_recession_curve_length=30)
+                         minimum_limbs = 1,maximum_reservoirs=1,
+                         minimum_recession_curve_length=20,
+                         recession_algorithm='maillet')
 
-
+a=sbat.recession_limbs_ts
 #%% We plot their results
 
 
