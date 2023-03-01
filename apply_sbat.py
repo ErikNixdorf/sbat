@@ -31,7 +31,7 @@ sbat.get_discharge_stats()
 
 #get baseflow
 sbat.get_baseflow(methods=['UKIH','Fixed'],
-                  compute_bfi=True, update_metadata=True,plot=False)
+                  compute_bfi=True, update_metadata=True,plot=True)
 
 #compute the master recession curve
 sbat.get_recession_curve(curve_type='baseflow',plot=False,

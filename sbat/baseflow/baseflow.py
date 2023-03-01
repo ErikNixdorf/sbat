@@ -226,11 +226,13 @@ def add_gauge_stats(df_data,gauge_meta,col_name='bf',decadal_stats=False):
     None.
 
     """
-    #compute the mean over all output methods
-    gauge_meta[col_name+'_mean']=float(df_data.mean())
-    gauge_meta[col_name+'_std']=float(df_data.copy().std())
-    #add coefficient of variation
-    gauge_meta[col_name+'_cv']=gauge_meta[col_name+'_std']/gauge_meta[col_name+'_mean']
+    # compute the mean and std of the dataframe
+    mean=float(df_data.mean())
+    std=float(df_data.std())
+    # add mean, std, and cv to gauge_meta
+    gauge_meta = gauge_meta.assign(
+        **{col_name+'_mean': mean, col_name+'_std': std, col_name+'_cv': std/mean}
+        )
     
     gauge_meta.index.names=['gauge']
     if decadal_stats==True:
@@ -249,11 +251,11 @@ def add_gauge_stats(df_data,gauge_meta,col_name='bf',decadal_stats=False):
         
         #change index to actual gauge
         df_decadal['gauge']=gauge_meta.index[0]
-        #merge together
-        gauge_meta=pd.concat([pd.concat([gauge_meta]*df_decadal.shape[0],ignore_index=True),df_decadal.reset_index(drop=False)],axis=1)
+        df_decadal=df_decadal.reset_index().set_index('gauge')
         
-        #reset_index
-        gauge_meta.set_index('gauge')
+        #merge
+
+        gauge_meta = gauge_meta.merge(df_decadal, how='outer', left_index=True, right_index=True)
 
         
 

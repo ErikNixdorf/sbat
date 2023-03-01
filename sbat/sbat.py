@@ -115,53 +115,34 @@ class model:
         
         #second we update the medatadata if required
         if update_metadata:
-            gauge_meta_updated=pd.DataFrame()
-            print('We update the metadata with the mean of monthly data')
-            for key in self.bf_output.keys():
-                if len(self.bf_output[key])>0 and 'monthly' in key:
-                    #loop trough all gauges
-                    output_gauges=pd.DataFrame()
-                    for gauge,subset in self.bf_output[key].groupby('gauge'):
-                        output=add_gauge_stats(subset.drop(columns=['gauge','variable']),
-                                               self.gauge_meta.loc[gauge,:].to_frame().T,
-                                               col_name=key,
-                                               decadal_stats=self.decadal_stats
-                                               )
-                        #append
-                        output_gauges=pd.concat([output_gauges,output],axis=0)
-                    if self.decadal_stats:
-                        gauge_meta_updated=pd.concat([gauge_meta_updated,output_gauges.set_index(['gauge','decade'])],axis=1)
-                    else:
-                        gauge_meta_updated=pd.concat([gauge_meta_updated,output_gauges],axis=1)
-
-                    #remove duplicate columns
-                    gauge_meta_updated = gauge_meta_updated.loc[:,~gauge_meta_updated.columns.duplicated()].copy()
-            #reset_index
-            gauge_meta_updated=gauge_meta_updated.reset_index(drop=False)
-            #the first column is the updated gauge_meta
+            #get the monthly keys
+            monthly_keys = [key for key in self.bf_output.keys() if len(self.bf_output[key]) > 0 and 'monthly' in key]
+            
+            if monthly_keys:
+                print('Updating metadata with the mean of monthly data')
+                gauge_meta_updated=pd.concat([pd.concat([add_gauge_stats(subset.drop(columns=['gauge', 'variable']), 
+                                                                self.gauge_meta.loc[gauge, :].to_frame().T, 
+                                                                col_name=key, 
+                                                                decadal_stats=self.decadal_stats,
+                                                                ).reset_index().reset_index().set_index(['index','gauge']) for gauge, subset in self.bf_output[key].groupby('gauge')]) for key in monthly_keys]
+                            ,axis=1)
+                
+            #drop duplicate columns
+            gauge_meta_updated=gauge_meta_updated.loc[:,~gauge_meta_updated.columns.duplicated()].reset_index()
+            
             self.gauge_meta=gauge_meta_updated.groupby('gauge').first()
             
-            #if decadal stats exist we save them
             if self.decadal_stats:
-                #we we have decadal data we append
-                if hasattr(self,'gauge_meta_decadal'):
-                    gauge_meta_updated=gauge_meta_updated.set_index(['gauge','decade'])
-                    new_cols=set(gauge_meta_updated.columns)-set(self.gauge_meta_decadal.columns)
-
-                    self.gauge_meta_decadal=pd.concat([self.gauge_meta_decadal,gauge_meta_updated[new_cols].copy(deep=True)],axis=1)
-
-                else:                    
-                    self.gauge_meta_decadal=gauge_meta_updated.set_index(['gauge','decade']).copy(deep=True)
-                
-     
-                #remove decadal columns
-                dec_cols=[col for col in gauge_meta_updated.columns if '_dec' in col]
-                dec_cols.append('decade')
-                self.gauge_meta=self.gauge_meta.drop(columns=dec_cols)
+                gauge_meta_decadal = gauge_meta_updated.set_index(['gauge', 'decade'])
+                if hasattr(self, 'gauge_meta_decadal'):
+                    new_cols = set(gauge_meta_decadal.columns) - set(self.gauge_meta_decadal.columns)
+                    self.gauge_meta_decadal = pd.concat([self.gauge_meta_decadal, gauge_meta_decadal[new_cols]], axis=1)
+                else:
+                    self.gauge_meta_decadal = gauge_meta_decadal.copy()
+                #clean the gauge_meta with no decades
+                self.gauge_meta = self.gauge_meta.drop(columns=[col for col in gauge_meta_updated.columns if '_dec' in col] + ['decade'])
             
-            
-
-        if plot==True:
+        if plot:
             print('plot_results')
             plot_bf_results(data=self.bf_output,meta_data=self.gauge_meta,
                             meta_data_decadal=self.gauge_meta_decadal,
@@ -173,10 +154,14 @@ class model:
             
             
         
-    #function that adds discharge statistics
+    #function that adds discharge statistics    
+
+    
     def get_discharge_stats(self,col_name='q_daily',compute_monthly=True):
         #call the gauge stats function
         data=self.gauge_ts.copy(deep=True)
+        
+        
         gauge_meta_updated=pd.DataFrame()
         for gauge,subset in data.melt(var_name='gauge',ignore_index=False).groupby('gauge'):
             
@@ -184,7 +169,7 @@ class model:
                                             decadal_stats=self.decadal_stats)
             gauge_meta_updated=pd.concat([gauge_meta_updated,output])
         
-        #the first column is the updated gauge_meta
+        #the first                  column is the updated gauge_meta
         self.gauge_meta=gauge_meta_updated.groupby('gauge').first()
         
         #if decadal stats exist we save them
@@ -192,7 +177,7 @@ class model:
         if self.decadal_stats:
             #we we have decadal data we append
             if hasattr(self,'gauge_meta_decadal'):
-                gauge_meta_updated=gauge_meta_updated.set_index(['gauge','decade'])
+                gauge_meta_updated=gauge_meta_updated.reset_index().set_index(['gauge','decade'])
                 new_cols=set(gauge_meta_updated.columns)-set(self.gauge_meta_decadal.columns)
                 self.gauge_meta_decadal=pd.concat([self.gauge_meta_decadal,gauge_meta_updated[new_cols].copy(deep=True)],axis=1)
             else:                    
