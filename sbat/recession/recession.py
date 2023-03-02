@@ -39,26 +39,30 @@ def get_rmse(simulations, evaluation):
 
 def clean_gauge_ts(Q):
     """
-    Cleans the gauge time series from nans
+    Cleans the gauge time series from NaNs
 
     Parameters
     ----------
-    Q : TYPE
-        DESCRIPTION.
+    Q : pandas.Series
+        Gauge time series.
 
     Returns
     -------
-    Q : TYPE
-        DESCRIPTION.
+    Q : pandas.Series
+        Cleaned gauge time series.
+
+    Raises
+    ------
+    ValueError
+        If there are no valid data.
 
     """
     #remove starting and ending nan    
-    first_idx = Q.first_valid_index()
-    last_idx = Q.last_valid_index()
+    first_idx, last_idx = Q.first_valid_index(), Q.last_valid_index()
     Q=Q.loc[first_idx:last_idx]
     
     #if there are only nan we do not need the data:
-    if Q.isna().sum()==len(Q):
+    if Q.isna().all():
         raise ValueError('No Valid data, return None')
     return Q
 
@@ -154,68 +158,57 @@ def fit_reservoir_function (t,Q,Q_0,
     """
     
     #define the acceptable maximum of partial sums
-    max_sums=3
+    max_sums = 3
     
     
     # we first check whether the user requests more than the maximum of three partial sums
-    if no_of_partial_sums>3:
-        print('Maximum of partial sums is three, we reduce to allowed maximum')
-        no_of_partial_sums=max_sums
-    
-    #next we overwrite Q_0 if it is not constant, this makes only sene if there is one reservoir only
-    if constant_Q_0 and no_of_partial_sums==1:
-        Q_0_min=Q_0*0.9999
-        Q_0_max=Q_0*1.0001
-    else:        
-        Q_0_min=0.001
-        Q_0_max=1000
+    if no_of_partial_sums > max_sums:
+        print(f"Maximum of partial sums is {max_sums}, reducing to allowed maximum.")
+        no_of_partial_sums = max_sums
         
-    #define also n min and n max
-    n_min=10e-10
-    n_max=10
+  
+    #next we overwrite Q_0 if it is not constant, this makes only sene if there is one reservoir only
+    if constant_Q_0 and no_of_partial_sums == 1:
+        Q_0_min = Q_0 * 0.9999
+        Q_0_max = Q_0 * 1.0001
+    else:
+        Q_0_min = 0.001
+        Q_0_max = 1000
+        
+    # Define n_min and n_max
+    n_min = 10e-10
+    n_max = 10
     
-    #we further define t0 whichh defines the time lag of certain reservoir
-    t0_min=0
-    t0_max=t.max()
+    # Define t0_min and t0_max, which define the time lag of certain reservoir
+    t0_min = 0
+    t0_max = t.max()+0.0000001
     
     # depending on the number of number of reservoirs and the curve type we do a different fitting
     r_cor_old=0.0001
-    output=tuple()
+    output=()
     for reservoirs in range(0,no_of_partial_sums):
         if reservoirs>no_of_partial_sums:
             continue
         # we calculate for each individual case
         model_function=globals()[recession_algorithm+'_'+str(reservoirs+1)]
         
+        # Define the initial parameters for curve_fit
+        if reservoirs == 0:
+            p0 = [Q_0, 0.05, 0]
+        elif reservoirs == 1:
+            p0 = [Q_0, 0.05, 0, Q_0/2, 0.005, int(t.mean())]
+        elif reservoirs == 2:
+            p0 = [Q_0, 0.05, 0, Q_0/(1/3), 0.005, int(t.mean()/2), Q_0/(2/3), 0.0005, int(t.mean()*1.5)]
+            
+            # Define the bounds for curve_fit
+        bounds_min = [Q_0_min, n_min, t0_min] * (reservoirs+1)
+        bounds_max = [Q_0_max, n_max, t0_max] * (reservoirs+1)
+        bounds = (bounds_min, bounds_max)
 
-        #here I do not know an elegant way how to call it, maybe with *args, but I am not sure whether curve fit will accept it
-        if reservoirs==0:
-            p0=[Q_0,0.05,0]
-            fit_parameter, pcov = curve_fit(model_function, t, Q,p0=p0, 
-                                            bounds=([Q_0_min,n_min,t0_min], [Q_0_max,n_max,t0_min+0.0000001]),
-                                            maxfev=5000,
-                                            )            
-            Q_int=model_function(t,fit_parameter[0],fit_parameter[1],fit_parameter[2])
-        elif reservoirs==1:
-            p0=[Q_0,0.05,0,Q_0/2,0.005,int(t.mean())]
-            fit_parameter, pcov = curve_fit(model_function, t, Q,p0,
-                                            bounds=([Q_0_min,n_min,t0_min]*(reservoirs+1), [Q_0_max,n_max,t0_max]*(reservoirs+1)),
-                                            maxfev=5000,
-                                            )  
-            Q_int=model_function(t,fit_parameter[0],fit_parameter[1],fit_parameter[2],
-                                 fit_parameter[3],fit_parameter[4],fit_parameter[5]
-                                 )
-        elif reservoirs==2:
-            p0=[Q_0,0.05,0,Q_0/(1/3),0.005,int(t.mean()/2),Q_0/(2/3),0.0005,int(t.mean()*1.5)]
-            fit_parameter, pcov = curve_fit(model_function, t, Q, p0,
-                                            bounds=([Q_0_min,n_min,t0_min]*(reservoirs+1), [Q_0_max,n_max,t0_max]*(reservoirs+1)),
-                                            maxfev=20000,
-                                            )
-
-            Q_int=model_function(t,fit_parameter[0],fit_parameter[1],fit_parameter[2],
-                                 fit_parameter[3],fit_parameter[4],fit_parameter[5],
-                                 fit_parameter[6],fit_parameter[7],fit_parameter[8]
-                                 )        
+        # Fit the function
+        fit_parameter, pcov = curve_fit(model_function, t, Q, p0=p0, bounds=bounds, maxfev=20000)
+        Q_int = model_function(t, *fit_parameter)
+        
         #get the correlation
         r_cor=np.corrcoef(Q,Q_int)[0,1]
         
@@ -235,28 +228,46 @@ def find_recession_limbs(Q,smooth_window_size=15,
                          minimum_recession_curve_length=10,
                          split_at_inflection_points=True):
     """
-    
+    Identifies and extracts recession limbs from a time series of streamflow.
 
     Parameters
     ----------
-    Q : TYPE
-        DESCRIPTION.
-    smooth_window_size : TYPE, optional
-        DESCRIPTION. 0.05*len(Q) is recommended
-    minimum_recession_curve_length : TYPE, optional
-        DESCRIPTION. The default is 10.
-    multiple_aquifers_per_recession : TYPE, optional
-        DESCRIPTION. The default is True.
+    Q : pandas.DataFrame or pandas.Series
+        A pandas DataFrame or Series object containing a time series of streamflow data, with a DateTimeIndex
+        as the index and a column named 'Q' containing the streamflow values.
+    smooth_window_size : int, optional
+        The size of the window (in number of observations) used for smoothing the streamflow data using a 
+        Savitzky-Golay filter. The default value is 15, which corresponds to a smoothing window size of 5% of 
+        the length of the streamflow time series.
+    minimum_recession_curve_length : int, optional
+        The minimum length (in number of observations) of a recession limb. Recession limbs shorter than this 
+        value will be discarded. The default value is 10.
+    split_at_inflection_points : bool, optional
+        If True, the function will attempt to split recession limbs at inflection points, i.e., points where the
+        second derivative of the streamflow curve changes sign. The default value is True.
+
+    Returns
+    -------
+    pandas.DataFrame
+        A pandas DataFrame containing the extracted recession limbs, with the following columns:
+        - 'Q': the streamflow values of the recession limb
+        - 'section_id': an integer identifier for the recession limb
+        - 'section_length': the length (in number of observations) of the recession limb
+        - 'section_time': the time (in number of observations) elapsed since the start of the recession limb
+        - 'max_flow': the maximum streamflow value within the recession limb
 
     Raises
     ------
     ValueError
-        DESCRIPTION.
+        If the input data contains no recession limbs (i.e., all sections are ascending or constant).
 
-    Returns
-    -------
-    Q : TYPE
-        DESCRIPTION.
+    Notes
+    -----
+    The function works by first smoothing the streamflow data using a Savitzky-Golay filter, then identifying 
+    all sections of the smoothed streamflow curve with a negative slope (i.e., recession limbs). The function 
+    then discards any sections shorter than the minimum length and optionally attempts to split the remaining 
+    sections at inflection points. Finally, the function computes various statistics for each extracted 
+    recession limb, including the maximum flow rate, and returns them as a pandas DataFrame.
 
     """
     #%% Clean
@@ -289,7 +300,7 @@ def find_recession_limbs(Q,smooth_window_size=15,
     #remove all below threshold
     Q=Q[Q['section_length']>=minimum_recession_curve_length]
     
-    if len(Q)<minimum_recession_curve_length:
+    if len(Q.index) < minimum_recession_curve_length:
         return Q
     
     
@@ -314,43 +325,47 @@ def find_recession_limbs(Q,smooth_window_size=15,
         #we make an very ugly loop which allows us to split sections by their inflection point
         section_id_new=0
         Q_with_inflection=pd.DataFrame()
+        # initialize empty list for subsection DataFrames
+        subsection_dfs = []
         for sec_id,section in Q.groupby('section_id'):
-            if sec_id==745:
-                print('ok')
             
-            #get location of inflection points
-            #section=section.reset_index()
-            inflection_ids=section.index[section['inflection_point'] == True].tolist()
-            
-            #if it zero we add and continue
-            if len(inflection_ids)==0:
-                df_subsection=section.copy()
-                df_subsection['section_id_new']=section_id_new
-                section_id_new+=1
-                Q_with_inflection=pd.concat([Q_with_inflection,df_subsection])
-                continue                
+            # get location of inflection points
+            inflection_ids = section.index[section['inflection_point'] == True].tolist()
         
-            if inflection_ids[0]-section.index[0]<minimum_recession_curve_length:
-                section.loc[inflection_ids[0],'inflection_point']=False
-                inflection_ids[0]=section.index[0]
-            if section.index[-1]-inflection_ids[-1]<minimum_recession_curve_length:
-                section.loc[inflection_ids[-1],'inflection_point']=False
-                inflection_ids[-1]=section.index[-1]
+            # handle sections with no inflection points
+            if len(inflection_ids) == 0:
+                df_subsection = section.copy()
+                df_subsection['section_id_new'] = section_id_new
+                section_id_new += 1
+                subsection_dfs.append(df_subsection)
             
-            #loop through the row ids
-            if len(inflection_ids)>1:
-                for i in range(len(inflection_ids)-1):     
-                    df_subsection=section.loc[inflection_ids[i]:inflection_ids[i+1]]
-                    df_subsection['section_id_new']=section_id_new
-                    section_id_new+=1
-                    #merge
-                    Q_with_inflection=pd.concat([Q_with_inflection,df_subsection])
             else:
-                df_subsection=section.copy()
-                df_subsection['inflection_point']=False
-                df_subsection['section_id_new']=section_id_new
-                section_id_new+=1                
-                Q_with_inflection=pd.concat([Q_with_inflection,df_subsection])
+                # handle sections with inflection points
+        
+                # handle sections with inflection points
+                if inflection_ids[0] - section.index[0] < minimum_recession_curve_length:
+                    section.loc[inflection_ids[0], 'inflection_point'] = False
+                    inflection_ids[0] = section.index[0]
+                if section.index[-1] - inflection_ids[-1] < minimum_recession_curve_length:
+                    section.loc[inflection_ids[-1], 'inflection_point'] = False
+                    inflection_ids[-1] = section.index[-1]
+            
+                # loop through the row ids
+                if len(inflection_ids) > 1:
+                    for i in range(len(inflection_ids) - 1):
+                        df_subsection = section.loc[inflection_ids[i]:inflection_ids[i+1]]
+                        df_subsection['section_id_new'] = section_id_new
+                        section_id_new += 1
+                        subsection_dfs.append(df_subsection)
+                else:
+                    df_subsection = section.copy()
+                    df_subsection['inflection_point'] = False
+                    df_subsection['section_id_new'] = section_id_new
+                    section_id_new += 1
+                    subsection_dfs.append(df_subsection)
+                    
+        # concatenate subsection DataFrames into a single DataFrame
+        Q_with_inflection = pd.concat(subsection_dfs)
         
         #rebuild the function
         Q=Q_with_inflection.copy(deep=True)
@@ -386,29 +401,36 @@ def analyse_recession_curves(Q,mrc_algorithm='demuth',
                              minimum_limbs=20,
                              ):
     """
-    
+    Analyze recession curves using the specified algorithm and parameters.
 
     Parameters
     ----------
-    Q : TYPE
-        DESCRIPTION.
-    mrc_algorithm : TYPE, optional
-        DESCRIPTION. The default is 'demuth'.
-    recession_algorithm : TYPE, optional
-        DESCRIPTION. The default is 'boussinesq'.
-    moving__average_filter_steps : TYPE, optional
-        DESCRIPTION. The default is 3.
-    minimum_recession_curve_length : TYPE, optional
-        DESCRIPTION. The default is 10.
-
+    Q : pandas.DataFrame or pandas.Series
+        A time series of discharge values. If a pandas.Series is provided, it must have a name
+        and will be converted to a single-column pandas.DataFrame with the name 'Q'.
+    mrc_algorithm : str, optional
+        The algorithm used to compute the master recession curve. The default is 'demuth'.
+    recession_algorithm : str, optional
+        The algorithm used to fit individual recession curves. The default is 'boussinesq'.
+    smooth_window_size : int, optional
+        The size of the window used to smooth the discharge data. The default is 3.
+    minimum_recession_curve_length : int, optional
+        The minimum length of a recession curve in the input data. The default is 10.
+    define_falling_limb_intervals : bool, optional
+        Whether to compute the intervals of the falling limbs prior to fitting. The default is True.
+    maximum_reservoirs : int, optional
+        The maximum number of reservoirs allowed in each limb of the recession curve. The default is 3.
+    minimum_limbs : int, optional
+        The minimum number of limbs required for the input data. The default is 20.
 
     Returns
     -------
-    TYPE
-        DESCRIPTION.
-    TYPE
-        DESCRIPTION.
-
+    pandas.DataFrame or None
+        A DataFrame containing the fitted recession curves and associated parameters, or None
+        if there are no recession curves within the input data.
+    tuple of None or pandas.Series
+        A tuple containing the master recession curve fit parameters, the performance of the fit,
+        and None (since this functionality is not yet implemented).
     """
 
     #%% we define output mrc_data, first two are master curve fit para, third is performance
@@ -433,24 +455,33 @@ def analyse_recession_curves(Q,mrc_algorithm='demuth',
     
     #%% if mrc_algorithm is zero, we just compute_individual branches
    #%% if we are not interested in a master_recession curve we just calculate single coefficients
-    limb_sections=pd.DataFrame()
+    limb_sections_list=list()
     for _,limb in Q.groupby('section_id'):
             #raise ValueError('Implementation for Christoph is Missing')
-        fit_parameter,limb_int,r_coef,reservoirs=fit_reservoir_function(limb['section_time'].values, limb['Q'].values, limb['Q0'].iloc[0],constant_Q_0=True,
-                                      recession_algorithm=recession_algorithm,no_of_partial_sums=maximum_reservoirs)            
+        fit_parameter,limb_int,r_coef,reservoirs=fit_reservoir_function(limb['section_time'].values, 
+                                                                        limb['Q'].values, 
+                                                                        limb['Q0'].iloc[0],
+                                                                        constant_Q_0=True,
+                                                                        recession_algorithm=recession_algorithm,
+                                                                        no_of_partial_sums=maximum_reservoirs
+                                                                        )            
 
         
         #add data to the section
-        for reservoir in range(0,reservoirs):
-            limb['section_n_'+str(reservoir)]=fit_parameter[3*(reservoir+1)-2]
-            limb['section_Q0_'+str(reservoir)]=fit_parameter[3*(reservoir+1)-3]
-            limb['section_x_'+str(reservoir)]=fit_parameter[3*(reservoir+1)-1]
-        limb['section_corr']=r_coef
-        limb['Q_interp']=limb_int
+        for reservoir in range(reservoirs):
+            limb.loc[:, f'section_n_{reservoir}'] = fit_parameter[3*(reservoir+1)-2]
+            limb.loc[:, f'section_Q0_{reservoir}'] = fit_parameter[3*(reservoir+1)-3]
+            limb.loc[:, f'section_x_{reservoir}'] = fit_parameter[3*(reservoir+1)-1]
+        limb.loc[:, 'section_corr'] = r_coef
+        limb.loc[:, 'Q_interp'] = limb_int
         #merge sections
-        limb_sections=pd.concat([limb_sections,limb])
+        limb_sections_list.append(limb)
+    # Concatenate all the groups in the list into a single DataFrame
+    limb_sections = pd.concat(limb_sections_list, ignore_index=True).reset_index()
+    # Drop the old index column
+    limb_sections.drop(columns='index', inplace=True)
     #reset index and overwrite Q
-    Q=limb_sections.copy().reset_index()
+    Q=limb_sections
     
     #%% master Recession Curve, either matching Strip or correlation Method
     #we first find the inversion function to stick the recession curves together

@@ -240,7 +240,7 @@ class Model:
         def add_series_id(df, series_id):
             return df.assign(series_id=series_id)
         
-        print('Start Recession Curve Analysis')
+        logging.info('Started Recession Curve Analysis')
         #first we create a new object where we store the time_series
         self.recession_limbs_ts=pd.DataFrame()
         
@@ -255,8 +255,8 @@ class Model:
                 #wide to long
                 Q=Q.pivot(index='Datum',columns='gauge',values='value').copy()
         
-        if curve_type=='discharge':
-            Q=self.gauge_ts
+        elif curve_type == 'discharge':
+            Q = self.gauge_ts
             
         if self.decadal_stats:
             Q['decade']=[x[0:3]+'5' for x in Q.index.strftime('%Y')]
@@ -265,7 +265,7 @@ class Model:
             
         
         #start the recession
-        logging.info('Started Recession Curve Analysis')
+        metrics=list()
         for decade,Q_decade in Q.groupby('decade'):
             #drop all gauges where no data is within the decade
             Q_decade = Q_decade.dropna(axis=1, how='all').drop(columns='decade')
@@ -278,24 +278,41 @@ class Model:
                                              maximum_reservoirs=maximum_reservoirs,minimum_limbs=minimum_limbs
                                             ), axis=0, result_type='expand')
             #get the results
-            Q0_mrc, n_mrc, r_mrc = recession_results.iloc[1,:]
+            recession_results = recession_results.dropna(axis=1)
+            metric=pd.DataFrame.from_records(recession_results.iloc[1,:],
+                                              columns=['Q0_mrc', 'n_mrc', 'pearson_r'],
+                                              index=recession_results.columns)
+            
+            metric['decade']=decade
+            metric=metric.reset_index().set_index(['gauge','decade'])
             recession_limbs = recession_results.iloc[0,:]
             
             for i in recession_limbs.index:
                 recession_limbs[i]['gauge']=i
-            
+            """
             if self.decadal_stats:
-                self.gauge_meta_decadal.loc[(recession_limbs.index, decade), ['Q0_mrc', 'n_mrc', 'pearson_r']] = [Q0_mrc, n_mrc, r_mrc]
+                
+                self.gauge_meta_decadal=pd.concat([self.gauge_meta_decadal,metrics],axis=1)
             else:
-                self.gauge_meta.loc[recession_limbs.index, ['Q0_mrc', 'n_mrc', 'pearson_r']] = [Q0_mrc, n_mrc, r_mrc]
-            
+                self.gauge_meta=pd.concat([self.gauge_meta,metrics],axis=1)
+            """
             #we finally create a long version
             recession_limbs=pd.concat(list(recession_limbs),axis=0)            
             recession_limbs['decade']=decade
             recession_limbs['mrc_algorithm'] = mrc_algorithm
             recession_limbs['curve_type'] = curve_type
             recession_limbs['recession_algorithm'] = recession_algorithm
-            self.recession_limbs_ts = pd.concat([self.recession_limbs_ts,recession_limbs], axis=1, sort=False)
+
+            self.recession_limbs_ts = pd.concat([self.recession_limbs_ts,recession_limbs], axis=0, sort=False)
+            metrics.append(metric)
+        
+        #append the metrics data to the metadata
+        df_metrics=pd.concat(metrics,axis=0)
+        if self.decadal_stats:            
+            self.gauge_meta_decadal=pd.concat([self.gauge_meta_decadal,df_metrics],axis=1)
+        else:
+
+            self.gauge_meta=pd.concat([self.gauge_meta,df_metrics.reset_index().set_index('gauge').drop(columns=['decade'])],axis=1)        
 
         #reduce the data for gauge meta
         #self.gauge_meta=self.gauge_meta_decadal.groupby('gauge').first()
@@ -303,7 +320,7 @@ class Model:
 
             
         if plot==True:
-            print('plot_results')
+            logging.info('plot_results')
             plot_recession_results(meta_data=self.gauge_meta,meta_data_decadal=self.gauge_meta_decadal,
                                 parameters_to_plot=['Q0_mrc','pearson_r','n'],
                                 streams_to_plot=['spree','lausitzer_neisse','schwarze_elster'],
@@ -312,13 +329,28 @@ class Model:
                                 )
             
             
-    def get_waterbalance(self,
-                         network_geometry=gpd.GeoDataFrame(),
-                         tributary_connections=pd.DataFrame(),
-                         distributary_connections=pd.DataFrame(),
-                         flow_type='baseflow',
-                         confidence_acceptance_level=0.05,
-                         ts_analysis_option='daily'):
+    def get_water_balance(self,
+                           network_geometry: gpd.GeoDataFrame,
+                           tributary_connections: pd.DataFrame,
+                           distributary_connections: pd.DataFrame,
+                           flow_type: str = 'baseflow',
+                           confidence_acceptance_level: float = 0.05,
+                           time_series_analysis_option: str = 'daily',
+                           ):
+        """Calculate water balance per section.
+    
+        Args:
+            network_geometry: A GeoDataFrame representing the network.
+            tributary_connections: A DataFrame representing tributary connections.
+            distributary_connections: A DataFrame representing distributary connections.
+            flow_type: A string representing the type of flow. Possible values are 'baseflow' and 'discharge'.
+            confidence_acceptance_level: A float representing the confidence acceptance level.
+            ts_analysis_option: A string representing the time series analysis option. Possible values are 'daily' and 'monthly'.
+    
+        Returns:
+            A tuple containing three objects: a DataFrame representing the sections metadata,
+            a DataFrame representing the water balance for each section, and a GeoDataFrame representing the network map.
+        """
         
         print('We analyse the Water  Balance per Section')
         
@@ -329,8 +361,8 @@ class Model:
                 raise ValueError('Calculate Baseflow first before baseflow water balance can be calculated')
             
             #prove whether explicitely daily values should be calculate otherwise we take monthly    
-            if ts_analysis_option == 'daily' and 'bf'+ts_analysis_option in self.bf_output.keys():
-                data_ts=self.bf_output['bf'+ts_analysis_option].copy()
+            if time_series_analysis_option == 'daily' and 'bf_'+time_series_analysis_option in self.bf_output.keys():
+                data_ts=self.bf_output['bf_daily'].copy()
             else:
                 print('Monthly Averaged values are used')
                 data_ts=self.bf_output['bf_monthly'].copy()
@@ -353,7 +385,7 @@ class Model:
                                   tributary_connections=tributary_connections,
                                   distributary_connections=distributary_connections,
                                   confidence_acceptance_level=confidence_acceptance_level,
-                                  ts_analyse_option=ts_analysis_option)
+                                  time_series_analysis_option=time_series_analysis_option)
         
         return sections_meta,q_diff,gdf_network_map
 

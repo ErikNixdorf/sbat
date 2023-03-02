@@ -15,30 +15,40 @@ from copy import deepcopy
 from shapely.geometry import Point, MultiPoint, LineString,MultiLineString
 from shapely.ops import nearest_points,cascaded_union
 import secrets
-
-def multilinestring_to_singlelinestring(mpt_multiline,starting_point,search_radius=2000,min_distance=200):
+import logging
+from typing import Dict
+def multilinestring_to_singlelinestring(
+        multilinestring, 
+        start_point, 
+        search_radius: float = 2000, 
+        min_distance: float = 200,
+    ):
     """
-    
+    Converts a multilinestring to a single linestring starting from a given point.
 
     Parameters
     ----------
-    mpt_multiline : Vertices of the Points of which the Multilinestring consistsTYPE
-        DESCRIPTION.
-    starting_point : Start point from where to check for contigous closest distance, e.g a river outlet
-        DESCRIPTION.
+    multilinestring : shapely.geometry.MultiLineString
+        The vertices of the points of which the multilinestring consists.
+    start_point : shapely.geometry.Point
+        The starting point from where to check for contiguous closest distance, e.g a river outlet.
+    search_radius : float, optional
+        The maximum distance to search for the next closest point, by default 2000.
+    min_distance : float, optional
+        The minimum distance required to accept a point as the next closest point, by default 200.
 
     Returns
     -------
-    sorted_point_bag. Sorted Vertices
-
+    List[shapely.geometry.Point]
+        The sorted vertices of the single linestring.
     """
-
+    #start logging
+    logger = logging.getLogger(__name__)
     #one annoything is that the Neisse River is not a nicely sorted linestring, so we need to resort all vertices, from downstream to upstream
-    closest_point=deepcopy(starting_point)
-    unsorted_point_bag=deepcopy(mpt_multiline)
-    sorted_point_bag=[starting_point]
+    closest_point=deepcopy(start_point)
+    sorted_point_bag=[start_point]
     #first remove the start point from the bag
-    unsorted_point_bag=unsorted_point_bag.difference(closest_point)
+    unsorted_point_bag=multilinestring.difference(closest_point)
     #start to loop
     for iteration in range(0,len(unsorted_point_bag)):
         #get the newest closest point
@@ -48,7 +58,7 @@ def multilinestring_to_singlelinestring(mpt_multiline,starting_point,search_radi
         
         #if distance is too close remove point and continue
         if pp_distance<min_distance:
-            print('Points to close, will be removed')
+            logger.info(f"Points too close ({pp_distance:.2f}m), removing point")           
             unsorted_point_bag=unsorted_point_bag.difference(closest_point_updated)
             continue
         
@@ -59,10 +69,8 @@ def multilinestring_to_singlelinestring(mpt_multiline,starting_point,search_radi
             sorted_point_bag.append(closest_point_updated)
             closest_point=deepcopy(closest_point_updated)
         else:
-            print('Closest Point too far (',str(search_radius), 'm) from existing line, probably a branch',end='')
-            print('Loop is stopped at iteration ',str(iteration), ', try to increase resolution to avoid')
-            #gpd.GeoDataFrame(geometry=[closest_point],crs='epsg:25833').to_file('closest.shp')
-            #gpd.GeoDataFrame(geometry=[closest_point_updated],crs='epsg:25833').to_file('closest_update.shp')
+            logger.info(f"Closest point too far ({pp_distance:.2f}m) from existing line, probably a branch")
+            logger.debug(f"Loop stopped at iteration {iteration}, try to increase resolution to avoid")
             break
     return sorted_point_bag         
 
@@ -72,8 +80,6 @@ def generate_upstream_network(gauge_meta=pd.DataFrame(),tributary_connections=pd
                               distributary_connections=pd.DataFrame()):
     
     gauges_connection_dict=dict()
-    
-
     
     
     #%% The Idea is we loop trough the gauges, find the upstream stream and calculate the section water balance
@@ -308,29 +314,29 @@ def calculate_network_balance(ts_data=pd.DataFrame(),
     return sections_meta,q_diff
 
 
-def map_network_sections(network_dict=dict(),
-                     gauge_meta=pd.DataFrame(),
-                     network=gpd.GeoDataFrame()):
+def map_network_sections(
+    network_dict: Dict, 
+    gauge_meta: pd.DataFrame, 
+    network: gpd.GeoDataFrame
+    ):
     """
-    
-
     Parameters
     ----------
-    network_dict : TYPE, optional
-        DESCRIPTION. The default is dict().
-    gauge_meta : TYPE, optional
-        DESCRIPTION. The default is pd.DataFrame().
-    network_geometry : TYPE, optional
-        DESCRIPTION. The default is gpd.GeoDataFrame().
+    network_dict : dict
+        A dictionary containing the gauge sections.
+    gauge_meta : pd.DataFrame
+        A DataFrame containing the metadata for the gauges.
+    network : gpd.GeoDataFrame
+        A GeoDataFrame containing the river network.
 
     Returns
     -------
-    gdf_balances : TYPE
-        DESCRIPTION.
-
+    gdf_balances : gpd.GeoDataFrame
+        A GeoDataFrame containing the sections of the river network.
     """
     
     gdf_balances=gpd.GeoDataFrame()
+    
     #%% We will loop through the gauge sections and extract the relevant stream reaches and clip them 
     for _,gauge in network_dict.items():
         #first we get the line within the main reach
@@ -443,7 +449,7 @@ def map_network_sections(network_dict=dict(),
 
 
 #add a function for time series manipulation
-def aggregate_time_series(data_ts=pd.DataFrame(),analyse_option='overall_mean'):
+def aggregate_time_series(data_ts,analyse_option='overall_mean'):
     
     if analyse_option is None:
         print('No data aggregation option select, continue with original time series')
@@ -459,27 +465,19 @@ def aggregate_time_series(data_ts=pd.DataFrame(),analyse_option='overall_mean'):
     elif analyse_option=='annual_mean':
         ts_stats=data_ts.resample('Y').mean()
 
-        ts_stats.index=ts_stats.index.strftime("%Y-%m-%d")
-
     elif analyse_option=='summer_mean':
-        print('Gets data for month June bis September')
-        data_ts['season'] = data_ts.index.month.map({
-        12: 0, 1: 0, 2: 0,
-        3: 0, 4: 0, 5: 0,
-        6: 1, 7: 1, 8: 1, 9: 1,
-        10: 0, 11: 0}
-            )
-        #reduce to summer only
-        data_ts=data_ts[data_ts['season']==1]        
-        ts_stats=data_ts.resample('Y').mean()
-        ts_stats.index=ts_stats.index.strftime("%Y-%m-%d")
-
+        print('Calculating summer mean (June to September)')
+        ts_stats = data_ts.loc[data_ts.index.month.isin([6, 7, 8, 9])].resample('Y').mean()
 
     #daily calculations    
     elif analyse_option=='daily':
+        print('Calculating daily statistics')
         ts_stats=data_ts.copy()
-        ts_stats.index=ts_stats.index.strftime("%Y-%m-%d")
-
+    else:
+        print('Invalid aggregation option selected, continuing with original time series')
+        return data_ts
+    
+    ts_stats.index=ts_stats.index.strftime("%Y-%m-%d")
     
     return ts_stats
 
@@ -491,7 +489,7 @@ def get_section_water_balance(gauge_data=pd.DataFrame(),
                           tributary_connections=pd.DataFrame(),
                           distributary_connections=pd.DataFrame(),
                           confidence_acceptance_level=0.05,
-                          ts_analyse_option='overall_mean',
+                          time_series_analysis_option='overall_mean',
                               ):
     """
     
@@ -523,7 +521,7 @@ def get_section_water_balance(gauge_data=pd.DataFrame(),
     
 
     #%% We do some small data manipulations
-    ts_stats=aggregate_time_series(data_ts=data_ts,analyse_option=ts_analyse_option)
+    ts_stats=aggregate_time_series(data_ts=data_ts,analyse_option=time_series_analysis_option)
     
     #synchrnonize our datasets
     gauge_data=gauge_data.loc[gauge_data.index.isin(ts_stats.columns),:]

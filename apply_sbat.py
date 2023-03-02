@@ -34,19 +34,17 @@ sbat.get_baseflow(methods=['UKIH','Fixed'],
                   compute_bfi=True, update_metadata=True,plot=False)
 
 #compute the master recession curve
+
 sbat.get_recession_curve(curve_type='baseflow',plot=False,
                          mrc_algorithm='demuth',
                          recession_algorithm='boussinesq',
                          maximum_reservoirs=1)
-haha
-a=sbat.recession_limbs_ts
 
-"""
-sections_meta,q_diff,gdf_network_map = sbat.get_waterbalance(network_geometry=gpd.read_file(os.path.join(os.path.dirname(__file__),'input','Network_z.shp')),
+sections_meta,q_diff,gdf_network_map = sbat.get_water_balance(network_geometry=gpd.read_file(os.path.join(os.path.dirname(__file__),'input','Network_z.shp')),
                                                              tributary_connections=pd.read_csv(os.path.join(os.path.dirname(__file__),'input','zufluesse.csv')),
                                                              distributary_connections=pd.read_csv(os.path.join(os.path.dirname(__file__),'input','abfluesse.csv')),
                                                              flow_type='baseflow',
                                                              confidence_acceptance_level=0.05,
-                                                             ts_analysis_option='daily')
-"""
+                                                             time_series_analysis_option='summer_mean')
+
 
