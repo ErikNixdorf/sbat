@@ -314,7 +314,10 @@ def find_recession_limbs(Q,smooth_window_size=15,
         #we make an very ugly loop which allows us to split sections by their inflection point
         section_id_new=0
         Q_with_inflection=pd.DataFrame()
-        for _,section in Q.groupby('section_id'):
+        for sec_id,section in Q.groupby('section_id'):
+            if sec_id==745:
+                print('ok')
+            
             #get location of inflection points
             #section=section.reset_index()
             inflection_ids=section.index[section['inflection_point'] == True].tolist()
@@ -324,7 +327,7 @@ def find_recession_limbs(Q,smooth_window_size=15,
                 df_subsection=section.copy()
                 df_subsection['section_id_new']=section_id_new
                 section_id_new+=1
-                Q_with_inflection=pd.concat([Q_with_inflection,section])
+                Q_with_inflection=pd.concat([Q_with_inflection,df_subsection])
                 continue                
         
             if inflection_ids[0]-section.index[0]<minimum_recession_curve_length:
@@ -364,7 +367,8 @@ def find_recession_limbs(Q,smooth_window_size=15,
     Q['section_time'] = Q.groupby('section_id').cumcount()
     
     #get the largest discharge for each sedgment
-    Q0= Q[['Q','section_id']].groupby('section_id').max().squeeze()
+
+    Q0= Q[['Q','section_id']].groupby('section_id').max().to_dict()['Q']
     Q['Q0']=Q['section_id'].replace(Q0)
     Q['Q0_inv']=1/Q['Q0']           
 
@@ -379,6 +383,7 @@ def analyse_recession_curves(Q,mrc_algorithm='demuth',
                              minimum_recession_curve_length=10,
                              define_falling_limb_intervals=True,
                              maximum_reservoirs=3,
+                             minimum_limbs=20,
                              ):
     """
     
@@ -407,7 +412,7 @@ def analyse_recession_curves(Q,mrc_algorithm='demuth',
     """
 
     #%% we define output mrc_data, first two are master curve fit para, third is performance
-    mrc_out=tuple((np.nan,np.nan,np.nan))
+    mrc_out=tuple((None,None,None))
     
     if isinstance(Q,pd.Series):
         Q=Q.rename('Q').to_frame()    
@@ -421,8 +426,9 @@ def analyse_recession_curves(Q,mrc_algorithm='demuth',
                                      minimum_recession_curve_length=minimum_recession_curve_length)
     
     #if there are no falling limbs within the interval we just return the data
-    if len(Q)==0:
-        print('No Recession limb within the dataset')        
+    if len(Q)==0 or len(Q['section_id'].unique())<minimum_limbs:
+        print('No Recession limb within the dataset')
+        Q=None        
         return Q,mrc_out
     
     #%% if mrc_algorithm is zero, we just compute_individual branches

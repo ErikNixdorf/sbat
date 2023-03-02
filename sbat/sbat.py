@@ -6,54 +6,56 @@ import os
 import geopandas as gpd
 import pandas as pd
 import numpy as np
+from typing import Optional
+import logging
 from .baseflow.baseflow import compute_baseflow,add_gauge_stats,plot_bf_results
 from .recession.recession import analyse_recession_curves,plot_recession_results
 from .waterbalance.waterbalance import get_section_water_balance
 from datetime import datetime
-class model:
+class Model:
     def __init__(self,
                  gauge_time_series=pd.DataFrame(),
                  gauge_network=gpd.GeoDataFrame(),
                  gauge_metadata=pd.DataFrame(),                 
-                 output_dir=None,valid_datapairs_only=True,
-                 decadal_stats=True,
-                 start_date='1990-01-01',
-                 end_date='2021-12-31',dropna_axis=0):
+                 output_dir: Optional[str] = None,
+                 valid_datapairs_only=True,
+                 decadal_stats: bool = True,
+                 start_date: str = "1990-01-01",
+                 end_date: str = "2021-12-31",
+                 dropna_axis: Optional[int] = None,
+                 ):
         """
+        A class for processing gauge time series data.
         
-
         Parameters
         ----------
-        gauge_time_series : TYPE, optional
-            DESCRIPTION. The default is pd.DataFrame().
-        gauge_network : TYPE, optional
-            DESCRIPTION. The default is gpd.GeoDataFrame().
-        gauge_metadata : TYPE, optional
-            DESCRIPTION. The default is pd.DataFrame().
-        output_dir : TYPE, optional
-            DESCRIPTION. The default is None.
-        valid_datapairs_only : TYPE, optional
-            DESCRIPTION. The default is True.
-        decadal_stats : TYPE, optional
-            DESCRIPTION. The default is True.
-        start_date : TYPE, optional
-            DESCRIPTION. The default is '1890-01-01'.
-        end_date : TYPE, optional
-            DESCRIPTION. The default is '2021-12-31'.
-        dropna : TYPE, If True, for all time steps onl
-            DESCRIPTION. The default is True.
-
+        gauge_time_series : pd.DataFrame, optional
+            A dataframe containing gauge time series data, by default pd.DataFrame()
+        gauge_network : gpd.GeoDataFrame, optional
+            A dataframe containing gauge network data, by default gpd.GeoDataFrame()
+        gauge_metadata : pd.DataFrame, optional
+            A dataframe containing gauge metadata, by default pd.DataFrame()
+        output_dir : str, optional
+            The path to the output directory, by default None
+        valid_datapairs_only : bool, optional
+            Whether to only include data pairs that have valid metadata, by default True
+        decadal_stats : bool, optional
+            Whether to compute decadal statistics, by default True
+        start_date : str, optional
+            The start date for the time series data, by default '1990-01-01'
+        end_date : str, optional
+            The end date for the time series data, by default '2021-12-31'
+        dropna_axis : int or None, optional
+            Whether to drop rows or columns with NaN values, by default None
+        
         Returns
         -------
-        None.
-
+        None
         """
 
-        #first we define a model_path and an output_path    
+        # Define the model and output paths
         self.model_path=os.getcwd()
-        if output_dir is None:
-            self.output_dir=os.path.join(self.model_path,'output')
-        
+        self.output_dir = output_dir or os.path.join(self.model_path, "output")        
         os.makedirs(self.output_dir,exist_ok=True)
         
         # we load the dataframes to our class
@@ -204,35 +206,40 @@ class model:
             
             
     #the function to call the resession curves
-    def get_recession_curve(self,curve_type='baseflow',mrc_algorithm='demuth',
-                            recession_algorithm='boussinesq',
-                            smooth_window_size=3,
-                            maximum_reservoirs=3,
-                            minimum_recession_curve_length=10,
-                            minimum_limbs = 20,
-                            plot=True):
-        """
-        
-
+    def get_recession_curve(self,
+                            curve_type: str = "baseflow",
+                            mrc_algorithm: str = "demuth",
+                            recession_algorithm: str = "boussinesq",
+                            moving_average_filter_steps: int = 3,
+                            minimum_recession_curve_length: int = 10,
+                            minimum_limbs: int = 20,
+                            maximum_reservoirs: int = 3,
+                            plot: bool = True,
+                        ):
+        """Compute the recession curve for each gauge and decade.
+    
         Parameters
         ----------
-        curve_type : TYPE, ['baseflow','discharge']
-            DESCRIPTION. The default is 'baseflow'.
-        mrc_algorithm : TYPE, optional
-            DESCRIPTION. The default is ['demuth','matching_strip'].
-        recession_algorithm : TYPE, ['boussinesq','maillet']
-            DESCRIPTION. The default is 'boussinesq'.
-        moving__average_filter_steps : TYPE, optional
-            DESCRIPTION. The default is 3.
-        minimum_recession_curve_length : TYPE, optional
-            DESCRIPTION. The default is 10.
-        minimum_limbs : The number of minimum recession limbs to have a valid result
-            DESCRIPTION. The default is 20
-        Returns
-        -------
-        None.
-
+        curve_type: str, optional (default: "baseflow")
+            The type of curve to use, either "baseflow" or "discharge".
+        mrc_algorithm: str, optional (default: "demuth")
+            The method used to compute the master recession curve.
+        recession_algorithm: str, optional (default: "boussinesq")
+            The method used to fit the recession curve to the data.
+        moving_average_filter_steps: int, optional (default: 3)
+            The number of steps used to smooth the data.
+        minimum_recession_curve_length: int, optional (default: 10)
+            The minimum number of recession points to be considered valid.
+        minimum_limbs: int, optional (default: 20)
+            The minimum number of limbs required to be considered valid.
+        maximum_reservoirs: int, optional (default: 3)
+            The maximum number of reservoirs used in the Boussinesq algorithm.
+        plot: bool, optional (default: True)
+            Whether to plot the results or not.
         """
+        def add_series_id(df, series_id):
+            return df.assign(series_id=series_id)
+        
         print('Start Recession Curve Analysis')
         #first we create a new object where we store the time_series
         self.recession_limbs_ts=pd.DataFrame()
@@ -246,98 +253,54 @@ class model:
                 print('we average the baseflow methods ')
                 Q=Q.reset_index().groupby(['Datum','gauge']).mean().reset_index()
                 #wide to long
-                Q=Q.pivot(index='Datum',columns='gauge',values='value')
+                Q=Q.pivot(index='Datum',columns='gauge',values='value').copy()
         
         if curve_type=='discharge':
             Q=self.gauge_ts
-        
-        
-        #check whether we want to calculate for each decade or not
-        if self.decadal_stats==False:
-        #we loop trough all gauges to get the recession curve
-            for gauge_name in Q:
-                recession_limbs,mrc_out=analyse_recession_curves(Q[gauge_name],mrc_algorithm=mrc_algorithm,
-                    recession_algorithm=recession_algorithm,
-                    smooth_window_size=smooth_window_size,
-                    minimum_recession_curve_length=minimum_recession_curve_length,
-                    maximum_reservoirs=maximum_reservoirs,
-                    )
-                
-                Q0_mrc=mrc_out[0]
-                n_mrc=mrc_out[1]
-                r_mrc=mrc_out[2]
-                #add to meta_data
-                #get number of limbs
-                n_limbs=len(recession_limbs.section_id.unique())
-                self.gauge_meta.loc[gauge_name,'no_of_limbs']=n_limbs
-                
-                #if no_of limbs is below threshold results are not representative
-                if n_limbs<minimum_limbs:
-                    print('Number of recession limbs for gauge ',gauge_name,' below threshold of ',minimum_limbs)
-                    self.gauge_meta.loc[gauge_name,'Q0_mrc']=np.nan
-                    self.gauge_meta.loc[gauge_name,'n_mrc']=np.nan
-                    self.gauge_meta.loc[gauge_name,'pearson_r']=np.nan                    
-                else:
-                    self.gauge_meta.loc[gauge_name,'Q0_mrc']=Q0_mrc
-                    self.gauge_meta.loc[gauge_name,'n_mrc']=n_mrc
-                    self.gauge_meta.loc[gauge_name,'pearson_r']=r_mrc
-                
-                    #add also data to the limb time series
-                    recession_limbs['gauge']=gauge_name
-                    recession_limbs['mrc_algorithm']=mrc_algorithm
-                    recession_limbs['curve_type']=curve_type
-                    recession_limbs['recession_algorithm']=recession_algorithm
-                    #merge
-                    self.recession_limbs_ts=pd.concat([self.recession_limbs_ts,recession_limbs],axis=0)
             
-            print('Recession Curve Analysis Finished')
-        
-        
-        else:
-            print('Compute Recession curves for each decade')
+        if self.decadal_stats:
             Q['decade']=[x[0:3]+'5' for x in Q.index.strftime('%Y')]
+        else:
+            Q['decade']=-9999
             
-            for decade,Q in Q.groupby('decade'):
-                #drop all gauges where no data is within the decade
-                Q=Q.dropna(axis=1, how='all')
-                Q=Q.drop(columns='decade')
-                #we loop trough all gauges to get the recession curve
-                for gauge_name in Q:
+        
+        #start the recession
+        logging.info('Started Recession Curve Analysis')
+        for decade,Q_decade in Q.groupby('decade'):
+            #drop all gauges where no data is within the decade
+            Q_decade = Q_decade.dropna(axis=1, how='all').drop(columns='decade')
+            #we loop trough all gauges to get the recession curve
+            recession_results = Q_decade.apply(lambda x: analyse_recession_curves(x,
+                                             mrc_algorithm=mrc_algorithm,
+                                             recession_algorithm=recession_algorithm,
+                                             smooth_window_size=moving_average_filter_steps,
+                                             minimum_recession_curve_length=minimum_recession_curve_length,
+                                             maximum_reservoirs=maximum_reservoirs,minimum_limbs=minimum_limbs
+                                            ), axis=0, result_type='expand')
+            #get the results
+            Q0_mrc, n_mrc, r_mrc = recession_results.iloc[1,:]
+            recession_limbs = recession_results.iloc[0,:]
+            
+            for i in recession_limbs.index:
+                recession_limbs[i]['gauge']=i
+            
+            if self.decadal_stats:
+                self.gauge_meta_decadal.loc[(recession_limbs.index, decade), ['Q0_mrc', 'n_mrc', 'pearson_r']] = [Q0_mrc, n_mrc, r_mrc]
+            else:
+                self.gauge_meta.loc[recession_limbs.index, ['Q0_mrc', 'n_mrc', 'pearson_r']] = [Q0_mrc, n_mrc, r_mrc]
+            
+            #we finally create a long version
+            recession_limbs=pd.concat(list(recession_limbs),axis=0)            
+            recession_limbs['decade']=decade
+            recession_limbs['mrc_algorithm'] = mrc_algorithm
+            recession_limbs['curve_type'] = curve_type
+            recession_limbs['recession_algorithm'] = recession_algorithm
+            self.recession_limbs_ts = pd.concat([self.recession_limbs_ts,recession_limbs], axis=1, sort=False)
 
-                    recession_limbs,mrc_out=analyse_recession_curves(Q[gauge_name],mrc_algorithm=mrc_algorithm,
-                        recession_algorithm=recession_algorithm,
-                        smooth_window_size=smooth_window_size,
-                        minimum_recession_curve_length=minimum_recession_curve_length,
-                        maximum_reservoirs=maximum_reservoirs,
-                        )
-                    Q0_mrc=mrc_out[0]
-                    n_mrc=mrc_out[1]
-                    r_mrc=mrc_out[2]
-                    
-                    #add to meta_data
-                    #get number of limbs
-                    n_limbs=len(recession_limbs.section_id.unique())
-                    self.gauge_meta_decadal.loc[(gauge_name,decade),'no_of_limbs']=n_limbs
-                    
-                    if n_limbs<minimum_limbs:
-                        print('Number of recession limbs for gauge ',gauge_name,'and decade ',decade,' below threshold of ',minimum_limbs)
-                        self.gauge_meta_decadal.loc[(gauge_name,decade),'Q0_mrc']=np.nan
-                        self.gauge_meta_decadal.loc[(gauge_name,decade),'n_mrc']=np.nan
-                        self.gauge_meta_decadal.loc[(gauge_name,decade),'pearson_r']=np.nan                    
-                    else:
-                        self.gauge_meta_decadal.loc[(gauge_name,decade),'Q0_mrc']=Q0_mrc
-                        self.gauge_meta_decadal.loc[(gauge_name,decade),'n_mrc']=n_mrc
-                        self.gauge_meta_decadal.loc[(gauge_name,decade),'pearson_r']=r_mrc
-                        #add also data to the limb time series
-                        recession_limbs['gauge']=gauge_name
-                        recession_limbs['decade']=decade
-                        recession_limbs['mrc_algorithm']=mrc_algorithm
-                        recession_limbs['curve_type']=curve_type
-                        recession_limbs['recession_algorithm']=recession_algorithm
-                        #merge
-                        self.recession_limbs_ts=pd.concat([self.recession_limbs_ts,recession_limbs],axis=0)
-                    
-            print('Recession Curve Analysis Finished')
+        #reduce the data for gauge meta
+        #self.gauge_meta=self.gauge_meta_decadal.groupby('gauge').first()
+        logging.info('Recession Curve Analysis Finished')        
+
             
         if plot==True:
             print('plot_results')

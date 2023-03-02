@@ -3,7 +3,7 @@ Call Function
 """
 from datetime import datetime
 
-from sbat.sbat import model
+from sbat.sbat import Model
 import pandas as pd
 import os
 import geopandas as gpd
@@ -19,7 +19,7 @@ gauge_ts=pd.read_csv(os.path.join(os.path.dirname(__file__),'input','pegel_ts.cs
 gauge_meta=pd.read_csv(os.path.join(os.path.dirname(__file__),'input','pegel_uebersicht.csv'),index_col=0)
 
 #%% generate the object
-sbat=model(gauge_time_series=gauge_ts,
+sbat=Model(gauge_time_series=gauge_ts,
            gauge_network=gpd.GeoDataFrame(),
            gauge_metadata=gauge_meta,
            valid_datapairs_only=True,
@@ -27,17 +27,18 @@ sbat=model(gauge_time_series=gauge_ts,
            dropna_axis=0)
 
 #get discharge data
-sbat.get_discharge_stats()
+#sbat.get_discharge_stats()
 
 #get baseflow
 sbat.get_baseflow(methods=['UKIH','Fixed'],
-                  compute_bfi=True, update_metadata=True,plot=True)
+                  compute_bfi=True, update_metadata=True,plot=False)
 
 #compute the master recession curve
 sbat.get_recession_curve(curve_type='baseflow',plot=False,
                          mrc_algorithm='demuth',
                          recession_algorithm='boussinesq',
                          maximum_reservoirs=1)
+haha
 a=sbat.recession_limbs_ts
 
 """
