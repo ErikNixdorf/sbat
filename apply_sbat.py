@@ -7,44 +7,26 @@ from sbat.sbat import Model
 import pandas as pd
 import os
 import geopandas as gpd
-#functiton to dateparse
-dateparse = lambda x: datetime.strptime(x, '%Y-%m-%d')
-
-#%% load data 
-gauge_ts=pd.read_csv(os.path.join(os.path.dirname(__file__),'input','pegel_ts.csv'),
-                     index_col=0,usecols=[0,1,2,3],
-                     parse_dates=['Datum'], 
-                     date_parser=dateparse)
-
-gauge_meta=pd.read_csv(os.path.join(os.path.dirname(__file__),'input','pegel_uebersicht.csv'),index_col=0)
 
 #%% generate the object
-sbat=Model(gauge_time_series=gauge_ts,
-           gauge_network=gpd.GeoDataFrame(),
-           gauge_metadata=gauge_meta,
-           valid_datapairs_only=True,
-           decadal_stats=True,
-           dropna_axis=0)
+sbat=Model()
 
 #get discharge data
-#sbat.get_discharge_stats()
+sbat.get_discharge_stats()
 
 #get baseflow
-sbat.get_baseflow(methods=['UKIH','Fixed'],
-                  compute_bfi=True, update_metadata=True,plot=False)
-
+sbat.get_baseflow()
 #compute the master recession curve
 
-sbat.get_recession_curve(curve_type='baseflow',plot=False,
-                         mrc_algorithm='demuth',
-                         recession_algorithm='boussinesq',
-                         maximum_reservoirs=1)
+sbat.get_recession_curve()
 
+sections_meta,q_diff,gdf_network_map = sbat.get_water_balance()
+
+"""
 sections_meta,q_diff,gdf_network_map = sbat.get_water_balance(network_geometry=gpd.read_file(os.path.join(os.path.dirname(__file__),'input','Network_z.shp')),
                                                              tributary_connections=pd.read_csv(os.path.join(os.path.dirname(__file__),'input','zufluesse.csv')),
                                                              distributary_connections=pd.read_csv(os.path.join(os.path.dirname(__file__),'input','abfluesse.csv')),
                                                              flow_type='baseflow',
                                                              confidence_acceptance_level=0.05,
                                                              time_series_analysis_option='summer_mean')
-
-
+"""

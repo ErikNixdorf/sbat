@@ -483,39 +483,57 @@ def aggregate_time_series(data_ts,analyse_option='overall_mean'):
 
     
 #%% A function which connects all functions
-def get_section_water_balance(gauge_data=pd.DataFrame(),
-                          data_ts=pd.DataFrame(),
-                          network=gpd.GeoDataFrame(),
-                          tributary_connections=pd.DataFrame(),
-                          distributary_connections=pd.DataFrame(),
-                          confidence_acceptance_level=0.05,
-                          time_series_analysis_option='overall_mean',
-                              ):
+def get_section_water_balance(gauge_data: pd.DataFrame = pd.DataFrame(),
+                          data_ts: pd.DataFrame = pd.DataFrame(),
+                          network: gpd.GeoDataFrame = gpd.GeoDataFrame(),
+                          tributary_connections: pd.DataFrame = pd.DataFrame(),
+                          distributary_connections: pd.DataFrame = pd.DataFrame(),
+                          confidence_acceptance_level: float = 0.05,
+                          time_series_analysis_option: str = 'overall_mean',
+                          ):
     """
-    
+    Calculates the water balance for a network of stream gauges and their upstream
+    and downstream connections, based on time series data and metadata.
 
     Parameters
     ----------
-    gauge_meta : TYPE, optional
-        DESCRIPTION. The default is pd.DataFrame().
-    ts_data : TYPE, optional
-        DESCRIPTION. The default is pd.DataFrame().
-    network : TYPE, optional
-        DESCRIPTION. The default is gpd.GeoDataFrame().
-    tributary_connections : TYPE, optional
-        DESCRIPTION. The default is pd.DataFrame().
-    distributary_connections : TYPE, optional
-        DESCRIPTION. The default is pd.DataFrame().
-    confidence_acceptance_level : TYPE, optional
-        DESCRIPTION. The default is 0.05.
-    ts_analyse_options : TYPE, optional
-        DESCRIPTION. The default is 
-     : TYPE
-        DESCRIPTION.
+    gauge_data : pandas.DataFrame, optional
+        The metadata for the stream gauges, with columns for 'ostwert' (longitude),
+        'nordwert' (latitude), and any other relevant information. The index of the
+        DataFrame should match the columns of the `data_ts` DataFrame. The default is
+        an empty DataFrame.
+    data_ts : pandas.DataFrame, optional
+        The time series data for the stream gauges, with timestamps as index and
+        gauge IDs as columns. The default is an empty DataFrame.
+    network : geopandas.GeoDataFrame, optional
+        A network representation of the streams, with columns for 'source' (ID of the
+        upstream stream), 'target' (ID of the downstream stream), and 'geometry'
+        (shapely LineString representing the stream segment). The default is an empty
+        GeoDataFrame.
+    tributary_connections : pandas.DataFrame, optional
+        A table with columns for 'source' (ID of the upstream stream) and 'target'
+        (ID of the downstream tributary stream). The default is an empty DataFrame.
+    distributary_connections : pandas.DataFrame, optional
+        A table with columns for 'source' (ID of the upstream distributary stream) and
+        'target' (ID of the downstream stream). The default is an empty DataFrame.
+    confidence_acceptance_level : float, optional
+        The significance level (alpha) used for the confidence interval of the water
+        balance calculations. The default is 0.05.
+    time_series_analysis_option : str, optional
+        The method used to aggregate the time series data. The default is 'overall_mean'.
 
     Returns
     -------
-    None.
+    sections_meta : pandas.DataFrame
+        The metadata for each section of the network, with columns for 'section_id',
+        'upstream_ids', 'downstream_ids', 'length', 'centroid', and 'geometry'.
+    q_diff : numpy.ndarray
+        The water balance for each section of the network, as the difference between
+        the upstream and downstream flow rates (in m^3/s). Has shape `(N, 1)`, where
+        `N` is the number of sections in the network.
+    gdf_network_map : geopandas.GeoDataFrame
+        A GeoDataFrame representing the network with a single line for each section,
+        colored according to the sign of the water balance.
 
     """
     

@@ -3,6 +3,7 @@ This is the central Module which is a class from which the different functions a
 """
 
 import os
+import yaml
 import geopandas as gpd
 import pandas as pd
 import numpy as np
@@ -12,18 +13,41 @@ from .baseflow.baseflow import compute_baseflow,add_gauge_stats,plot_bf_results
 from .recession.recession import analyse_recession_curves,plot_recession_results
 from .waterbalance.waterbalance import get_section_water_balance
 from datetime import datetime
+
+
+
+def iterdict(d):
+    """
+    Recursively iterates over a dictionary and converts any strings
+    that can be converted to floats to float, and any lists that can
+    be converted to floats to lists of floats.
+
+    Args:
+        d (dict): A dictionary to be iterated over.
+
+    Returns:
+        dict: The input dictionary with any applicable conversions made.
+    """
+    for k, v in d.items():
+        if isinstance(v, dict):
+            iterdict(v)
+        elif isinstance(v, list):
+            try:
+                d[k] = list(map(float, v))
+            except ValueError:
+                pass
+        elif isinstance(v, str):
+            try:
+                d[k] = float(v)
+            except ValueError:
+                pass
+    return d
+
+#small function to convert to datetime
+dateparse = lambda x: datetime.strptime(x, '%Y-%m-%d')
+
 class Model:
-    def __init__(self,
-                 gauge_time_series=pd.DataFrame(),
-                 gauge_network=gpd.GeoDataFrame(),
-                 gauge_metadata=pd.DataFrame(),                 
-                 output_dir: Optional[str] = None,
-                 valid_datapairs_only=True,
-                 decadal_stats: bool = True,
-                 start_date: str = "1990-01-01",
-                 end_date: str = "2021-12-31",
-                 dropna_axis: Optional[int] = None,
-                 ):
+    def __init__(self):
         """
         A class for processing gauge time series data.
         
@@ -52,71 +76,93 @@ class Model:
         -------
         None
         """
+        
 
         # Define the model and output paths
-        self.model_path=os.getcwd()
-        self.output_dir = output_dir or os.path.join(self.model_path, "output")        
+        self.model_path=os.path.dirname(os.path.dirname(__file__))
+        
+        #load the config_data
+        with open(os.path.join(self.model_path,'sbat.yml')) as c:
+            self.config = yaml.safe_load(c)
+        
+        #get the output_directory
+        self.output_dir=os.path.join(self.model_path,self.config['file_io']['output']['output_directory'])
         os.makedirs(self.output_dir,exist_ok=True)
         
-        # we load the dataframes to our class
-        self.gauge_ts=gauge_time_series.copy()
-        self.network=gauge_network.copy()
-        self.gauge_meta=gauge_metadata.copy()
-        self.gauge_meta_decadal=pd.DataFrame()
-        self.decadal_stats=decadal_stats
-        self.start_date=start_date
-        self.end_date=end_date
+        #%% we load the dataframes to our class
+        #the gauge_ts
+        gauge_ts_path=os.path.join(self.model_path,
+                                   self.config['file_io']['input']['data_dir'],
+                                   self.config['file_io']['input']['gauges']['gauge_time_series'],
+                                   )
+        
+        self.gauge_ts=pd.read_csv(gauge_ts_path,
+                             index_col=0,
+                             parse_dates=['Datum'], 
+                             date_parser=dateparse)
+        
+        if self.config['data_cleaning']['test_mode']:
+            print('test case, focus on three gauges only')
+            self.gauge_ts=self.gauge_ts.iloc[:,0:3]
+        
+        
+        
         
         #we are only interested in meta data for which we have time series information
-        
         #remove all nans
         self.gauge_ts=self.gauge_ts.dropna(axis=1,how='all')
         
         #reduce to time steps
-        self.gauge_ts=self.gauge_ts.loc[datetime.strptime(start_date,'%Y-%m-%d'):datetime.strptime(end_date,'%Y-%m-%d'),:]
+        self.gauge_ts=self.gauge_ts.loc[self.config['time']['start_date']:self.config['time']['end_date'],:]
         
         #remove nan values
-        if dropna_axis==None:
+        if self.config['data_cleaning']['drop_na_axis']==None:
             print('No Nan Values are removed from time series data prior to computation')
-        elif dropna_axis == 1:
+        elif self.config['data_cleaning']['drop_na_axis'] == 1:
             print('Remove Gauges which contain a nan entry')
             self.gauge_ts.dropna(axis=1,how='any').dropna(axis=0,how='any')
-        elif dropna_axis == 0:
-            print('Remove Gauges which contain a nan entry')
+        elif self.config['data_cleaning']['drop_na_axis'] == 0:
+            print('Remove time steps which contain a nan entry')
             self.gauge_ts.dropna(axis=0,how='any').dropna(axis=1,how='any')
             
         if len(self.gauge_ts)==0:
             raise ValueError('No data left after drop NA Values, consider to define dropna_axis as None or changing start date and end_date')
             
             
+       #%%we load the meta_data
+        gauge_meta_path=os.path.join(self.model_path,
+                                   self.config['file_io']['input']['data_dir'],
+                                   self.config['file_io']['input']['gauges']['gauge_meta'],
+                                   )
+        self.gauge_meta=pd.read_csv(gauge_meta_path,index_col=0)
+         
+        if self.config['data_cleaning']['valid_datapairs_only']:
+             #reduce the metadata to the gauges for which we have actual time data
+             self.gauge_meta=self.gauge_meta.iloc[self.gauge_meta.index.isin(self.gauge_ts.columns),:]
+             #reduce the datasets to all which have metadata
+             self.gauge_ts=self.gauge_ts[self.gauge_meta.index.to_list()]
+             print(self.gauge_ts.shape[1], 'gauges with valid meta data')
+        
+        #if we want to compute for each decade we do this here
+        if self.config['time']['compute_each_decade']:
+            print('Statistics for each gauge will be computed for each decade')
+            self.gauge_meta_decadal=pd.DataFrame()
             
-        
-        
-        
-        if valid_datapairs_only:
-            #reduce the metadata to the gauges for which we have actual time data
-            self.gauge_meta=self.gauge_meta.iloc[self.gauge_meta.index.isin(self.gauge_ts.columns),:]
-            #reduce the datasets to all which have metadata
-            self.gauge_ts=self.gauge_ts[self.gauge_meta.index.to_list()]
-            print(self.gauge_ts.shape[1], 'gauges with valid meta data')
         
         
     #function which controls the baseflow module
     
-    def get_baseflow(self,methods='all',
-                     compute_bfi=True,
-                     update_metadata=True,
-                     plot=True,
-                     calculate_monthly=True):
-        
+    def get_baseflow(self):        
         
         #first we compute the baseflow
-        self.bf_output=compute_baseflow(self.gauge_ts,self.gauge_meta,
-                         methods=methods,compute_bfi=compute_bfi,
-                         calculate_monthly=calculate_monthly)
+        self.bf_output=compute_baseflow(self.gauge_ts,
+                                        self.gauge_meta,
+                                        methods=self.config['baseflow']['methods'],
+                                        compute_bfi=self.config['baseflow']['compute_baseflow_index'],
+                                        calculate_monthly=self.config['baseflow']['calculate_monthly'])
         
         #second we update the medatadata if required
-        if update_metadata:
+        if self.config['baseflow']['update_metadata']:
             #get the monthly keys
             monthly_keys = [key for key in self.bf_output.keys() if len(self.bf_output[key]) > 0 and 'monthly' in key]
             
@@ -125,7 +171,7 @@ class Model:
                 gauge_meta_updated=pd.concat([pd.concat([add_gauge_stats(subset.drop(columns=['gauge', 'variable']), 
                                                                 self.gauge_meta.loc[gauge, :].to_frame().T, 
                                                                 col_name=key, 
-                                                                decadal_stats=self.decadal_stats,
+                                                                decadal_stats=self.config['time']['compute_each_decade'],
                                                                 ).reset_index().reset_index().set_index(['index','gauge']) for gauge, subset in self.bf_output[key].groupby('gauge')]) for key in monthly_keys]
                             ,axis=1)
                 
@@ -134,7 +180,7 @@ class Model:
             
             self.gauge_meta=gauge_meta_updated.groupby('gauge').first()
             
-            if self.decadal_stats:
+            if self.config['time']['compute_each_decade']:
                 gauge_meta_decadal = gauge_meta_updated.set_index(['gauge', 'decade'])
                 if hasattr(self, 'gauge_meta_decadal'):
                     new_cols = set(gauge_meta_decadal.columns) - set(self.gauge_meta_decadal.columns)
@@ -144,22 +190,22 @@ class Model:
                 #clean the gauge_meta with no decades
                 self.gauge_meta = self.gauge_meta.drop(columns=[col for col in gauge_meta_updated.columns if '_dec' in col] + ['decade'])
             
-        if plot:
-            print('plot_results')
+        if self.config['file_io']['output']['plot_results']:
+            print('plot_results of baseflow computation')
             plot_bf_results(data=self.bf_output,meta_data=self.gauge_meta,
                             meta_data_decadal=self.gauge_meta_decadal,
                             parameters_to_plot=['bf_daily','bf_monthly','bfi_monthly'],
                             streams_to_plot=['spree','lausitzer_neisse','schwarze_elster'],
                             output_dir=os.path.join(self.output_dir,'bf_analysis','figures'),
-                            decadal_plots=self.decadal_stats,
+                            decadal_plots=self.config['time']['compute_each_decade'],
                             )
             
             
         
-    #function that adds discharge statistics    
+    #%%function that adds discharge statistics    
 
     
-    def get_discharge_stats(self,col_name='q_daily',compute_monthly=True):
+    def get_discharge_stats(self):
         #call the gauge stats function
         data=self.gauge_ts.copy(deep=True)
         
@@ -167,8 +213,10 @@ class Model:
         gauge_meta_updated=pd.DataFrame()
         for gauge,subset in data.melt(var_name='gauge',ignore_index=False).groupby('gauge'):
             
-            output=add_gauge_stats(subset.drop(columns=['gauge']),self.gauge_meta.loc[gauge,:].to_frame().T,col_name=col_name,
-                                            decadal_stats=self.decadal_stats)
+            output=add_gauge_stats(subset.drop(columns=['gauge']),
+                                   self.gauge_meta.loc[gauge,:].to_frame().T,
+                                   col_name=self.config['discharge']['col_name'],
+                                   decadal_stats=self.config['time']['compute_each_decade'])
             gauge_meta_updated=pd.concat([gauge_meta_updated,output])
         
         #the first                  column is the updated gauge_meta
@@ -176,7 +224,7 @@ class Model:
         
         #if decadal stats exist we save them
 
-        if self.decadal_stats:
+        if self.config['time']['compute_each_decade']:
             #we we have decadal data we append
             if hasattr(self,'gauge_meta_decadal'):
                 gauge_meta_updated=gauge_meta_updated.reset_index().set_index(['gauge','decade'])
@@ -192,50 +240,23 @@ class Model:
             self.gauge_meta=self.gauge_meta.drop(columns=dec_cols)
             
         #if we want the monthly stats as well
-        if compute_monthly:
+        if self.config['discharge']['compute_monthly']:
             col_name='q_monthly'
             data=self.gauge_ts.copy(deep=True).resample('M').mean()
             gauge_meta_updated=pd.DataFrame()
             for gauge,subset in data.melt(var_name='gauge',ignore_index=False).groupby('gauge'):
                 
-                output=add_gauge_stats(subset.drop(columns=['gauge']),self.gauge_meta.loc[gauge,:].to_frame().T,col_name=col_name,
+                output=add_gauge_stats(subset.drop(columns=['gauge']),
+                                       self.gauge_meta.loc[gauge,:].to_frame().T,col_name=col_name,
                                                 decadal_stats=False)
                 gauge_meta_updated=pd.concat([gauge_meta_updated,output])
             #the first column is the updated gauge_meta
             self.gauge_meta=gauge_meta_updated.groupby('gauge').first()
             
             
-    #the function to call the resession curves
-    def get_recession_curve(self,
-                            curve_type: str = "baseflow",
-                            mrc_algorithm: str = "demuth",
-                            recession_algorithm: str = "boussinesq",
-                            moving_average_filter_steps: int = 3,
-                            minimum_recession_curve_length: int = 10,
-                            minimum_limbs: int = 20,
-                            maximum_reservoirs: int = 3,
-                            plot: bool = True,
-                        ):
+    #%%the function to call the resession curves
+    def get_recession_curve(self):
         """Compute the recession curve for each gauge and decade.
-    
-        Parameters
-        ----------
-        curve_type: str, optional (default: "baseflow")
-            The type of curve to use, either "baseflow" or "discharge".
-        mrc_algorithm: str, optional (default: "demuth")
-            The method used to compute the master recession curve.
-        recession_algorithm: str, optional (default: "boussinesq")
-            The method used to fit the recession curve to the data.
-        moving_average_filter_steps: int, optional (default: 3)
-            The number of steps used to smooth the data.
-        minimum_recession_curve_length: int, optional (default: 10)
-            The minimum number of recession points to be considered valid.
-        minimum_limbs: int, optional (default: 20)
-            The minimum number of limbs required to be considered valid.
-        maximum_reservoirs: int, optional (default: 3)
-            The maximum number of reservoirs used in the Boussinesq algorithm.
-        plot: bool, optional (default: True)
-            Whether to plot the results or not.
         """
         def add_series_id(df, series_id):
             return df.assign(series_id=series_id)
@@ -245,7 +266,7 @@ class Model:
         self.recession_limbs_ts=pd.DataFrame()
         
         #first we check whether baseflow data exist
-        if curve_type=='baseflow':            
+        if self.config['recession']['curve_data']['curve_type']=='baseflow':            
             if not hasattr(self, 'bf_output'):
                 raise ValueError('Compute baseflow with function get_baseflow first')
             else:
@@ -255,10 +276,10 @@ class Model:
                 #wide to long
                 Q=Q.pivot(index='Datum',columns='gauge',values='value').copy()
         
-        elif curve_type == 'discharge':
+        elif self.config['recession']['curve_data']['curve_type'] == 'discharge':
             Q = self.gauge_ts
             
-        if self.decadal_stats:
+        if self.config['time']['compute_each_decade']:
             Q['decade']=[x[0:3]+'5' for x in Q.index.strftime('%Y')]
         else:
             Q['decade']=-9999
@@ -271,14 +292,20 @@ class Model:
             Q_decade = Q_decade.dropna(axis=1, how='all').drop(columns='decade')
             #we loop trough all gauges to get the recession curve
             recession_results = Q_decade.apply(lambda x: analyse_recession_curves(x,
-                                             mrc_algorithm=mrc_algorithm,
-                                             recession_algorithm=recession_algorithm,
-                                             smooth_window_size=moving_average_filter_steps,
-                                             minimum_recession_curve_length=minimum_recession_curve_length,
-                                             maximum_reservoirs=maximum_reservoirs,minimum_limbs=minimum_limbs
+                                             mrc_algorithm=self.config['recession']['fitting']['mastercurve_algorithm'],
+                                             recession_algorithm=self.config['recession']['fitting']['recession_algorithm'],
+                                             smooth_window_size=self.config['recession']['curve_data']['moving_average_filter_steps'],
+                                             minimum_recession_curve_length=self.config['recession']['fitting']['minimum_recession_curve_length'],
+                                             maximum_reservoirs=self.config['recession']['fitting']['maximum_reservoirs'],
+                                             minimum_limbs=self.config['recession']['fitting']['minimum_limbs']
                                             ), axis=0, result_type='expand')
             #get the results
             recession_results = recession_results.dropna(axis=1)
+            
+            if recession_results.empty:
+                logging.info(f'No recession data for decade{decade}')
+                continue
+            
             metric=pd.DataFrame.from_records(recession_results.iloc[1,:],
                                               columns=['Q0_mrc', 'n_mrc', 'pearson_r'],
                                               index=recession_results.columns)
@@ -289,26 +316,20 @@ class Model:
             
             for i in recession_limbs.index:
                 recession_limbs[i]['gauge']=i
-            """
-            if self.decadal_stats:
-                
-                self.gauge_meta_decadal=pd.concat([self.gauge_meta_decadal,metrics],axis=1)
-            else:
-                self.gauge_meta=pd.concat([self.gauge_meta,metrics],axis=1)
-            """
+
             #we finally create a long version
             recession_limbs=pd.concat(list(recession_limbs),axis=0)            
             recession_limbs['decade']=decade
-            recession_limbs['mrc_algorithm'] = mrc_algorithm
-            recession_limbs['curve_type'] = curve_type
-            recession_limbs['recession_algorithm'] = recession_algorithm
+            recession_limbs['mrc_algorithm'] = self.config['recession']['fitting']['mastercurve_algorithm']            
+            recession_limbs['curve_type'] = self.config['recession']['curve_data']['curve_type']
+            recession_limbs['recession_algorithm'] = self.config['recession']['fitting']['recession_algorithm']
 
             self.recession_limbs_ts = pd.concat([self.recession_limbs_ts,recession_limbs], axis=0, sort=False)
             metrics.append(metric)
         
         #append the metrics data to the metadata
         df_metrics=pd.concat(metrics,axis=0)
-        if self.decadal_stats:            
+        if self.config['time']['compute_each_decade']:            
             self.gauge_meta_decadal=pd.concat([self.gauge_meta_decadal,df_metrics],axis=1)
         else:
 
@@ -319,49 +340,47 @@ class Model:
         logging.info('Recession Curve Analysis Finished')        
 
             
-        if plot==True:
+        if self.config['file_io']['output']['plot_results']:
             logging.info('plot_results')
-            plot_recession_results(meta_data=self.gauge_meta,meta_data_decadal=self.gauge_meta_decadal,
+            plot_recession_results(meta_data=self.gauge_meta,
+                                meta_data_decadal=self.gauge_meta_decadal,
                                 parameters_to_plot=['Q0_mrc','pearson_r','n'],
                                 streams_to_plot=['spree','lausitzer_neisse','schwarze_elster'],
                                 output_dir=os.path.join(self.output_dir,'recession_analysis','figures'),
-                                decadal_plots=self.decadal_stats,
+                                decadal_plots=self.config['time']['compute_each_decade'],
                                 )
             
             
-    def get_water_balance(self,
-                           network_geometry: gpd.GeoDataFrame,
-                           tributary_connections: pd.DataFrame,
-                           distributary_connections: pd.DataFrame,
-                           flow_type: str = 'baseflow',
-                           confidence_acceptance_level: float = 0.05,
-                           time_series_analysis_option: str = 'daily',
-                           ):
-        """Calculate water balance per section.
-    
-        Args:
-            network_geometry: A GeoDataFrame representing the network.
-            tributary_connections: A DataFrame representing tributary connections.
-            distributary_connections: A DataFrame representing distributary connections.
-            flow_type: A string representing the type of flow. Possible values are 'baseflow' and 'discharge'.
-            confidence_acceptance_level: A float representing the confidence acceptance level.
-            ts_analysis_option: A string representing the time series analysis option. Possible values are 'daily' and 'monthly'.
-    
-        Returns:
-            A tuple containing three objects: a DataFrame representing the sections metadata,
-            a DataFrame representing the water balance for each section, and a GeoDataFrame representing the network map.
-        """
+    def get_water_balance(self):
+        """Calculate water balance per section"""
         
-        print('We analyse the Water  Balance per Section')
+        print('We analyse the Water Balance per Section')
         
-        if flow_type=='baseflow':
+        
+        #%% First we load the data
+        geospatial_path=os.path.join(self.model_path,
+                                     self.config['file_io']['input']['data_dir']
+                                     )
+        
+        network_geometry=gpd.read_file(os.path.join(geospatial_path,
+                                                    self.config['file_io']['input']['geospatial']['river_network'])
+                                       )
+                                       
+        tributary_connections=pd.read_csv(os.path.join(geospatial_path,
+                                                    self.config['file_io']['input']['geospatial']['tributary_topology'])
+                                          )
+        distributary_connections=pd.read_csv(os.path.join(geospatial_path,
+                                                    self.config['file_io']['input']['geospatial']['distributary_topology'])
+                                             )
+        
+        if self.config['waterbalance']['flow_type']=='baseflow':
             print('Use baseflow time series')
             #check whether the baseflow as already be computed
             if not hasattr(self, 'bf_output'):
                 raise ValueError('Calculate Baseflow first before baseflow water balance can be calculated')
             
             #prove whether explicitely daily values should be calculate otherwise we take monthly    
-            if time_series_analysis_option == 'daily' and 'bf_'+time_series_analysis_option in self.bf_output.keys():
+            if self.config['waterbalance']['time_series_analysis_option'] == 'daily' and 'bf_'+self.config['waterbalance']['time_series_analysis_option']  in self.bf_output.keys():
                 data_ts=self.bf_output['bf_daily'].copy()
             else:
                 print('Monthly Averaged values are used')
@@ -371,7 +390,7 @@ class Model:
             print('Average baseflow data for each gauge and time step')
             data_ts=data_ts.groupby(['gauge','Datum']).mean().reset_index().pivot(index='Datum',columns='gauge',values='value')
             
-        elif flow_type =='discharge':
+        elif self.config['waterbalance']['flow_type'] =='discharge':
             print('Use daily discharge')
             data_ts=self.gauge_ts.copy()
         
@@ -384,8 +403,8 @@ class Model:
                                   network=network_geometry,
                                   tributary_connections=tributary_connections,
                                   distributary_connections=distributary_connections,
-                                  confidence_acceptance_level=confidence_acceptance_level,
-                                  time_series_analysis_option=time_series_analysis_option)
+                                  confidence_acceptance_level=self.config['waterbalance']['confidence_acceptance_level'],
+                                  time_series_analysis_option=self.config['waterbalance']['time_series_analysis_option'])
         
         return sections_meta,q_diff,gdf_network_map
 

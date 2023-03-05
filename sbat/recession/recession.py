@@ -392,13 +392,13 @@ def find_recession_limbs(Q,smooth_window_size=15,
 
 
 
-def analyse_recession_curves(Q,mrc_algorithm='demuth',
-                             recession_algorithm='boussinesq',
-                             smooth_window_size=3,
-                             minimum_recession_curve_length=10,
-                             define_falling_limb_intervals=True,
-                             maximum_reservoirs=3,
-                             minimum_limbs=20,
+def analyse_recession_curves(Q,mrc_algorithm: str ='demuth',
+                             recession_algorithm: str ='boussinesq',
+                             smooth_window_size: int = 3,
+                             minimum_recession_curve_length: int = 10,
+                             define_falling_limb_intervals: bool = True,
+                             maximum_reservoirs: int = 3,
+                             minimum_limbs: int = 20,
                              ):
     """
     Analyze recession curves using the specified algorithm and parameters.
