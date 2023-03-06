@@ -4,3 +4,4 @@ build/
 /hooks/
 test_schuettung_q.py
 /input/*
+output/*

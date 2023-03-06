@@ -13,6 +13,7 @@ from .baseflow.baseflow import compute_baseflow,add_gauge_stats,plot_bf_results
 from .recession.recession import analyse_recession_curves,plot_recession_results
 from .waterbalance.waterbalance import get_section_water_balance
 from datetime import datetime
+import sys
 
 
 
@@ -47,7 +48,7 @@ def iterdict(d):
 dateparse = lambda x: datetime.strptime(x, '%Y-%m-%d')
 
 class Model:
-    def __init__(self):
+    def __init__(self,config_file_path=None):
         """
         A class for processing gauge time series data.
         
@@ -82,7 +83,12 @@ class Model:
         self.model_path=os.path.dirname(os.path.dirname(__file__))
         
         #load the config_data
-        with open(os.path.join(self.model_path,'sbat.yml')) as c:
+        if not config_file_path:
+            print('take standard configfile location')
+            config_file_path=os.path.join(self.model_path,'sbat.yml')
+            
+            
+        with open(config_file_path) as c:
             self.config = yaml.safe_load(c)
         
         #get the output_directory
@@ -398,15 +404,48 @@ class Model:
         #start the calculation
 
         
-        sections_meta,q_diff,gdf_network_map=get_section_water_balance(gauge_data=self.gauge_meta,
+        self.sections_meta,self.q_diff,self.gdf_network_map=get_section_water_balance(gauge_data=self.gauge_meta,
                                   data_ts=data_ts,
                                   network=network_geometry,
                                   tributary_connections=tributary_connections,
                                   distributary_connections=distributary_connections,
                                   confidence_acceptance_level=self.config['waterbalance']['confidence_acceptance_level'],
                                   time_series_analysis_option=self.config['waterbalance']['time_series_analysis_option'])
+
+    
+def main(config_file=None,output=True):
+    sbat=Model(config_file_path=config_file)
+    #get discharge data
+    sbat.get_discharge_stats()
+
+    #get baseflow
+    sbat.get_baseflow()
+    #compute the master recession curve
+
+    sbat.get_recession_curve()
+    #water balance
+    sbat.get_water_balance()
+    # write the output
+    if output:
+        os.makedirs(os.path.join(sbat.output_dir,'data'),exist_ok=True)
+        sbat.sections_meta.to_csv(os.path.join(sbat.output_dir,'data','section_meta.csv'))
+        sbat.q_diff.to_csv(os.path.join(sbat.output_dir,'data','q_diff.csv'))
+        sbat.gdf_network_map.to_file(os.path.join(sbat.output_dir,'data','section_network_map.gpkg'),driver='GPKG')
+    
+    return sbat
+    
+    
+    
+    
+    
+if __name__ == "__main__":
+    if sys.argv == 1:
+        cfg_file = sys.argv.pop(1)
+        main(config_file=cfg_file)
+    else:        
+        main()
         
-        return sections_meta,q_diff,gdf_network_map
+    
 
    
         
