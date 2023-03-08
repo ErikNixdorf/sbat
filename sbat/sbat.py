@@ -313,7 +313,7 @@ class Model:
                 continue
             
             metric=pd.DataFrame.from_records(recession_results.iloc[1,:],
-                                              columns=['Q0_mrc', 'n_mrc', 'pearson_r'],
+                                              columns=['Q0_rec', 'n0_rec', 'pearson_r'],
                                               index=recession_results.columns)
             
             metric['decade']=decade
@@ -350,7 +350,7 @@ class Model:
             logging.info('plot_results')
             plot_recession_results(meta_data=self.gauge_meta,
                                 meta_data_decadal=self.gauge_meta_decadal,
-                                parameters_to_plot=['Q0_mrc','pearson_r','n'],
+                                parameters_to_plot=['Q0_rec','pearson_r','n0_rec'],
                                 streams_to_plot=['spree','lausitzer_neisse','schwarze_elster'],
                                 output_dir=os.path.join(self.output_dir,'recession_analysis','figures'),
                                 decadal_plots=self.config['time']['compute_each_decade'],
