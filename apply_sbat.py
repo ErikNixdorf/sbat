@@ -1,25 +1,37 @@
 """
 Call Function
 """
-from datetime import datetime
 
-from sbat.sbat import main
-import pandas as pd
-import os
-import geopandas as gpd
+
+from sbat.sbat import main,Model
+
 
 #%% generate the object
-sbat=main(output=True)
+sbat=Model()
+
+
+#sbat=main(output=True)
+
+""" 
+def call_main():
+    sbat=main(output=True)
+import cProfile,pstats
+profiler = cProfile.Profile()
+profiler.enable()
+call_main()
+profiler.disable()
+stats = pstats.Stats(profiler).sort_stats('tottime')
+stats.strip_dirs()
+stats.print_stats()
 """
-#get discharge data
-sbat.get_discharge_stats()
+
 
 #get baseflow
 sbat.get_baseflow()
-#compute the master recession curve
 
-sbat.get_recession_curve()
 
-sections_meta,q_diff,gdf_network_map = sbat.get_water_balance()
-"""
+sbat.get_water_balance()
+
+
+
 

@@ -12,11 +12,11 @@ import os
 import numpy as np
 import geopandas as gpd
 from copy import deepcopy
-from shapely.geometry import Point, MultiPoint, LineString,MultiLineString
-from shapely.ops import nearest_points,cascaded_union
+from shapely.geometry import Point, MultiPoint, LineString,MultiLineString,MultiPolygon
+from shapely.ops import nearest_points,cascaded_union,unary_union
 import secrets
 import logging
-from typing import Dict
+from typing import Dict,Any
 def multilinestring_to_singlelinestring(
         multilinestring, 
         start_point, 
@@ -92,8 +92,6 @@ def generate_upstream_network(gauge_meta=pd.DataFrame(),tributary_connections=pd
         #first we create a hex string which helps us 
         gauge_connection_dict['id']=secrets.token_hex(4)
 
-        
-        #we write the name of the gewaesser
         gauge_connection_dict['reach_name']=gauge.gewaesser
      
         #check whether there is an upstream gauge in the system
@@ -173,21 +171,20 @@ def generate_upstream_network(gauge_meta=pd.DataFrame(),tributary_connections=pd
             
         #downstream is always the same
         gauge_connection_dict['downstream_point']=gauge.name
-        
-    
-    
             
         #check for tributary or distributary gauges between the spring and the gauge
+        #generate a copy of gauge_meta
+        gauge_meta_reset=gauge_meta.copy().reset_index()
         for trib_type in ['tributaries','distributaries']:
-            #we generate a copy of gauge_meta
-            gauge_meta_reset=gauge_meta.copy().reset_index()
+
             # if there are tributary_gauges
             if len(gauge_connection_dict[trib_type+'_up'])>0:
                 
                 #first we check whether the tributaries have gauges
+                
                 tribs_with_gauges=gauge_connection_dict[trib_type+'_up'][gauge_connection_dict[trib_type+'_up'].Gewaesser.isin(gauge_meta.gewaesser)].set_index('Gewaesser')
                 
-                if len(tribs_with_gauges)>0:
+                if not tribs_with_gauges.empty:
                     #get_the_tributary_gauges which is the most downstream_gauge
     
                     trib_gauges=gauge_meta_reset.loc[gauge_meta_reset.gewaesser.isin(tribs_with_gauges.index),:]
@@ -222,93 +219,103 @@ def calculate_network_balance(ts_data=pd.DataFrame(),
                               network_dict=dict(),
                               confidence_acceptance_level=0.05):   
     """
+    Calculates the water balance for a network of gauges using time series data and 
+    a dictionary representing the network topology.
     
-
-    Parameters
-    ----------
-    ts_data : TYPE, optional
-        DESCRIPTION. The default is pd.DataFrame().
-    network_dict : TYPE, optional
-        DESCRIPTION. The default is dict().
-    confidence_acceptance_level : TYPE, optional
-        DESCRIPTION. The default is 0.05.
-
-    Returns
-    -------
-    None.
-
+    Parameters:
+    -----------
+    ts_data : pd.DataFrame(), optional
+        A DataFrame containing time series data for each gauge. Default is an empty DataFrame.
+        
+    network_dict : dict, optional
+        A dictionary representing the topology of the network, with each key representing a gauge and the corresponding value being another dictionary containing information about that gauge's upstream and downstream connections. Default is an empty dictionary.
+        
+    confidence_acceptance_level : float, optional
+        A float representing the confidence interval below which water balance values are set to NaN. Default is 0.05.
+    
+    Returns:
+    --------
+    sections_meta : pd.DataFrame()
+        A DataFrame containing information about each gauge, including the water balance for each time step.
+        
+    q_diff : pd.DataFrame()
+        A pivot table showing the water balance for each gauge at each time step.
     """
     
-    #%% now we loop through the time steps
-    sections_meta=pd.DataFrame(columns=['upstream_point','downstream_point','gauge','balance','Date'])
-    nr_ts=ts_data.shape[0]
-    #if below threshold, balance is not significant
-    confidence_acceptance_level=0.05
+    sections_meta=list()
+    nr_ts=ts_data.shape[0]    
     
-    
-    for gauge in network_dict.keys():
+    # Create list of gauge keys
+    gauge_keys = network_dict.keys()
+    #loop over gauges
+    for gauge in gauge_keys:
         
         #we write some empty dataframes for the tributaries
-        ts_distributaries=pd.concat([pd.Series(0)]*nr_ts)
-        ts_distributaries.index=ts_data.index
-        ts_tributaries=pd.concat([pd.Series(0)]*nr_ts)
-        ts_tributaries.index=ts_data.index
-        ts_data_gauge_up=pd.concat([pd.Series(0)]*nr_ts)
-        ts_data_gauge_up.index=ts_data.index    
+        ts_distributaries=pd.Series(np.zeros((nr_ts)),index=ts_data.index)
+        ts_tributaries=ts_distributaries.copy()
+        ts_data_gauge_up=ts_distributaries.copy()
         
         print('add water balance to gauge ',gauge)
-        df_section=pd.DataFrame(columns=['upstream_point','downstream_point','balance'])
-        df_row=pd.Series(dict((k, network_dict[gauge][k]) for k in ['upstream_point','downstream_point'] if k in network_dict[gauge]),name=gauge).to_frame().T
-        #name of gauge and id
-        df_row['gauge']=gauge
-        df_row['id']=network_dict[gauge]['id']
-        df_section=pd.concat([df_row]*nr_ts, ignore_index=True)
+
+        #generate an empty dataframe to fill the balance data for each time step
+        gauge_boundary_names= {k: network_dict[gauge][k] for k in ['upstream_point', 'downstream_point'] if k in network_dict[gauge]}
+        df_row = pd.DataFrame(gauge_boundary_names,index=[0])
+        #create a section dataframe for each time step
+        df_section=df_row.reindex(index=pd.RangeIndex(nr_ts), method='ffill')
+        
+        #get the topology parameters as variables
+        upstream_point = network_dict[gauge]['upstream_point']
+        distributaries_up = network_dict[gauge].get('distributaries_up', None)
+        tributaries_up = network_dict[gauge].get('tributaries_up', None)
+        gauge_up = network_dict[gauge].get('gauge_up', None)
+        #we get parts of water balance from the network
+        
         #first case is easy if upstream is a distributary, we cant give any balance, it is actually covered in another scenario
-        if network_dict[gauge]['upstream_point']=='river_junction':
+        if upstream_point == 'river_junction':
     
-            # in this case balance is nan
-            df_section=pd.concat([df_row]*nr_ts, ignore_index=True)
+            # in this case balance is nan            
             df_section['balance']=np.nan
-            df_section['Date']=ts_data.index
         else:
             #in all other cases we just compute them from distributary and tributary gauges
-            if len(network_dict[gauge]['gauge_up']) > 0:
-                ts_data_gauge_up=ts_data[network_dict[gauge]['gauge_up'].index.tolist()].sum(axis=1)
+            if not gauge_up.empty:
+                ts_data_gauge_up=ts_data[gauge_up.index.tolist()].sum(axis=1)    
     
-    
-            # in this case we have to compute the difference between gauge, tributaries and distributaries
-            if 'distributaries_up' in network_dict[gauge].keys() and len(network_dict[gauge]['distributaries_up'])>0:
-                distri_gauges=network_dict[gauge]['distributaries_up'][network_dict[gauge]['distributaries_up'].upstream_point!='river_spring']
-                if len(distri_gauges)>0:
-                    ts_distributaries=ts_data[distri_gauges.upstream_point.tolist()].sum(axis=1)
-    
-    
-                
-            if 'tributaries_up' in network_dict[gauge].keys() and len(network_dict[gauge]['tributaries_up'])>0:
-                tri_gauges=network_dict[gauge]['tributaries_up'][network_dict[gauge]['tributaries_up'].upstream_point!='river_spring']
+            # get discharge of all distributary gauges
+            if not distributaries_up.empty:
+                distri_gauges=distributaries_up[distributaries_up.upstream_point!='river_spring']
+                if not distri_gauges.empty:
+                    ts_distributaries = ts_data[distri_gauges.upstream_point.tolist()].sum(axis=1)
+                else:
+                    ts_distributaries = 0
+            
+            #get discharge of all tributary gauges
+            if not tributaries_up.empty:
+                tri_gauges=tributaries_up[tributaries_up.upstream_point!='river_spring']
                 if len(tri_gauges)>0:
-                    ts_tributaries=ts_data[tri_gauges.upstream_point.tolist()].sum(axis=1)
-    
+                    ts_tributaries = ts_data[tri_gauges.upstream_point.tolist()].sum(axis=1)
+                else:
+                    ts_tributaries = 0
     
                 
             #calculate the water balance
-    
-            df_section['balance']=(ts_data[gauge]-ts_data_gauge_up-ts_tributaries+ts_distributaries).values
-            df_section['Date']=ts_data.index
-            df_section['balance_confidence']=df_section['balance'].divide((ts_data[gauge]+ts_data_gauge_up).values)
-            
-         
-            
-            print('add water balance to gauge ',gauge, 'done')
-            
-    
-        sections_meta=sections_meta.append(df_section)
+            balance = ts_data[gauge] - ts_data_gauge_up - ts_tributaries + ts_distributaries
+            df_section['balance'] = balance.values
+            df_section['balance_confidence'] = np.divide(balance.values,(ts_data[gauge] + ts_data_gauge_up).values)
         
-    
+        #add index data
+        df_section['Date']=ts_data.index
+        print(f'Water balance added to gauge {gauge}')
             
-    #%% Finally we get out the data
-    #spreadsheet with all data
-    sections_meta.loc[abs(sections_meta['balance_confidence'])<confidence_acceptance_level,'balance']=np.nan
+    
+        sections_meta.append(df_section)
+
+            
+    # Finally we get out the data
+    
+    sections_meta=pd.concat(sections_meta)
+    #remove all balances below confidence interval
+    low_confidence_mask = abs(sections_meta['balance_confidence']) < confidence_acceptance_level
+    sections_meta.loc[low_confidence_mask, 'balance'] = np.nan
     q_diff=sections_meta.pivot(index='Date',columns='downstream_point',values='balance')
     
     return sections_meta,q_diff
@@ -317,7 +324,7 @@ def calculate_network_balance(ts_data=pd.DataFrame(),
 def map_network_sections(
     network_dict: Dict, 
     gauge_meta: pd.DataFrame, 
-    network: gpd.GeoDataFrame
+    network: gpd.GeoDataFrame,
     ):
     """
     Parameters
@@ -334,6 +341,9 @@ def map_network_sections(
     gdf_balances : gpd.GeoDataFrame
         A GeoDataFrame containing the sections of the river network.
     """
+    
+    
+    #%% we write a function to get the basin_data
     
     gdf_balances=gpd.GeoDataFrame()
     
@@ -481,15 +491,101 @@ def aggregate_time_series(data_ts,analyse_option='overall_mean'):
     
     return ts_stats
 
+#get the section basins
+def get_section_basins(basins: gpd.GeoDataFrame,
+                       network_dict: Dict[str, Any],
+                       basin_id_col: str = 'basin'
+                       ):
+    """
+    Computes the section basins for each gauge in a river network, given a GeoDataFrame of basin polygons and a dictionary
+    describing the network topology. The section basin is the downstream basin of a gauge, clipped by the upstream basins of
+    any tributary or distributary gauges.
+
+    Parameters:
+    -----------
+    basins : gpd.GeoDataFrame
+        A GeoDataFrame containing the basin polygons for the river network.
+    network_dict : dict
+        A dictionary describing the topology of the river network, with gauge IDs as keys and topology parameters as values.
+    basin_id_col : str
+        The name of the column in the basins GeoDataFrame containing the basin IDs.
+
+    Returns:
+    --------
+    section_basins : gpd.GeoDataFrame
+        A GeoDataFrame containing the section basins for each gauge in the river network.
+    """
+
+    #loop over gauges
+    section_basins=list()
+    gauge_keys = network_dict.keys()
+    for gauge in gauge_keys:
+                
+        #get the topology parameters as variables
+        upstream_point = network_dict[gauge]['upstream_point']
+        distributaries_up = network_dict[gauge].get('distributaries_up')
+        tributaries_up = network_dict[gauge].get('tributaries_up')
+        gauge_up = network_dict[gauge].get('gauge_up')
+        
+        #We start by defining the section basin as the downstream gauge basin
+        section_basin=basins.loc[basins['basin']==gauge]
+        
+        #only if there is no river junction upstream we can compute the subbasin
+        if upstream_point != 'river_junction':
+            
+            #Clip the gauge_basin with the upstream basin
+            if not gauge_up.empty:
+                gauge_up_basin=basins[basins['basin']==gauge_up.index[0]]
+                #get difference with upstream basin
+                section_basin=gpd.overlay(section_basin,gauge_up_basin,how='difference')
+                
+    
+            #get all tributary gauges
+            if not tributaries_up.empty:
+                tri_gauges=tributaries_up[tributaries_up.upstream_point!='river_spring']
+                #get difference with tributary gauges
+                for tri_gauge in tri_gauges.upstream_point:
+                    section_basin=gpd.overlay(section_basin,basins.loc[basins['basin']==tri_gauge],how='difference')
+            
+            #if Multipolygon is result of clipping we reduce to largest polygon
+
+            if not section_basin.empty and isinstance(section_basin.geometry.iloc[0],MultiPolygon):
+                section_basin.geometry=[max(section_basin.iloc[0].geometry, key=lambda a: a.area)]
+
+
+            # get the next distributary gauge and add their basin
+            if not distributaries_up.empty:
+                distri_gauges = distributaries_up[distributaries_up.upstream_point!='river_spring']
+                for distri_gauge in distri_gauges.upstream_point:
+
+                    section_basin.iloc[0].geometry=unary_union([section_basin.iloc[0].geometry,basins.loc[basins['basin']==distri_gauge].iloc[0].geometry])
+
+                    #we dissolve the geometries
+                    section_basin=section_basin.dissolve()
+            
+            #append
+            section_basins.append(section_basin)
+            
+    #merge
+    section_basins=pd.concat(section_basins)
+    #overwrite some layers
+    #assuming a representative Circle, we assume the radius of this circle is the mean length towards the stream
+    section_basins['area']=section_basins.geometry.area
+    section_basins['L_represent']=np.sqrt(section_basins['area']/np.pi)
+    
+    return section_basins
+
     
 #%% A function which connects all functions
 def get_section_water_balance(gauge_data: pd.DataFrame = pd.DataFrame(),
                           data_ts: pd.DataFrame = pd.DataFrame(),
                           network: gpd.GeoDataFrame = gpd.GeoDataFrame(),
+                          basins: gpd.GeoDataFrame = gpd.GeoDataFrame(),
                           tributary_connections: pd.DataFrame = pd.DataFrame(),
                           distributary_connections: pd.DataFrame = pd.DataFrame(),
                           confidence_acceptance_level: float = 0.05,
                           time_series_analysis_option: str = 'overall_mean',
+                          basin_id_col: str ='basin',
                           ):
     """
     Calculates the water balance for a network of stream gauges and their upstream
@@ -510,6 +606,8 @@ def get_section_water_balance(gauge_data: pd.DataFrame = pd.DataFrame(),
         upstream stream), 'target' (ID of the downstream stream), and 'geometry'
         (shapely LineString representing the stream segment). The default is an empty
         GeoDataFrame.
+    basins : geopandas.GeoDataFrame, optional
+        Hydrological catchments belonging to each gauge in the gauge data
     tributary_connections : pandas.DataFrame, optional
         A table with columns for 'source' (ID of the upstream stream) and 'target'
         (ID of the downstream tributary stream). The default is an empty DataFrame.
@@ -521,6 +619,8 @@ def get_section_water_balance(gauge_data: pd.DataFrame = pd.DataFrame(),
         balance calculations. The default is 0.05.
     time_series_analysis_option : str, optional
         The method used to aggregate the time series data. The default is 'overall_mean'.
+    basin_id_col : str, optional
+        The name of the column in `basins` DataFrame that contains basin IDs. The default is 'basin'.
 
     Returns
     -------
@@ -534,7 +634,8 @@ def get_section_water_balance(gauge_data: pd.DataFrame = pd.DataFrame(),
     gdf_network_map : geopandas.GeoDataFrame
         A GeoDataFrame representing the network with a single line for each section,
         colored according to the sign of the water balance.
-
+    section_basins : geopandas.GeoDataFrame
+    The Hydrological subbasin belonging to each section for which the water balance was been computed
     """
     
 
@@ -571,82 +672,18 @@ def get_section_water_balance(gauge_data: pd.DataFrame = pd.DataFrame(),
                          gauge_meta=gauge_data,
                          network=network)
     
+    
+    #we want a function to calculate the network subbasin
+
+
+    
+    section_basins=get_section_basins(basins=basins,
+                           network_dict=gauges_connection_dict,
+                           basin_id_col=basin_id_col)
+    
     # return the results
-    return sections_meta,q_diff,gdf_network_map
+    return sections_meta,q_diff,gdf_network_map,section_basins
     
-    
-    
-    
-    
-    
-
-def test_waterbalance():
-#%% We run the model
-#%% load the data of the gauges
-
-    gauge_data=pd.read_csv(os.path.join(os.getcwd(),'input','pegel_uebersicht.csv'))
-    
-    
-    
-    
-    zufluesse=pd.read_csv(os.path.join(os.getcwd(),'input','zufluesse.csv'))
-    abfluesse=pd.read_csv(os.path.join(os.getcwd(),'input','abfluesse.csv'))
-    
-    #we load time series data
-    data_ts=pd.read_csv(os.path.join(os.getcwd(),'input','pegel_ts.csv'))
-    data_ts=data_ts.set_index(pd.to_datetime(data_ts['Datum']),drop=True).drop(columns=['Datum'])
-    
-    #we load network data
-    network=gpd.read_file(os.path.join(os.getcwd(),'input','Network_z.shp'))
-    
-    
-    
-    #%% We do some small data manipulations
-    ts_stats=aggregate_time_series(data_ts=data_ts,analyse_option='overall_mean',
-                              start_date='2020-12-01',end_date='2020-12-15')
-    
-    #synchrnonize our datasets
-    gauge_data=gauge_data.loc[gauge_data.pegelname.isin(ts_stats.columns),:]
-    #reduce the datasets to all which have metadata
-    ts_stats=ts_stats[gauge_data.pegelname.to_list()]
-    print(ts_stats.shape[1], 'gauges with valid meta data')
-    
-    # our gauge data has to converted to geodataframe
-    #make a geodataframe out of the data
-    geometry = [Point(xy) for xy in zip(gauge_data.ostwert, gauge_data.nordwert)]   
-    
-    gauge_data = gpd.GeoDataFrame(gauge_data, crs=network.crs, geometry=geometry)
-    # clean it
-    
-    gauge_data=gauge_data[~gauge_data.geometry.is_empty]
-    
-    
-    #%% We run through the main functions
-    
-    
-    gauges_connection_dict=generate_upstream_network(gauge_meta=gauge_data,
-                                   tributary_connections=zufluesse,
-                                   distributary_connections=abfluesse)
-    
-    
-    sections_meta,q_diff=calculate_network_balance(ts_data=ts_stats,
-                                  network_dict=gauges_connection_dict,
-                                  confidence_acceptance_level=0.05)
-    
-    gdf_network_map=map_network_sections(network_dict=gauges_connection_dict,
-                         gauge_meta=gauge_data,
-                         network=network)
-        
-       
-    #we finally map the mean on the data and provide the output
-    os.makedirs(os.path.join(os.path.dirname(os.path.abspath(__file__)),'output'),exist_ok=True)
-    df_sections_mean=sections_meta.groupby('id').mean().rename(columns={'balance':'q_dif_mean_m3_s'})
-    
-    gdf_network_map=pd.concat([gdf_network_map.set_index('id'),df_sections_mean],axis=1).reset_index(drop=False)
-    
-    gdf_network_map.to_file(os.path.join(os.getcwd(),'output','stream_water_balance.gpkg'),driver='GPKG')
-
-  
 
 
 

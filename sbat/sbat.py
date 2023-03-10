@@ -379,6 +379,10 @@ class Model:
                                                     self.config['file_io']['input']['geospatial']['distributary_topology'])
                                              )
         
+        gauge_basins = gpd.read_file(os.path.join(geospatial_path,
+                                                    self.config['file_io']['input']['geospatial']['gauge_basins'])
+                                       )
+        
         if self.config['waterbalance']['flow_type']=='baseflow':
             print('Use baseflow time series')
             #check whether the baseflow as already be computed
@@ -404,13 +408,16 @@ class Model:
         #start the calculation
 
         
-        self.sections_meta,self.q_diff,self.gdf_network_map=get_section_water_balance(gauge_data=self.gauge_meta,
+        self.sections_meta,self.q_diff,self.gdf_network_map,self.section_basins=get_section_water_balance(gauge_data=self.gauge_meta,
                                   data_ts=data_ts,
                                   network=network_geometry,
+                                  basins=gauge_basins,
                                   tributary_connections=tributary_connections,
                                   distributary_connections=distributary_connections,
                                   confidence_acceptance_level=self.config['waterbalance']['confidence_acceptance_level'],
-                                  time_series_analysis_option=self.config['waterbalance']['time_series_analysis_option'])
+                                  time_series_analysis_option=self.config['waterbalance']['time_series_analysis_option'],
+                                  basin_id_col=self.config['waterbalance']['basin_id_col'],
+                                  )
 
     
 def main(config_file=None,output=True):
