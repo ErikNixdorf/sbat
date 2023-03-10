@@ -1,6 +1,4 @@
 # This File allows to define which parameter and ranges should be included in the setup of sbat
-#it is, together with calibration_config.yml one of the two text files which allows the user to
-#interact with the gromola with required to code something
 #the structure is a tree similar to xml
 
 #file_io describes the location of all input datasets as well as parameter specifications
@@ -10,13 +8,14 @@ file_io:
         gauges:
             gauge_meta: gauges\\pegel_uebersicht.csv
             gauge_time_series: gauges\\pegel_ts.csv
-        wells:
-            gw_levels: Grundwasserdaten\Grundwassermessstellen\GWM_FINA_mean_summer_2021.gpkg
+        hydrogeology:
+            gw_levels: hydrogeology\\gw_heads.tif
         geospatial:
             river_network: geospatial\\river_network_z.gpkg
             gauge_basins: geospatial\\pegeleinzugsgebiete.gpkg
             tributary_topology: gauges\zufluesse.csv
             distributary_topology: gauges\\abfluesse.csv
+
     output:
         output_directory: output\
         plot_results: false
@@ -24,7 +23,7 @@ file_io:
 data_cleaning:
     drop_na_axis: 0
     valid_datapairs_only: true
-    test_mode: false
+    test_mode: true
 #infomation on time processing
 time:
     compute_each_decade: true
@@ -48,7 +47,9 @@ discharge:
 #the recession
 recession:
     curve_data:
-        curve_type: baseflow
+        flow_type: baseflow
+        #curve type can be either hydrograph or water balance
+        curve_type: hydrograph
         minimum_limbs: 20
         moving_average_filter_steps: 5
     fitting:
@@ -57,6 +58,7 @@ recession:
         minimum_limbs: 20
         maximum_reservoirs: 2
         minimum_recession_curve_length: 10
+        infer_hydrogeological_parameters: true
 #water balance
 waterbalance:
     flow_type: baseflow

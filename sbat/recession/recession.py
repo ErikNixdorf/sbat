@@ -172,8 +172,8 @@ def fit_reservoir_function (t,Q,Q_0,
         Q_0_min = Q_0 * 0.9999
         Q_0_max = Q_0 * 1.0001
     else:
-        Q_0_min = 0.001
-        Q_0_max = 1000
+        Q_0_min = 0.000001
+        Q_0_max = Q_0 * 1.0001
         
     # Define n_min and n_max
     n_min = 10e-10
@@ -206,7 +206,9 @@ def fit_reservoir_function (t,Q,Q_0,
         bounds = (bounds_min, bounds_max)
 
         # Fit the function
-        fit_parameter, pcov = curve_fit(model_function, t, Q, p0=p0, bounds=bounds, maxfev=20000)
+        fit_parameter, pcov = curve_fit(model_function, t, Q, p0=p0, bounds=bounds, maxfev=2000)
+
+
         Q_int = model_function(t, *fit_parameter)
         
         #get the correlation
@@ -579,7 +581,7 @@ def analyse_recession_curves(Q,mrc_algorithm: str ='demuth',
    
         #update the output_data
         mrc_out=((fit_parameter[0],fit_parameter[1],r_mrc))
-        print('pearson r of method',mrc_algorithm, 'with recession model',recession_algorithm, ' is ', np.round(r_mrc,2))
+        print(f'pearson r of method {mrc_algorithm} with recession model {recession_algorithm} is {np.round(r_mrc,2)}')
         
 
     return Q,mrc_out

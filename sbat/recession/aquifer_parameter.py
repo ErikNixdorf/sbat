@@ -9,7 +9,7 @@ Three parts:
 
 #%% import libs
 import geopandas as gpd
-from typing import List
+from typing import List, Tuple
 import rasterio
 from shapely.geometry import Point,Polygon,MultiPolygon,MultiPoint
 import os
@@ -19,7 +19,9 @@ import numpy as np
 def extract_coords(pt):
     return pt.x, pt.y, pt.z
 #%% Get drainage parameters
-def get_drainage_topographic_parameters(basin,gw_surface ='rasterio_raster', river_network= gpd.GeoDataFrame()):
+def get_drainage_topographic_parameters(basin,basin_id_col='basin',
+                                        gw_surface ='rasterio_raster', 
+                                        river_network= gpd.GeoDataFrame()):
     """
     Computes topographic parameters of a given drainage basin based on a groundwater surface and a river network.
     
@@ -38,10 +40,11 @@ def get_drainage_topographic_parameters(basin,gw_surface ='rasterio_raster', riv
                             - dist_m: the mean distance of the boundary points to the river network
                             - network_length: the total length of the river network within the drainage basin
     """
-    basin=gpd.GeoDataFrame(data={'basin_id':basin.T.basin_id,
+    basin=gpd.GeoDataFrame(data={'basin_id':basin.T[basin_id_col],
                                  'area':basin.T.area,
                                  'L_represent':basin.T['L_represent']},index=[int(basin.T.value)],geometry=[basin.T.geometry],crs=river_network.crs)
-    print('Check basin ',basin['basin_id'].iloc[0])
+    basin_name=basin['basin_id'].iloc[0]
+    print('Check basin ',basin_name)
     # get the boundary of the basin
     boundary = basin.iloc[0].geometry.boundary
     
@@ -58,6 +61,14 @@ def get_drainage_topographic_parameters(basin,gw_surface ='rasterio_raster', riv
     }, geometry=[Point(x, y) for x, y in coords], crs=river_network.crs)
     #we clip the river network by the basin
     basin_network=gpd.clip(river_network,basin).explode()
+    
+    if basin_network.empty:
+        print(f'No river sections within basin {basin_name}')
+        basin['h_m'] = np.nan
+        basin['dist_m'] = np.nan
+        basin['network_length']=np.nan
+        return basin.iloc[0]
+    
     #compute the length of the network
     network_length = basin_network.geometry.length.sum() 
 
@@ -77,7 +88,9 @@ def get_drainage_topographic_parameters(basin,gw_surface ='rasterio_raster', riv
                     (gdf_basin_pts['y'].values.reshape(-1, 1) - gdf_network_pnts['geometry'].y.values.reshape(1, -1)) ** 2)
     
     # get the index of the closest point in gdf_network_pnts for each point in gdf_basin_pts
+
     closest_idxs = np.argmin(dists, axis=1)
+
     closest_network_pnts=gdf_network_pnts.geometry[closest_idxs]
 
     
@@ -117,7 +130,15 @@ def map_topo_parameters(row: pd.Series, df2: pd.DataFrame, parameters: List[str]
     pandas Series
         A modified copy of `row` with additional columns for the mapped topographic parameters from `df2`.
     """
-    topo_params = df2[df2['basin_id'] == row['gauge']][parameters].iloc[0]
+    if isinstance(row.name,Tuple):
+        gauge_name=row.name[0]
+    else:
+        gauge_name=row.name
+        
+
+    topo_params = df2[df2['basin_id'] == gauge_name][parameters].iloc[0]
+
+
     row=row.append(topo_params)
     return row
 
@@ -207,6 +228,30 @@ def infer_hydrogeo_parameters(basin_data: pd.DataFrame,
         
     return basin_data
 
+#%% Wrapper Function to call all functions
+def get_hydrogeo_properties(gauge_data=pd.DataFrame(),
+                                 basins = gpd.GeoDataFrame,
+                                 gw_surface= 'rasterio',
+                                 network = gpd.GeoDataFrame,
+                                 conceptual_model='maillet',
+                                 basin_id_col='basin',
+                                 ):
+    #%% run the steps
+    #get drainage parameters
+    basins_out=basins.apply(lambda row: get_drainage_topographic_parameters(row, gw_surface=gw_surface,basin_id_col=basin_id_col,
+                                                                            river_network=network), axis=1)
+    #map to gauge data
+    gauge_data=gauge_data.apply(lambda x:map_topo_parameters(x,basins_out),axis=1)
+    #get hydrogeological parameters
+    gauge_data=infer_hydrogeo_parameters(basin_data=gauge_data,
+                                         conceptual_model=conceptual_model,
+                                         Q0='Q0_rec',
+                                         alpha='n0_rec',
+                                         dist_m='dist_m',
+                                         network_length='network_length',
+                                         h_m='h_m')
+    return gauge_data
+
 #%% call both functions for test purpose
 
 
@@ -257,8 +302,7 @@ def test():
     return gauge_meta
 
 
-#%% run the test
-gauge_meta=test()
+
     
 
 

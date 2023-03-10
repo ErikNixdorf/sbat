@@ -11,10 +11,11 @@ from typing import Optional
 import logging
 from .baseflow.baseflow import compute_baseflow,add_gauge_stats,plot_bf_results
 from .recession.recession import analyse_recession_curves,plot_recession_results
+from .recession.aquifer_parameter import get_hydrogeo_properties
 from .waterbalance.waterbalance import get_section_water_balance
 from datetime import datetime
 import sys
-
+import rasterio
 
 
 def iterdict(d):
@@ -82,6 +83,8 @@ class Model:
         # Define the model and output paths
         self.model_path=os.path.dirname(os.path.dirname(__file__))
         
+
+        
         #load the config_data
         if not config_file_path:
             print('take standard configfile location')
@@ -91,6 +94,10 @@ class Model:
         with open(config_file_path) as c:
             self.config = yaml.safe_load(c)
         
+        #define some directorys
+        self.data_path=os.path.join(self.model_path,
+                                     self.config['file_io']['input']['data_dir']
+                                     )               
         #get the output_directory
         self.output_dir=os.path.join(self.model_path,self.config['file_io']['output']['output_directory'])
         os.makedirs(self.output_dir,exist_ok=True)
@@ -272,7 +279,7 @@ class Model:
         self.recession_limbs_ts=pd.DataFrame()
         
         #first we check whether baseflow data exist
-        if self.config['recession']['curve_data']['curve_type']=='baseflow':            
+        if self.config['recession']['curve_data']['flow_type']=='baseflow':            
             if not hasattr(self, 'bf_output'):
                 raise ValueError('Compute baseflow with function get_baseflow first')
             else:
@@ -327,12 +334,14 @@ class Model:
             recession_limbs=pd.concat(list(recession_limbs),axis=0)            
             recession_limbs['decade']=decade
             recession_limbs['mrc_algorithm'] = self.config['recession']['fitting']['mastercurve_algorithm']            
+            recession_limbs['flow_type'] = self.config['recession']['curve_data']['flow_type']
             recession_limbs['curve_type'] = self.config['recession']['curve_data']['curve_type']
             recession_limbs['recession_algorithm'] = self.config['recession']['fitting']['recession_algorithm']
 
             self.recession_limbs_ts = pd.concat([self.recession_limbs_ts,recession_limbs], axis=0, sort=False)
             metrics.append(metric)
-        
+            
+
         #append the metrics data to the metadata
         df_metrics=pd.concat(metrics,axis=0)
         if self.config['time']['compute_each_decade']:            
@@ -341,10 +350,7 @@ class Model:
 
             self.gauge_meta=pd.concat([self.gauge_meta,df_metrics.reset_index().set_index('gauge').drop(columns=['decade'])],axis=1)        
 
-        #reduce the data for gauge meta
-        #self.gauge_meta=self.gauge_meta_decadal.groupby('gauge').first()
-        logging.info('Recession Curve Analysis Finished')        
-
+ 
             
         if self.config['file_io']['output']['plot_results']:
             logging.info('plot_results')
@@ -356,7 +362,49 @@ class Model:
                                 decadal_plots=self.config['time']['compute_each_decade'],
                                 )
             
+        logging.info('Recession Curve Analysis Finished') 
+
+
+        #%%we infer the hydrogeological parameters if needed
+        if self.config['recession']['fitting']['infer_hydrogeological_parameters']:
+            #decide which kind of basins we need
+            if self.config['recession']['curve_data']['curve_type'] == 'waterbalance':
+                basins=self.section_basins
+            elif self.config['recession']['curve_data']['curve_type'] == 'hydrograph': 
+                basins = gpd.read_file(os.path.join(self.data_path,
+                                                            self.config['file_io']['input']['geospatial']['gauge_basins'])
+                                               )
+                #we reduce the basins to the gauges for which we have meta information
+                basins=basins.loc[basins[self.config['waterbalance']['basin_id_col']].isin(self.gauge_meta.index)]
+            else:
+                raise ValueError('curve type can either be waterbalance or hydrograph')
+            #load the rasterio data
+            gw_surface=rasterio.open(os.path.join(self.data_path,
+                                                        self.config['file_io']['input']['hydrogeology']['gw_levels']
+                                                        )
+                                           )
             
+            network_geometry=gpd.read_file(os.path.join(self.data_path,
+                                                        self.config['file_io']['input']['geospatial']['river_network'])
+                                           )
+            
+            #get the properties
+            if self.config['time']['compute_each_decade']:                    
+                self.gauge_meta_decadal = get_hydrogeo_properties(gauge_data=self.gauge_meta_decadal,
+                                                 basins = basins,
+                                                 basin_id_col=self.config['waterbalance']['basin_id_col'],
+                                                 gw_surface= gw_surface,
+                                                 network = network_geometry,
+                                                 conceptual_model=self.config['recession']['fitting']['recession_algorithm'])
+            else:
+                self.gauge_meta = get_hydrogeo_properties(gauge_data=self.gauge_meta,
+                                                 basins = basins,
+                                                 basin_id_col=self.config['waterbalance']['basin_id_col'],
+                                                 gw_surface= gw_surface,
+                                                 network = network_geometry,
+                                                 conceptual_model=self.config['recession']['fitting']['recession_algorithm'])
+                   
+                    
     def get_water_balance(self):
         """Calculate water balance per section"""
         
@@ -364,22 +412,19 @@ class Model:
         
         
         #%% First we load the data
-        geospatial_path=os.path.join(self.model_path,
-                                     self.config['file_io']['input']['data_dir']
-                                     )
-        
-        network_geometry=gpd.read_file(os.path.join(geospatial_path,
+
+        network_geometry=gpd.read_file(os.path.join(self.data_path,
                                                     self.config['file_io']['input']['geospatial']['river_network'])
                                        )
                                        
-        tributary_connections=pd.read_csv(os.path.join(geospatial_path,
+        tributary_connections=pd.read_csv(os.path.join(self.data_path,
                                                     self.config['file_io']['input']['geospatial']['tributary_topology'])
                                           )
-        distributary_connections=pd.read_csv(os.path.join(geospatial_path,
+        distributary_connections=pd.read_csv(os.path.join(self.data_path,
                                                     self.config['file_io']['input']['geospatial']['distributary_topology'])
                                              )
         
-        gauge_basins = gpd.read_file(os.path.join(geospatial_path,
+        gauge_basins = gpd.read_file(os.path.join(self.data_path,
                                                     self.config['file_io']['input']['geospatial']['gauge_basins'])
                                        )
         

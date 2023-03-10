@@ -7,10 +7,10 @@ from sbat.sbat import main,Model
 
 
 #%% generate the object
-sbat=Model()
+#sbat=Model()
 
 
-#sbat=main(output=True)
+sbat=main(output=True)
 
 """ 
 def call_main():
@@ -27,10 +27,10 @@ stats.print_stats()
 
 
 #get baseflow
-sbat.get_baseflow()
+#sbat.get_baseflow()
 
 
-sbat.get_water_balance()
+#sbat.get_water_balance()
 
 
 
