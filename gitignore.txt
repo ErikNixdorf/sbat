@@ -1,7 +1,8 @@
 build/
-/output/*
+/output/data
 /info/
 /hooks/
 test_schuettung_q.py
 /input/*
-output/*
+
+test_schuettung_no_baseflow.py

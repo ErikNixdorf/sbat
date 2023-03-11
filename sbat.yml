@@ -47,9 +47,9 @@ discharge:
 #the recession
 recession:
     curve_data:
-        flow_type: baseflow
+        flow_type: baseflow # flow type can be discharge or baseflow
         #curve type can be either hydrograph or water balance
-        curve_type: hydrograph
+        curve_type: waterbalance
         minimum_limbs: 20
         moving_average_filter_steps: 5
     fitting:

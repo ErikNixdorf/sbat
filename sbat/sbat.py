@@ -215,8 +215,7 @@ class Model:
             
             
         
-    #%%function that adds discharge statistics    
-
+    #%%function that adds discharge statistics   
     
     def get_discharge_stats(self):
         #call the gauge stats function
@@ -278,19 +277,36 @@ class Model:
         #first we create a new object where we store the time_series
         self.recession_limbs_ts=pd.DataFrame()
         
-        #first we check whether baseflow data exist
-        if self.config['recession']['curve_data']['flow_type']=='baseflow':            
-            if not hasattr(self, 'bf_output'):
-                raise ValueError('Compute baseflow with function get_baseflow first')
-            else:
-                Q=self.bf_output['bf_daily']
-                print('we average the baseflow methods ')
-                Q=Q.reset_index().groupby(['Datum','gauge']).mean().reset_index()
-                #wide to long
-                Q=Q.pivot(index='Datum',columns='gauge',values='value').copy()
+        # first we check whether we want to compute the recession of the water balance or of the hydrograph
+        if self.config['recession']['curve_data']['curve_type'] == 'hydrograph':
+            print('Recession Analysis is conducted using the hydrograph data')
         
-        elif self.config['recession']['curve_data']['curve_type'] == 'discharge':
-            Q = self.gauge_ts
+            #first we check whether baseflow data exist
+            if self.config['recession']['curve_data']['flow_type']=='baseflow':            
+                if not hasattr(self, 'bf_output'):
+                    raise ValueError('Compute baseflow with function get_baseflow first')
+                else:
+                    Q=self.bf_output['bf_daily']
+                    print('we average the baseflow methods ')
+                    Q=Q.reset_index().groupby(['Datum','gauge']).mean().reset_index()
+                    #wide to long
+                    Q=Q.pivot(index='Datum',columns='gauge',values='value').copy()
+            
+            elif self.config['recession']['curve_data']['curve_type'] == 'discharge':
+                Q = self.gauge_ts
+                
+                
+        elif self.config['recession']['curve_data']['curve_type'] == 'waterbalance':
+             print('Recession Analysis is conducted using the waterbalance data')
+             # checking whether the water_balance exist and if the same flow type has been used
+             if not hasattr(self, 'sections_meta') or not self.config['recession']['curve_data']['flow_type']==self.config['waterbalance']['flowtype']:
+                 print('Water_Balance Model is run first in order to get the correct input data for recession')
+                 self.get_water_balance(flow_type=self.config['recession']['curve_data']['flow_type'])
+                 
+                 Q=self.sections_meta.pivot(columns='downstream_point',values='balance',index='Date')
+                 Q.index=pd.to_datetime(Q.index).rename('Datum')
+                 Q.columns.name='gauge'
+            
             
         if self.config['time']['compute_each_decade']:
             Q['decade']=[x[0:3]+'5' for x in Q.index.strftime('%Y')]
@@ -405,7 +421,7 @@ class Model:
                                                  conceptual_model=self.config['recession']['fitting']['recession_algorithm'])
                    
                     
-    def get_water_balance(self):
+    def get_water_balance(self,**kwargs):
         """Calculate water balance per section"""
         
         print('We analyse the Water Balance per Section')
@@ -428,7 +444,13 @@ class Model:
                                                     self.config['file_io']['input']['geospatial']['gauge_basins'])
                                        )
         
-        if self.config['waterbalance']['flow_type']=='baseflow':
+        #check whether flow type is given explicitely
+        if 'flow_type' in kwargs:
+            flow_type=kwargs['flow_type']
+        else:
+            flow_type = self.config['waterbalance']['flow_type']
+        
+        if flow_type == 'baseflow':
             print('Use baseflow time series')
             #check whether the baseflow as already be computed
             if not hasattr(self, 'bf_output'):
@@ -445,7 +467,7 @@ class Model:
             print('Average baseflow data for each gauge and time step')
             data_ts=data_ts.groupby(['gauge','Datum']).mean().reset_index().pivot(index='Datum',columns='gauge',values='value')
             
-        elif self.config['waterbalance']['flow_type'] =='discharge':
+        elif flow_type =='discharge':
             print('Use daily discharge')
             data_ts=self.gauge_ts.copy()
         
@@ -476,7 +498,8 @@ def main(config_file=None,output=True):
 
     sbat.get_recession_curve()
     #water balance
-    sbat.get_water_balance()
+    if not hasattr(sbat, 'section_meta'):
+        sbat.get_water_balance()
     # write the output
     if output:
         os.makedirs(os.path.join(sbat.output_dir,'data'),exist_ok=True)
