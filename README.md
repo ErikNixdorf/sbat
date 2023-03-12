@@ -1,4 +1,4 @@
-# Surface Water Balance Estimation Tool (SBAT)
+# Surface Water Balance Analysis Tool (SBAT)
 
 [![Modified BSD License](http://img.shields.io/badge/license-BSD-blue.svg?style=flat-square)]
 
