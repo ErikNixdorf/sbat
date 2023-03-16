@@ -16,6 +16,6 @@ import numpy as np
 # Utilities
 import configparser
 
-from .baseflow.baseflow import compute_baseflow,add_gauge_stats,plot_bf_results
+from .bflow.bflow import compute_baseflow,add_gauge_stats,plot_bf_results
 from .recession.recession import analyse_recession_curves,plot_recession_results
 from .waterbalance.waterbalance import get_section_water_balance
