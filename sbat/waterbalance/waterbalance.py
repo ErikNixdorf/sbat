@@ -92,21 +92,21 @@ def generate_upstream_network(gauge_meta=pd.DataFrame(),tributary_connections=pd
         #first we create a hex string which helps us 
         gauge_connection_dict['id']=secrets.token_hex(4)
 
-        gauge_connection_dict['reach_name']=gauge.gewaesser
+        gauge_connection_dict['reach_name']=gauge['stream']
      
         #check whether there is an upstream gauge in the system
-        stream_gauges=gauge_meta[gauge_meta.gewaesser==gauge.gewaesser]
-        stream_gauges['upstream_distance']=stream_gauges.km_muendung_hauptfluss_model-gauge.km_muendung_hauptfluss_model
+        stream_gauges=gauge_meta[gauge_meta['stream']==gauge['stream']]
+        stream_gauges['upstream_distance']=stream_gauges['distance_to_mouth']-gauge['distance_to_mouth']
         stream_gauges=stream_gauges[stream_gauges['upstream_distance']>0]
         upstream_gauge=stream_gauges.copy()
         #tributaries upstream
-        tributaries=tributary_connections.loc[tributary_connections.Vorfluter==gauge.gewaesser,:]
-        tributaries['upstream_distance']=tributaries.km_zufluss_Vorfluter_ab_muendung_vorfluter-gauge.km_muendung_hauptfluss_model
+        tributaries=tributary_connections.loc[tributary_connections.Vorfluter==gauge['stream'],:]
+        tributaries['upstream_distance']=tributaries.km_zufluss_Vorfluter_ab_muendung_vorfluter-gauge['distance_to_mouth']
         tributaries=tributaries[tributaries['upstream_distance']>0]
     
         #similar we look for distributaries upstream
-        distributaries=distributary_connections.loc[distributary_connections.Hauptfluss==gauge.gewaesser,:]
-        distributaries['upstream_distance']=distributaries.km_abfluss_hauptfluss_ab_muendung_hauptfluss-gauge.km_muendung_hauptfluss_model
+        distributaries=distributary_connections.loc[distributary_connections.Hauptfluss==gauge['stream'],:]
+        distributaries['upstream_distance']=distributaries.km_abfluss_hauptfluss_ab_muendung_hauptfluss-gauge['distance_to_mouth']
         distributaries=distributaries[distributaries['upstream_distance']>0]        
         
         
@@ -134,7 +134,7 @@ def generate_upstream_network(gauge_meta=pd.DataFrame(),tributary_connections=pd
     
                 
                 #calculate the most downstream gauge of the tributary
-                branch_gauges=gauge_meta[gauge_meta.gewaesser==branch.Gewaesser]
+                branch_gauges=gauge_meta[gauge_meta['stream']==branch.Gewaesser]
                 if len(branch_gauges) == 0:
                     print('No Gauge at tributary ',branch.Gewaesser)
                     continue
@@ -162,7 +162,7 @@ def generate_upstream_network(gauge_meta=pd.DataFrame(),tributary_connections=pd
         #define the name of the upstream points
         if len(gauge_connection_dict['gauge_up'])==0:
             #we first define upstream and downstream_points
-            if len(gauge_connection_dict['tributaries_up'])==0 and len(gauge_connection_dict['distributaries_up'])==0 and gauge.gewaesser in distributary_connections.Gewaesser.to_list():
+            if len(gauge_connection_dict['tributaries_up'])==0 and len(gauge_connection_dict['distributaries_up'])==0 and gauge['stream'] in distributary_connections.Gewaesser.to_list():
                 gauge_connection_dict['upstream_point']='river_junction'
             else:
                 gauge_connection_dict['upstream_point']='river_spring'
@@ -182,7 +182,7 @@ def generate_upstream_network(gauge_meta=pd.DataFrame(),tributary_connections=pd
                 
                 #first we check whether the tributaries have gauges
                 
-                tribs_with_gauges=gauge_connection_dict[trib_type+'_up'][gauge_connection_dict[trib_type+'_up'].Gewaesser.isin(gauge_meta.gewaesser)].set_index('Gewaesser')
+                tribs_with_gauges=gauge_connection_dict[trib_type+'_up'][gauge_connection_dict[trib_type+'_up'].Gewaesser.isin(gauge_meta['stream'])].set_index('Gewaesser')
                 
                 if not tribs_with_gauges.empty:
                     #get_the_tributary_gauges which is the most downstream_gauge
@@ -197,7 +197,7 @@ def generate_upstream_network(gauge_meta=pd.DataFrame(),tributary_connections=pd
                     tribs_with_gauges['downstream_point']='river_mouth'
                     tribs_with_gauges=tribs_with_gauges.reset_index()
                 #we also add the tribs with no gauges 
-                tribs_without_gauges=gauge_connection_dict[trib_type+'_up'][~gauge_connection_dict[trib_type+'_up'].Gewaesser.isin(gauge_meta_reset.gewaesser)]           
+                tribs_without_gauges=gauge_connection_dict[trib_type+'_up'][~gauge_connection_dict[trib_type+'_up'].Gewaesser.isin(gauge_meta_reset['stream'])]           
                 if len(tribs_without_gauges)>0:
                     tribs_without_gauges['upstream_point']='river_spring'
                     tribs_without_gauges['downstream_point']='river_mouth'
@@ -650,7 +650,7 @@ def get_section_water_balance(gauge_data: pd.DataFrame = pd.DataFrame(),
     
     # our gauge data has to converted to geodataframe
     #make a geodataframe out of the data
-    geometry = [Point(xy) for xy in zip(gauge_data.ostwert, gauge_data.nordwert)]   
+    geometry = [Point(xy) for xy in zip(gauge_data['easting'], gauge_data['northing'])]   
     
     gauge_data = gpd.GeoDataFrame(gauge_data, crs=network.crs, geometry=geometry)
     # clean it
