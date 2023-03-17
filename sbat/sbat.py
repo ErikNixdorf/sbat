@@ -9,10 +9,11 @@ import pandas as pd
 import numpy as np
 from typing import Optional
 import logging
-from .baseflow.baseflow import compute_baseflow,add_gauge_stats,plot_bf_results
-from .recession.recession import analyse_recession_curves,plot_recession_results
-from .recession.aquifer_parameter import get_hydrogeo_properties
-from .waterbalance.waterbalance import get_section_water_balance
+print(os.getcwd())
+from bflow.bflow import compute_baseflow,add_gauge_stats,plot_bf_results
+from recession.recession import analyse_recession_curves,plot_recession_results
+from recession.aquifer_parameter import get_hydrogeo_properties
+from waterbalance.waterbalance import get_section_water_balance
 from datetime import datetime
 import sys
 import rasterio

@@ -1,7 +1,7 @@
 """
 Call Function
 """
-
+import sbat
 
 from sbat.sbat import main,Model
 
