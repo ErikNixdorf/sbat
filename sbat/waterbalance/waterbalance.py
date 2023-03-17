@@ -131,29 +131,29 @@ def generate_upstream_network(gauge_meta=pd.DataFrame(),network_connections=pd.D
         for branch_type in ['tributaries_up','distributaries_up']:
             for _,branch in gauge_connection_dict[branch_type].iterrows():
                 #first we check whether there is a subtributary between closest gauge and the river mouth
-                subtributaries=tributary_connections.loc[tributary_connections.Vorfluter==branch.Gewaesser,:]
-                subdistributaries=distributary_connections.loc[distributary_connections.Hauptfluss==branch.Gewaesser,:]
+                subtributaries=tributary_connections.loc[tributary_connections['main_stream']==branch['stream'],:]
+                subdistributaries=distributary_connections.loc[distributary_connections['main_stream']==branch['stream'],:]
                 
     
                 
                 #calculate the most downstream gauge of the tributary
-                branch_gauges=gauge_meta[gauge_meta['stream']==branch.Gewaesser]
+                branch_gauges=gauge_meta[gauge_meta['stream']==branch['stream']]
                 if len(branch_gauges) == 0:
-                    print('No Gauge at tributary ',branch.Gewaesser)
+                    print('No Gauge at tributary ',branch['stream'])
                     continue
                 #take the one closest to the river mouth
                 if branch_type=='tributaries_up':
-                    branch_gauge=branch_gauges.loc[branch_gauges.km_muendung_hauptfluss_model.idxmin(),:]
+                    branch_gauge=branch_gauges.loc[branch_gauges['distance_to_mouth'].idxmin(),:]
                 elif branch_type=='distributaries_up':
-                    branch_gauge=branch_gauges.loc[branch_gauges.km_muendung_hauptfluss_model.idxmax(),:]
+                    branch_gauge=branch_gauges.loc[branch_gauges['distance_to_mouth'].idxmax(),:]
                 
                 #calculate whether there is an inflow inbetween:
                 if branch_type == 'tributaries_up':
-                    subtributaries=subtributaries[(subtributaries.km_zufluss_Vorfluter_ab_muendung_vorfluter-branch_gauge.km_muendung_hauptfluss_model)<0]
-                    subdistributaries=subdistributaries[(subdistributaries.km_abfluss_hauptfluss_ab_muendung_hauptfluss-branch_gauge.km_muendung_hauptfluss_model)<0]
+                    subtributaries=subtributaries[(subtributaries['distance_junction_from_receiving_water_mouth']-branch_gauge['distance_to_mouth'])<0]
+                    subdistributaries=subdistributaries[(subdistributaries['distance_junction_from_receiving_water_mouth']-branch_gauge['distance_to_mouth'])<0]
                 elif branch_type == 'distributaries_up':
-                    subtributaries=subtributaries[(subtributaries.km_zufluss_Vorfluter_ab_muendung_vorfluter-branch_gauge.km_muendung_hauptfluss_model)>0]
-                    subdistributaries=subdistributaries[(subdistributaries.km_abfluss_hauptfluss_ab_muendung_hauptfluss-branch_gauge.km_muendung_hauptfluss_model)>0]
+                    subtributaries=subtributaries[(subtributaries['distance_junction_from_receiving_water_mouth']-branch_gauge['distance_to_mouth'])>0]
+                    subdistributaries=subdistributaries[(subdistributaries['distance_junction_from_receiving_water_mouth']-branch_gauge['distance_to_mouth'])>0]
      
                 #append to data
                 gauge_connection_dict[branch_type]=pd.concat([gauge_connection_dict[branch_type],subtributaries])
@@ -190,12 +190,12 @@ def generate_upstream_network(gauge_meta=pd.DataFrame(),network_connections=pd.D
                 if not tribs_with_gauges.empty:
                     #get_the_tributary_gauges which is the most downstream_gauge
     
-                    trib_gauges=gauge_meta_reset.loc[gauge_meta_reset.gewaesser.isin(tribs_with_gauges.index),:]
+                    trib_gauges=gauge_meta_reset.loc[gauge_meta_reset['stream'].isin(tribs_with_gauges.index),:]
                     #we only select the ones which are most downstream
                     if trib_type=='tributaries':
-                        trib_gauges=trib_gauges.loc[trib_gauges.groupby('stream').km_muendung_hauptfluss_model.idxmin()].set_index('stream')
+                        trib_gauges=trib_gauges.loc[trib_gauges.groupby('stream')['distance_to_mouth'].idxmin()].set_index('stream')
                     elif 'distributaries':
-                        trib_gauges=trib_gauges.loc[trib_gauges.groupby('stream').km_muendung_hauptfluss_model.idxmax()].set_index('stream')
+                        trib_gauges=trib_gauges.loc[trib_gauges.groupby('stream')['distance_to_mouth'].idxmax()].set_index('stream')
                     tribs_with_gauges['upstream_point']=trib_gauges.gauge
                     tribs_with_gauges['downstream_point']='river_mouth'
                     tribs_with_gauges=tribs_with_gauges.reset_index()
@@ -393,22 +393,22 @@ def map_network_sections(
             #we loop trough the dataset
             for _,branch in gauge[branch_name].iterrows():
                 #extract the river line if available
-                if branch['Gewaesser'] not in network.reach_name.tolist():
-                    print(branch['Gewaesser'], 'not in network data, check correct names')
+                if branch['stream'] not in network.reach_name.tolist():
+                    print(branch['stream'], 'not in network data, check correct names')
                     continue
-                river_line=network[network.reach_name==branch['Gewaesser']].geometry.iloc[0]
+                river_line=network[network.reach_name==branch['stream']].geometry.iloc[0]
                 
                     
                 #first we check whether there is really data in the dataset
                 if len(gauge[branch_name])>0:
                     
                     #we get the river line
-                    if branch['Gewaesser'] not in network.reach_name.tolist():
+                    if branch['stream'] not in network.reach_name.tolist():
         
-                        print(branch['Gewaesser'], 'not in network data, check correct names')
+                        print(branch['stream'], 'not in network data, check correct names')
                         continue
                     #extract the river line
-                    river_line=network[network.reach_name==branch['Gewaesser']].geometry.iloc[0]
+                    river_line=network[network.reach_name==branch['stream']].geometry.iloc[0]
                     #get all river points as geodataframe
                     river_pnts=gpd.GeoDataFrame(geometry=[Point(pt) for pt in river_line.coords])
                     
