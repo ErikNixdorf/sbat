@@ -1,4 +1,4 @@
-gauge,gauge_id,bundesland,stream,receiving_water,distance_to_mouth,northing,easting,position_at_watercourse,pegelnullpunkt_m,height_system,timeseries_available,basin_area,drain_length,stream_length
+gauge,gauge_id,bundesland,stream,receiving_water,distance_to_mouth,northing,easting,position_at_watercourse_official,pegelnullpunkt_m,height_system,timeseries_available,basin_area,drain_length,stream_length
 albertinenaue,6602500,bb,lausitzer_neisse,,29,5746217,475203,,54.567,,x,1879873.159,773.5516862,2540.41879
 alt_schadow_schleuse_op,5824800,bb,spree,,34.1,5774734,428323,,,,,4394583483,37401.06106,135288.1321
 alt_schadow_schleuse_up,5824900,bb,spree,,34,5774724,428373,,,,,4401183038,37429.134,135115.0884

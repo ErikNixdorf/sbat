@@ -434,12 +434,9 @@ class Model:
                                                     self.config['file_io']['input']['geospatial']['river_network'])
                                        )
                                        
-        tributary_connections=pd.read_csv(os.path.join(self.data_path,
-                                                    self.config['file_io']['input']['geospatial']['tributary_topology'])
+        network_connections=pd.read_csv(os.path.join(self.data_path,
+                                                    self.config['file_io']['input']['geospatial']['branches_topology'])
                                           )
-        distributary_connections=pd.read_csv(os.path.join(self.data_path,
-                                                    self.config['file_io']['input']['geospatial']['distributary_topology'])
-                                             )
         
         gauge_basins = gpd.read_file(os.path.join(self.data_path,
                                                     self.config['file_io']['input']['geospatial']['gauge_basins'])
@@ -480,8 +477,7 @@ class Model:
                                   data_ts=data_ts,
                                   network=network_geometry,
                                   basins=gauge_basins,
-                                  tributary_connections=tributary_connections,
-                                  distributary_connections=distributary_connections,
+                                  network_connections=network_connections,
                                   confidence_acceptance_level=self.config['waterbalance']['confidence_acceptance_level'],
                                   time_series_analysis_option=self.config['waterbalance']['time_series_analysis_option'],
                                   basin_id_col=self.config['waterbalance']['basin_id_col'],
