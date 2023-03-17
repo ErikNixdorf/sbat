@@ -372,7 +372,7 @@ def find_recession_limbs(Q,smooth_window_size=15,
         #rebuild the function
         Q=Q_with_inflection.copy(deep=True)
         Q['section_id']=Q['section_id_new']
-        Q=Q.set_index('Datum').drop(columns=['section_id_new'])
+        Q=Q.set_index('date').drop(columns=['section_id_new'])
         section_length=Q.groupby('section_id').size()
         Q['section_length']=Q['section_id']
         Q['section_length']=Q['section_length'].replace(section_length)
@@ -712,7 +712,7 @@ def test_recession_curve_analysis():
     mrc_algorithm='matching_strip'
     recession_algorithm='boussinesq'
     Q=pd.read_csv(os.path.join(os.path.dirname(__file__),'input','discharge','example.csv'),
-                  index_col=0,parse_dates=['Datum'], 
+                  index_col=0,parse_dates=['date'], 
                   date_parser=dateparse_q,
                   squeeze=True)    
     Q_0,n=analyse_recession_curves(Q,mrc_algorithm=mrc_algorithm,

@@ -7,7 +7,7 @@ file_io:
         data_dir: data\ # all data is located relativ to this path
         gauges:
             gauge_meta: gauges\\pegel_uebersicht.csv
-            gauge_time_series: gauges\\pegel_ts.csv
+            gauge_time_series: gauges\\gauges_q_ts.csv
         hydrogeology:
             gw_levels: hydrogeology\\gw_heads.tif
         geospatial:

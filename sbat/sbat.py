@@ -112,7 +112,7 @@ class Model:
         
         self.gauge_ts=pd.read_csv(gauge_ts_path,
                              index_col=0,
-                             parse_dates=['Datum'], 
+                             parse_dates=['date'], 
                              date_parser=dateparse)
         
         if self.config['data_cleaning']['test_mode']:
@@ -289,9 +289,9 @@ class Model:
                 else:
                     Q=self.bf_output['bf_daily']
                     print('we average the baseflow methods ')
-                    Q=Q.reset_index().groupby(['Datum','gauge']).mean().reset_index()
+                    Q=Q.reset_index().groupby(['date','gauge']).mean().reset_index()
                     #wide to long
-                    Q=Q.pivot(index='Datum',columns='gauge',values='value').copy()
+                    Q=Q.pivot(index='date',columns='gauge',values='value').copy()
             
             elif self.config['recession']['curve_data']['curve_type'] == 'discharge':
                 Q = self.gauge_ts
@@ -305,7 +305,7 @@ class Model:
                  self.get_water_balance(flow_type=self.config['recession']['curve_data']['flow_type'])
                  
                  Q=self.sections_meta.pivot(columns='downstream_point',values='balance',index='Date')
-                 Q.index=pd.to_datetime(Q.index).rename('Datum')
+                 Q.index=pd.to_datetime(Q.index).rename('date')
                  Q.columns.name='gauge'
             
             
@@ -466,7 +466,7 @@ class Model:
             
             #in any case for the baseflow we have to bring the format from long to wide
             print('Average baseflow data for each gauge and time step')
-            data_ts=data_ts.groupby(['gauge','Datum']).mean().reset_index().pivot(index='Datum',columns='gauge',values='value')
+            data_ts=data_ts.groupby(['gauge','date']).mean().reset_index().pivot(index='date',columns='gauge',values='value')
             
         elif flow_type =='discharge':
             print('Use daily discharge')

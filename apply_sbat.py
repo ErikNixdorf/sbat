@@ -3,8 +3,7 @@ Call Function
 """
 import sbat
 
-from sbat.sbat import main,Model
-
+from sbat import main,Model
 
 #%% generate the object
 #sbat=Model()
