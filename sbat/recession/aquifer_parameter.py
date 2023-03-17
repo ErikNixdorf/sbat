@@ -7,21 +7,24 @@ Three parts:
     3)
 """
 
-#%% import libs
+# %% import libs
 import geopandas as gpd
 from typing import List, Tuple
 import rasterio
-from shapely.geometry import Point,Polygon,MultiPolygon,MultiPoint
+from shapely.geometry import Point, Polygon, MultiPolygon, MultiPoint
 import os
 import pandas as pd
 import numpy as np
 
+
 def extract_coords(pt):
     return pt.x, pt.y, pt.z
-#%% Get drainage parameters
-def get_drainage_topographic_parameters(basin,basin_id_col='basin',
-                                        gw_surface ='rasterio_raster', 
-                                        river_network= gpd.GeoDataFrame()):
+
+
+# %% Get drainage parameters
+def get_drainage_topographic_parameters(basin, basin_id_col='basin',
+                                        gw_surface='rasterio_raster',
+                                        river_network=gpd.GeoDataFrame()):
     """
     Computes topographic parameters of a given drainage basin based on a groundwater surface and a river network.
     
@@ -40,74 +43,74 @@ def get_drainage_topographic_parameters(basin,basin_id_col='basin',
                             - dist_m: the mean distance of the boundary points to the river network
                             - network_length: the total length of the river network within the drainage basin
     """
-    basin=gpd.GeoDataFrame(data={'basin_id':basin.T[basin_id_col],
-                                 'area':basin.T.area,
-                                 'L_represent':basin.T['L_represent']},index=[int(basin.T.value)],geometry=[basin.T.geometry],crs=river_network.crs)
-    basin_name=basin['basin_id'].iloc[0]
-    print('Check basin ',basin_name)
+    basin = gpd.GeoDataFrame(data={'basin_id': basin.T[basin_id_col],
+                                   'area': basin.T.area,
+                                   'L_represent': basin.T['L_represent']}, index=[int(basin.T.value)],
+                             geometry=[basin.T.geometry], crs=river_network.crs)
+    basin_name = basin['basin_id'].iloc[0]
+    print('Check basin ', basin_name)
     # get the boundary of the basin
     boundary = basin.iloc[0].geometry.boundary
-    
-    # get the height of the boundary points from the gw map
-    coords = list(boundary.coords)  
-    heights=[float(x) if x!=gw_surface.nodata else None for x in gw_surface.sample(coords)]
 
-    #generating a GeoDataFrame consisting of shapely points
+    # get the height of the boundary points from the gw map
+    coords = list(boundary.coords)
+    heights = [float(x) if x != gw_surface.nodata else None for x in gw_surface.sample(coords)]
+
+    # generating a GeoDataFrame consisting of shapely points
     # create a GeoDataFrame of the boundary points
     gdf_basin_pts = gpd.GeoDataFrame(data={
         'x': [c[0] for c in coords],
         'y': [c[1] for c in coords],
         'z': heights
     }, geometry=[Point(x, y) for x, y in coords], crs=river_network.crs)
-    #we clip the river network by the basin
-    basin_network=gpd.clip(river_network,basin).explode()
-    
+    # we clip the river network by the basin
+    basin_network = gpd.clip(river_network, basin).explode()
+
     if basin_network.empty:
         print(f'No river sections within basin {basin_name}')
         basin['h_m'] = np.nan
         basin['dist_m'] = np.nan
-        basin['network_length']=np.nan
+        basin['network_length'] = np.nan
         return basin.iloc[0]
-    
-    #compute the length of the network
-    network_length = basin_network.geometry.length.sum() 
 
-    #get data as points
+    # compute the length of the network
+    network_length = basin_network.geometry.length.sum()
+
+    # get data as points
 
     gdf_network_pnts = gpd.GeoDataFrame(geometry=[Point(pt) for line in basin_network['geometry']
                                                   for pt in line.coords],
                                         crs=basin_network.crs)
 
-    #get the closest point of the network for each point of the basin
-    
-    #closest_network_pnts=[gdf_network_pnts.geometry[gdf_network_pnts.distance(basin_pnt).idxmin()] for basin_pnt in gdf_basin_pts['geometry']]
+    # get the closest point of the network for each point of the basin
+
+    # closest_network_pnts=[gdf_network_pnts.geometry[gdf_network_pnts.distance(basin_pnt).idxmin()] for basin_pnt in gdf_basin_pts['geometry']]
 
     # calculate the distance between each point in gdf_basin_pts and each point in gdf_network_pnts
-    #https://stackabuse.com/guide-to-numpy-matrix-subtraction/
-    dists = np.sqrt((gdf_basin_pts['x'].values.reshape(-1, 1) - gdf_network_pnts['geometry'].x.values.reshape(1, -1)) ** 2 + 
-                    (gdf_basin_pts['y'].values.reshape(-1, 1) - gdf_network_pnts['geometry'].y.values.reshape(1, -1)) ** 2)
-    
+    # https://stackabuse.com/guide-to-numpy-matrix-subtraction/
+    dists = np.sqrt(
+        (gdf_basin_pts['x'].values.reshape(-1, 1) - gdf_network_pnts['geometry'].x.values.reshape(1, -1)) ** 2 +
+        (gdf_basin_pts['y'].values.reshape(-1, 1) - gdf_network_pnts['geometry'].y.values.reshape(1, -1)) ** 2)
+
     # get the index of the closest point in gdf_network_pnts for each point in gdf_basin_pts
 
     closest_idxs = np.argmin(dists, axis=1)
 
-    closest_network_pnts=gdf_network_pnts.geometry[closest_idxs]
+    closest_network_pnts = gdf_network_pnts.geometry[closest_idxs]
 
-    
-    
+    # get their x y and z data
+    gdf_basin_pts[['x_rn', 'y_rn', 'z_rn']] = list(map(extract_coords, closest_network_pnts))
 
-    #get their x y and z data
-    gdf_basin_pts[['x_rn','y_rn','z_rn']]=list(map(extract_coords,closest_network_pnts))
-    
     # Compute the mean distance to the river and mean height above stream
-    gdf_basin_pts['dist_to_stream'] = np.sqrt((gdf_basin_pts['x'] - gdf_basin_pts['x_rn']) ** 2 + (gdf_basin_pts['y'] - gdf_basin_pts['y_rn']) ** 2)
+    gdf_basin_pts['dist_to_stream'] = np.sqrt(
+        (gdf_basin_pts['x'] - gdf_basin_pts['x_rn']) ** 2 + (gdf_basin_pts['y'] - gdf_basin_pts['y_rn']) ** 2)
     h_m = (gdf_basin_pts['z'] - gdf_basin_pts['z_rn']).mean()
     L_mean = gdf_basin_pts['dist_to_stream'].mean()
-    
+
     # Add the results to the basin DataFrame
     basin['h_m'] = h_m
     basin['dist_m'] = L_mean
-    basin['network_length']=network_length
+    basin['network_length'] = network_length
     return basin.iloc[0]
 
 
@@ -130,21 +133,20 @@ def map_topo_parameters(row: pd.Series, df2: pd.DataFrame, parameters: List[str]
     pandas Series
         A modified copy of `row` with additional columns for the mapped topographic parameters from `df2`.
     """
-    if isinstance(row.name,Tuple):
-        gauge_name=row.name[0]
+    if isinstance(row.name, Tuple):
+        gauge_name = row.name[0]
     else:
-        gauge_name=row.name
-        
+        gauge_name = row.name
 
     topo_params = df2[df2['basin_id'] == gauge_name][parameters].iloc[0]
 
-
-    row=row.append(topo_params)
+    row = row.append(topo_params)
     return row
 
-#%% Next we map it on the recession parameters and calculate the aquifer parameters
-def infer_hydrogeo_parameters(basin_data: pd.DataFrame, 
-                              conceptual_model: str, 
+
+# %% Next we map it on the recession parameters and calculate the aquifer parameters
+def infer_hydrogeo_parameters(basin_data: pd.DataFrame,
+                              conceptual_model: str,
                               **kwargs) -> pd.DataFrame:
     """
     Infer hydrogeological parameters from basin data using a given conceptual model.
@@ -192,124 +194,113 @@ def infer_hydrogeo_parameters(basin_data: pd.DataFrame,
     ValueError
         If the specified conceptual model is not supported.
     """
-    
-    
-    #check whether the columns we need are in the input data
+
+    # check whether the columns we need are in the input data
     required_columns = [kwargs['Q0'], kwargs['alpha'], kwargs['dist_m'], kwargs['network_length'], kwargs['h_m']]
     for col in required_columns:
         if col not in basin_data.columns:
             raise KeyError(f"Required column '{col}' not found in basin_data")
-    
-    if conceptual_model=='maillet':
-        #based on doi:10.1016/S0022-1694(02)00418-3
+
+    if conceptual_model == 'maillet':
+        # based on doi:10.1016/S0022-1694(02)00418-3
         porosity_col = f'porosity_{conceptual_model}'
         transmissivity_col = f'transmissivity_{conceptual_model}'
-        #first calculate the porosity, merged both equations from the source
+        # first calculate the porosity, merged both equations from the source
         basin_data[porosity_col] = (basin_data[kwargs['Q0']] * np.pi) / (
-                    2 * basin_data[kwargs['alpha']] * basin_data[kwargs['network_length']] *
-                    basin_data[kwargs['h_m']] * basin_data[kwargs['dist_m']])
-        #then the transmissivity
+                2 * basin_data[kwargs['alpha']] * basin_data[kwargs['network_length']] *
+                basin_data[kwargs['h_m']] * basin_data[kwargs['dist_m']])
+        # then the transmissivity
         basin_data[transmissivity_col] = (2 * basin_data[kwargs['Q0']] * basin_data[kwargs['dist_m']]) / (
-             np.pi * basin_data[kwargs['network_length']] * basin_data[kwargs['dist_m']])
-        
-    
-    elif conceptual_model == 'boussinesq':      
-        #based on doi:10.1016/S0022-1694(02)00418-3
+                np.pi * basin_data[kwargs['network_length']] * basin_data[kwargs['dist_m']])
+
+
+    elif conceptual_model == 'boussinesq':
+        # based on doi:10.1016/S0022-1694(02)00418-3
         kf_value_col = f'kf_value_{conceptual_model}'
         porosity_col = f'porosity_{conceptual_model}'
-        #kf value
+        # kf value
         basin_data[kf_value_col] = (basin_data[kwargs['Q0']] * basin_data[kwargs['dist_m']]) / (
-            1.724 * basin_data[kwargs['h_m']] ** 2 * basin_data[kwargs['network_length']])
-        #porosity
+                1.724 * basin_data[kwargs['h_m']] ** 2 * basin_data[kwargs['network_length']])
+        # porosity
         basin_data[porosity_col] = (1.115 * basin_data[kf_value_col] * basin_data[kwargs['h_m']]) / (
-            basin_data[kwargs['alpha']] * basin_data[kwargs['dist_m']] ** 2)
+                basin_data[kwargs['alpha']] * basin_data[kwargs['dist_m']] ** 2)
     else:
-        raise ValueError(f"Invalid conceptual model '{conceptual_model}'")     
-        
+        raise ValueError(f"Invalid conceptual model '{conceptual_model}'")
+
     return basin_data
 
-#%% Wrapper Function to call all functions
+
+# %% Wrapper Function to call all functions
 def get_hydrogeo_properties(gauge_data=pd.DataFrame(),
-                                 basins = gpd.GeoDataFrame,
-                                 gw_surface= 'rasterio',
-                                 network = gpd.GeoDataFrame,
-                                 conceptual_model='maillet',
-                                 basin_id_col='basin',
-                                 ):
-    #%% run the steps
-    #get drainage parameters
-    basins_out=basins.apply(lambda row: get_drainage_topographic_parameters(row, gw_surface=gw_surface,basin_id_col=basin_id_col,
-                                                                            river_network=network), axis=1)
-    #map to gauge data
-    gauge_data=gauge_data.apply(lambda x:map_topo_parameters(x,basins_out),axis=1)
-    #get hydrogeological parameters
-    gauge_data=infer_hydrogeo_parameters(basin_data=gauge_data,
-                                         conceptual_model=conceptual_model,
-                                         Q0='Q0_rec',
-                                         alpha='n0_rec',
-                                         dist_m='dist_m',
-                                         network_length='network_length',
-                                         h_m='h_m')
+                            basins=gpd.GeoDataFrame,
+                            gw_surface='rasterio',
+                            network=gpd.GeoDataFrame,
+                            conceptual_model='maillet',
+                            basin_id_col='basin',
+                            ):
+    # %% run the steps
+    # get drainage parameters
+    basins_out = basins.apply(
+        lambda row: get_drainage_topographic_parameters(row, gw_surface=gw_surface, basin_id_col=basin_id_col,
+                                                        river_network=network), axis=1)
+    # map to gauge data
+    gauge_data = gauge_data.apply(lambda x: map_topo_parameters(x, basins_out), axis=1)
+    # get hydrogeological parameters
+    gauge_data = infer_hydrogeo_parameters(basin_data=gauge_data,
+                                           conceptual_model=conceptual_model,
+                                           Q0='Q0_rec',
+                                           alpha='n0_rec',
+                                           dist_m='dist_m',
+                                           network_length='network_length',
+                                           h_m='h_m')
     return gauge_data
 
-#%% call both functions for test purpose
+
+# %% call both functions for test purpose
 
 
 def test():
-    #load the basins
+    # load the basins
     basin_path = 'pegeleinzugsgebiete.gpkg'
-    basins = gpd.read_file(basin_path)#
-    basins['basin_id']=basins['basin'].copy()
-    #load gauge data
-    gauge_meta=pd.read_csv('gauge_meta.csv')
+    basins = gpd.read_file(basin_path)  #
+    basins['basin_id'] = basins['basin'].copy()
+    # load gauge data
+    gauge_meta = pd.read_csv('gauge_meta.csv')
 
-    #intersect
+    # intersect
 
-    basins=basins.loc[basins['basin_id'].isin(gauge_meta.gauge),:]
+    basins = basins.loc[basins['basin_id'].isin(gauge_meta.gauge), :]
 
+    # load the gw_map
+    gw_surface_path = os.path.join('gw_heads.tif')
+    gw_surface = rasterio.open(gw_surface_path)
 
-
-    #load the gw_map
-    gw_surface_path=os.path.join('gw_heads.tif')
-    gw_surface=rasterio.open(gw_surface_path)
-
-    #load the river network
+    # load the river network
     river_network_path = 'river_network_z.gpkg'
     river_network = gpd.read_file(river_network_path)
-    
-    #%% run the steps
-    #get drainage parameters
-    basins_out=basins.apply(lambda row: get_drainage_topographic_parameters(row, gw_surface=gw_surface, river_network=river_network), axis=1)
-    #map to gauge data
-    gauge_meta=gauge_meta.apply(lambda x:map_topo_parameters(x,basins_out),axis=1)
-    #get hydrogeological parameters
-    gauge_meta=infer_hydrogeo_parameters(basin_data=gauge_meta,
-                                         conceptual_model='maillet',
-                                         Q0='Q0_rec',
-                                         alpha='n0_rec',
-                                         dist_m='dist_m',
-                                         network_length='network_length',
-                                         h_m='h_m')
 
-    gauge_meta=infer_hydrogeo_parameters(basin_data=gauge_meta,
-                                         conceptual_model='boussinesq',
-                                         Q0='Q0_rec',
-                                         alpha='n0_rec',
-                                         dist_m='dist_m',
-                                         network_length='network_length',
-                                         h_m='h_m')
-    
+    # %% run the steps
+    # get drainage parameters
+    basins_out = basins.apply(
+        lambda row: get_drainage_topographic_parameters(row, gw_surface=gw_surface, river_network=river_network),
+        axis=1)
+    # map to gauge data
+    gauge_meta = gauge_meta.apply(lambda x: map_topo_parameters(x, basins_out), axis=1)
+    # get hydrogeological parameters
+    gauge_meta = infer_hydrogeo_parameters(basin_data=gauge_meta,
+                                           conceptual_model='maillet',
+                                           Q0='Q0_rec',
+                                           alpha='n0_rec',
+                                           dist_m='dist_m',
+                                           network_length='network_length',
+                                           h_m='h_m')
+
+    gauge_meta = infer_hydrogeo_parameters(basin_data=gauge_meta,
+                                           conceptual_model='boussinesq',
+                                           Q0='Q0_rec',
+                                           alpha='n0_rec',
+                                           dist_m='dist_m',
+                                           network_length='network_length',
+                                           h_m='h_m')
+
     return gauge_meta
-
-
-
-    
-
-
-    
-    
-
-  
-
-
-
