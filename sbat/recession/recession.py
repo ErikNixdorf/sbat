@@ -172,8 +172,15 @@ def fit_reservoir_function (t,Q,Q_0,
         Q_0_min = Q_0 * 0.9999
         Q_0_max = Q_0 * 1.0001
     else:
-        Q_0_min = 0.000001
-        Q_0_max = Q_0 * 1.0001
+        if Q_0 > 0:
+            Q_0_min = 0.000001
+            Q_0_max = Q_0 * 1.0001
+        elif Q_0 < 0:
+            Q_0_min = min(Q) * 1.0001
+            Q_0_max = max(Q) * 0.9999
+        else:
+            raise Warning('Q_0 equals zero is not covered, return none')
+            return None
         
     # Define n_min and n_max
     n_min = 10e-10
@@ -196,16 +203,17 @@ def fit_reservoir_function (t,Q,Q_0,
         if reservoirs == 0:
             p0 = [Q_0, 0.05, 0]
         elif reservoirs == 1:
-            p0 = [Q_0, 0.05, 0, Q_0/2, 0.005, int(t.mean())]
+            p0 = [Q_0, 0.05, 0, Q_0_min+(1/2)*(Q_0_max-Q_0_min), 0.005, int(t.mean())]
         elif reservoirs == 2:
-            p0 = [Q_0, 0.05, 0, Q_0/(1/3), 0.005, int(t.mean()/2), Q_0/(2/3), 0.0005, int(t.mean()*1.5)]
-            
+            p0 = [Q_0, 0.05, 0, Q_0_min+(1/3)*(Q_0_max-Q_0_min), 0.005, int(t.mean()/2), Q_0_min+(2/3)*(Q_0_max-Q_0_min), 0.0005, int(t.mean()*1.5)]
+    
             # Define the bounds for curve_fit
         bounds_min = [Q_0_min, n_min, t0_min] * (reservoirs+1)
         bounds_max = [Q_0_max, n_max, t0_max] * (reservoirs+1)
         bounds = (bounds_min, bounds_max)
 
         # Fit the function
+
         fit_parameter, pcov = curve_fit(model_function, t, Q, p0=p0, bounds=bounds, maxfev=2000)
 
 
@@ -276,9 +284,21 @@ def find_recession_limbs(Q,smooth_window_size=15,
     Q=clean_gauge_ts(Q)
     Q=Q.rename('Q')
     Q=Q.to_frame()    
+    
+    #%% if length is below window_size we return None
+    if len(Q)<=smooth_window_size:
+        Q=None
+        return Q
+    
     #%% We apply a  savgol filter
-    if smooth_window_size>0:
-        Q['Q']=savgol_filter(Q.values.flatten(), int(round_up_to_odd(smooth_window_size)), 2)
+        
+    if smooth_window_size > 0:
+        #first we check where are the nans in the data and mask it
+        nan_mask=Q['Q'].isna().values
+        #apply filter on interpolated data
+        Q['Q']=savgol_filter(Q.interpolate().values.flatten(), int(round_up_to_odd(smooth_window_size)), 2)        
+        #use the mask again to get the nan back
+        Q.loc[nan_mask,'Q']=np.nan
         
 
     
@@ -436,8 +456,10 @@ def analyse_recession_curves(Q,mrc_algorithm: str ='demuth',
     """
 
     #%% we define output mrc_data, first two are master curve fit para, third is performance
+    gauge_name=Q.name
+    print(f'Analyse recession curves for gauge {gauge_name}')
     mrc_out=tuple((None,None,None))
-    
+
     if isinstance(Q,pd.Series):
         Q=Q.rename('Q').to_frame()    
     
@@ -445,13 +467,16 @@ def analyse_recession_curves(Q,mrc_algorithm: str ='demuth',
     if define_falling_limb_intervals==True or 'section_id' not in Q.columns:
         #print('Find the recession parts of the time series prior to fitting')
 
-
+        
         Q=find_recession_limbs(Q['Q'],smooth_window_size=smooth_window_size,
                                      minimum_recession_curve_length=minimum_recession_curve_length)
     
     #if there are no falling limbs within the interval we just return the data
-    if len(Q)==0 or len(Q['section_id'].unique())<minimum_limbs:
-        print('No Recession limb within the dataset')
+    if Q is None:
+        print(f'No falling limbs within constraints for gauge {gauge_name}')
+        return Q,mrc_out
+    elif len(Q)==0 or len(Q['section_id'].unique())<minimum_limbs:
+        print(f'No falling limbs within constraints for gauge {gauge_name}')
         Q=None        
         return Q,mrc_out
     
@@ -460,13 +485,15 @@ def analyse_recession_curves(Q,mrc_algorithm: str ='demuth',
     limb_sections_list=list()
     for _,limb in Q.groupby('section_id'):
             #raise ValueError('Implementation for Christoph is Missing')
+
         fit_parameter,limb_int,r_coef,reservoirs=fit_reservoir_function(limb['section_time'].values, 
                                                                         limb['Q'].values, 
                                                                         limb['Q0'].iloc[0],
                                                                         constant_Q_0=True,
                                                                         recession_algorithm=recession_algorithm,
                                                                         no_of_partial_sums=maximum_reservoirs
-                                                                        )            
+                                                                        )
+      
 
         
         #add data to the section
@@ -570,6 +597,7 @@ def analyse_recession_curves(Q,mrc_algorithm: str ='demuth',
         
         #we compute a new mean fitting model of the shifted time series
         df_merged=df_merged.sort_index()
+        
 
         fit_parameter,Q_rec_merged,r_mrc,_=fit_reservoir_function(df_merged.index.values, 
                                                                df_merged.values, 
@@ -578,7 +606,7 @@ def analyse_recession_curves(Q,mrc_algorithm: str ='demuth',
                                                                no_of_partial_sums=1,
                                                                min_improvement_ratio=1.05,
                                                                recession_algorithm=recession_algorithm) 
-   
+
         #update the output_data
         mrc_out=((fit_parameter[0],fit_parameter[1],r_mrc))
         print(f'pearson r of method {mrc_algorithm} with recession model {recession_algorithm} is {np.round(r_mrc,2)}')

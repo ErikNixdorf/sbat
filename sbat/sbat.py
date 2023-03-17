@@ -298,15 +298,20 @@ class Model:
                 
                 
         elif self.config['recession']['curve_data']['curve_type'] == 'waterbalance':
-             print('Recession Analysis is conducted using the waterbalance data')
+            logging.info('Recession Analysis is conducted using the waterbalance data')
+            #in the case of waterbalance we can not compute a master recession curve due to possibly negative values
+            logging.info('mrc_curve not defined for curve_type is waterbalance')
+            self.config['recession']['fitting']['mastercurve_algorithm'] = None             
              # checking whether the water_balance exist and if the same flow type has been used
-             if not hasattr(self, 'sections_meta') or not self.config['recession']['curve_data']['flow_type']==self.config['waterbalance']['flowtype']:
-                 print('Water_Balance Model is run first in order to get the correct input data for recession')
-                 self.get_water_balance(flow_type=self.config['recession']['curve_data']['flow_type'])
-                 
-                 Q=self.sections_meta.pivot(columns='downstream_point',values='balance',index='Date')
-                 Q.index=pd.to_datetime(Q.index).rename('date')
-                 Q.columns.name='gauge'
+            if not hasattr(self, 'sections_meta') or not self.config['recession']['curve_data']['flow_type']==self.config['waterbalance']['flowtype']:
+                print('Water_Balance Model is run first in order to get the correct input data for recession')
+                self.get_water_balance(flow_type=self.config['recession']['curve_data']['flow_type'])
+                
+                Q=self.sections_meta.pivot(columns='downstream_point',values='balance',index='Date')
+                Q.index=pd.to_datetime(Q.index).rename('date')
+                Q.columns.name='gauge'
+            
+
             
             
         if self.config['time']['compute_each_decade']:
@@ -315,7 +320,10 @@ class Model:
             Q['decade']=-9999
             
         
+        
         #start the recession
+        
+        
         metrics=list()
         for decade,Q_decade in Q.groupby('decade'):
             #drop all gauges where no data is within the decade
