@@ -2,11 +2,11 @@
 This module computes monthly baseflow using the separation method of Kille (1970),
 extended and formalized by Demuth 1993
 """
-
-import pandas as pd
-import numpy as np
-import os
 from datetime import datetime
+import os
+
+import numpy as np
+import pandas as pd
 from scipy.stats import linregress
 
 # functiton to dateparse

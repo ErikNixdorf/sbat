@@ -7,18 +7,20 @@ Also Inspired by Posavec 2006
 Currently two methods (boussinesq and maillet as well as two types of Master recession curve algorithms are supported)
 """
 
-import pandas as pd
-import seaborn as sns
-from matplotlib import pyplot as plt
-import os
+from copy import copy
 from datetime import datetime
+import os
+from pathlib import Path
+
+from matplotlib import pyplot as plt
 import numpy as np
+import pandas as pd
+from scipy.optimize import curve_fit
+from scipy.signal import savgol_filter
+import seaborn as sns
 
 dateparse_q = lambda x: datetime.strptime(x, '%Y-%m-%d')
 dateparse_p = lambda x: datetime.strptime(x, '%Y%m%d')
-from scipy.optimize import curve_fit
-from scipy.signal import savgol_filter
-from copy import copy
 
 
 def round_up_to_odd(f):
@@ -578,7 +580,7 @@ def analyse_recession_curves(Q, mrc_algorithm: str = 'demuth',
                                                                        recession_algorithm=recession_algorithm)
 
         # update the output_data
-        mrc_out = ((fit_parameter[0], fit_parameter[1], r_mrc))
+        mrc_out = (fit_parameter[0], fit_parameter[1], r_mrc)
         print(f'pearson r of method {mrc_algorithm} with recession model {recession_algorithm} is {np.round(r_mrc, 2)}')
 
     return Q, mrc_out
@@ -588,7 +590,7 @@ def analyse_recession_curves(Q, mrc_algorithm: str = 'demuth',
 def plot_recession_results(meta_data=pd.DataFrame(), meta_data_decadal=pd.DataFrame(),
                            parameters_to_plot=['Q0', 'pearson_r', 'n'],
                            streams_to_plot=['spree', 'lausitzer_neisse', 'schwarze_elster'],
-                           output_dir=os.path.join(os.getcwd(), 'bf_analysis', 'figures'),
+                           output_dir=Path(Path.cwd(), 'bf_analysis', 'figures'),
                            decadal_plots=True
                            ):
     """
@@ -613,8 +615,7 @@ def plot_recession_results(meta_data=pd.DataFrame(), meta_data_decadal=pd.DataFr
                       'n': True}
 
     # first we generate the output dir
-    os.makedirs(output_dir, exist_ok=True)
-
+    output_dir.mkdir(parents=True, exist_ok=True)
     if not decadal_plots:
 
         # next we plot the top 15 gauges with the largest deviations
@@ -627,7 +628,7 @@ def plot_recession_results(meta_data=pd.DataFrame(), meta_data_decadal=pd.DataFr
         fig, ax = plt.subplots()
         sns.barplot(data=meta_data.reset_index().sort_values(para_col, ascending=False)[0:index_max], x=para_col,
                     y='gauge').set(title='Gauges with weakest Performance')
-        fig.savefig(os.path.join(output_dir, 'Gauges_with_weakest_performance' + '.png'), dpi=300, bbox_inches="tight")
+        fig.savefig(Path(output_dir, 'Gauges_with_weakest_performance' + '.png'), dpi=300, bbox_inches="tight")
         plt.close()
 
         # we make lineplots along the river systems
@@ -662,7 +663,7 @@ def plot_recession_results(meta_data=pd.DataFrame(), meta_data_decadal=pd.DataFr
                 plt.xticks(rotation=90)
                 ax.set_xticklabels(gauge_ticklabels)
                 plt.tight_layout()
-                fig.savefig(os.path.join(output_dir, para_col + '_' + stream + '.png'), dpi=300)
+                fig.savefig(Path(output_dir, para_col + '_' + stream + '.png'), dpi=300)
                 plt.close()
 
     elif decadal_plots:
@@ -698,7 +699,7 @@ def plot_recession_results(meta_data=pd.DataFrame(), meta_data_decadal=pd.DataFr
                 plt.xticks(rotation=90)
                 ax.set_xticklabels(gauge_ticklabels)
                 plt.tight_layout()
-                fig.savefig(os.path.join(output_dir, para_col + '_' + stream + '.png'), dpi=300)
+                fig.savefig(Path(output_dir, para_col + '_' + stream + '.png'), dpi=300)
                 plt.close()
 
 
@@ -708,7 +709,7 @@ def test_recession_curve_analysis():
     minimum_recession_curve_length = 10
     mrc_algorithm = 'matching_strip'
     recession_algorithm = 'boussinesq'
-    Q = pd.read_csv(os.path.join(os.path.dirname(__file__), 'input', 'discharge', 'example.csv'),
+    Q = pd.read_csv(Path(os.path.dirname(__file__), 'input', 'discharge', 'example.csv'),
                     index_col=0, parse_dates=['Datum'],
                     date_parser=dateparse_q,
                     squeeze=True)

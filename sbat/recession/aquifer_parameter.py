@@ -7,14 +7,14 @@ Three parts:
     3)
 """
 
-# %% import libs
-import geopandas as gpd
+from pathlib import Path
 from typing import List, Tuple
-import rasterio
-from shapely.geometry import Point, Polygon, MultiPolygon, MultiPoint
-import os
-import pandas as pd
+
+import geopandas as gpd
 import numpy as np
+import pandas as pd
+import rasterio
+from shapely.geometry import Point
 
 
 def extract_coords(pt):
@@ -272,7 +272,7 @@ def test():
     basins = basins.loc[basins['basin_id'].isin(gauge_meta.gauge), :]
 
     # load the gw_map
-    gw_surface_path = os.path.join('gw_heads.tif')
+    gw_surface_path = Path('gw_heads.tif')
     gw_surface = rasterio.open(gw_surface_path)
 
     # load the river network

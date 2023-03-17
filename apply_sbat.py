@@ -1,9 +1,8 @@
 """
 Call Function
 """
-import sbat
 
-from sbat.sbat import main, Model
+from sbat.sbat import main
 
 # %% generate the object
 # sbat=Model()

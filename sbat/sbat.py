@@ -2,22 +2,20 @@
 This is the central Module which is a class from which the different functions are called
 """
 
-import os
+from datetime import datetime
+import logging
+from pathlib import Path
+import sys
 import yaml
+
 import geopandas as gpd
 import pandas as pd
-import numpy as np
-from typing import Optional
-import logging
+import rasterio
 
-print(os.getcwd())
 from bflow.bflow import compute_baseflow, add_gauge_stats, plot_bf_results
 from recession.recession import analyse_recession_curves, plot_recession_results
 from recession.aquifer_parameter import get_hydrogeo_properties
 from waterbalance.waterbalance import get_section_water_balance
-from datetime import datetime
-import sys
-import rasterio
 
 
 def iterdict(d):
@@ -84,30 +82,29 @@ class Model:
         """
 
         # Define the model and output paths
-        self.model_path = os.path.dirname(os.path.dirname(__file__))
+        self.model_path = Path(__file__).parents[1]
 
         # load the config_data
         if not config_file_path:
             print('take standard configfile location')
-            config_file_path = os.path.join(self.model_path, 'sbat.yml')
+            config_file_path = Path(self.model_path, 'sbat.yml')
 
         with open(config_file_path) as c:
             self.config = yaml.safe_load(c)
 
         # define some directorys
-        self.data_path = os.path.join(self.model_path,
-                                      self.config['file_io']['input']['data_dir']
-                                      )
+        self.data_path = Path(self.model_path,
+                              self.config['file_io']['input']['data_dir']
+                              )
         # get the output_directory
-        self.output_dir = os.path.join(self.model_path, self.config['file_io']['output']['output_directory'])
-        os.makedirs(self.output_dir, exist_ok=True)
-
+        self.output_dir = Path(self.model_path, self.config['file_io']['output']['output_directory'])
+        Path(self.output_dir).mkdir(parents=True, exist_ok=True)
         # %% we load the dataframes to our class
         # the gauge_ts
-        gauge_ts_path = os.path.join(self.model_path,
-                                     self.config['file_io']['input']['data_dir'],
-                                     self.config['file_io']['input']['gauges']['gauge_time_series'],
-                                     )
+        gauge_ts_path = Path(self.model_path,
+                             self.config['file_io']['input']['data_dir'],
+                             self.config['file_io']['input']['gauges']['gauge_time_series'],
+                             )
 
         self.gauge_ts = pd.read_csv(gauge_ts_path,
                                     index_col=0,
@@ -140,10 +137,10 @@ class Model:
                 'No data left after drop NA Values, consider to define dropna_axis as None or changing start date and end_date')
 
         # %%we load the meta_data
-        gauge_meta_path = os.path.join(self.model_path,
-                                       self.config['file_io']['input']['data_dir'],
-                                       self.config['file_io']['input']['gauges']['gauge_meta'],
-                                       )
+        gauge_meta_path = Path(self.model_path,
+                               self.config['file_io']['input']['data_dir'],
+                               self.config['file_io']['input']['gauges']['gauge_meta'],
+                               )
         self.gauge_meta = pd.read_csv(gauge_meta_path, index_col=0)
 
         if self.config['data_cleaning']['valid_datapairs_only']:
@@ -183,8 +180,8 @@ class Model:
                                                                                'compute_each_decade'],
                                                                            ).reset_index().reset_index().set_index(
                     ['index', 'gauge']) for gauge, subset in self.bf_output[key].groupby('gauge')]) for key in
-                                                monthly_keys]
-                                               , axis=1)
+                    monthly_keys]
+                    , axis=1)
 
             # drop duplicate columns
             gauge_meta_updated = gauge_meta_updated.loc[:, ~gauge_meta_updated.columns.duplicated()].reset_index()
@@ -208,7 +205,7 @@ class Model:
                             meta_data_decadal=self.gauge_meta_decadal,
                             parameters_to_plot=['bf_daily', 'bf_monthly', 'bfi_monthly'],
                             streams_to_plot=['spree', 'lausitzer_neisse', 'schwarze_elster'],
-                            output_dir=os.path.join(self.output_dir, 'bf_analysis', 'figures'),
+                            output_dir=Path(self.output_dir, 'bf_analysis', 'figures'),
                             decadal_plots=self.config['time']['compute_each_decade'],
                             )
 
@@ -378,7 +375,7 @@ class Model:
                                    meta_data_decadal=self.gauge_meta_decadal,
                                    parameters_to_plot=['Q0_rec', 'pearson_r', 'n0_rec'],
                                    streams_to_plot=['spree', 'lausitzer_neisse', 'schwarze_elster'],
-                                   output_dir=os.path.join(self.output_dir, 'recession_analysis', 'figures'),
+                                   output_dir=Path(self.output_dir, 'recession_analysis', 'figures'),
                                    decadal_plots=self.config['time']['compute_each_decade'],
                                    )
 
@@ -390,22 +387,22 @@ class Model:
             if self.config['recession']['curve_data']['curve_type'] == 'waterbalance':
                 basins = self.section_basins
             elif self.config['recession']['curve_data']['curve_type'] == 'hydrograph':
-                basins = gpd.read_file(os.path.join(self.data_path,
-                                                    self.config['file_io']['input']['geospatial']['gauge_basins'])
+                basins = gpd.read_file(Path(self.data_path,
+                                            self.config['file_io']['input']['geospatial']['gauge_basins'])
                                        )
                 # we reduce the basins to the gauges for which we have meta information
                 basins = basins.loc[basins[self.config['waterbalance']['basin_id_col']].isin(self.gauge_meta.index)]
             else:
                 raise ValueError('curve type can either be waterbalance or hydrograph')
             # load the rasterio data
-            gw_surface = rasterio.open(os.path.join(self.data_path,
-                                                    self.config['file_io']['input']['hydrogeology']['gw_levels']
-                                                    )
+            gw_surface = rasterio.open(Path(self.data_path,
+                                            self.config['file_io']['input']['hydrogeology']['gw_levels']
+                                            )
                                        )
 
-            network_geometry = gpd.read_file(os.path.join(self.data_path,
-                                                          self.config['file_io']['input']['geospatial'][
-                                                              'river_network'])
+            network_geometry = gpd.read_file(Path(self.data_path,
+                                                  self.config['file_io']['input']['geospatial'][
+                                                      'river_network'])
                                              )
 
             # get the properties
@@ -434,21 +431,21 @@ class Model:
 
         # %% First we load the data
 
-        network_geometry = gpd.read_file(os.path.join(self.data_path,
-                                                      self.config['file_io']['input']['geospatial']['river_network'])
+        network_geometry = gpd.read_file(Path(self.data_path,
+                                              self.config['file_io']['input']['geospatial']['river_network'])
                                          )
 
-        tributary_connections = pd.read_csv(os.path.join(self.data_path,
-                                                         self.config['file_io']['input']['geospatial'][
-                                                             'tributary_topology'])
+        tributary_connections = pd.read_csv(Path(self.data_path,
+                                                 self.config['file_io']['input']['geospatial'][
+                                                     'tributary_topology'])
                                             )
-        distributary_connections = pd.read_csv(os.path.join(self.data_path,
-                                                            self.config['file_io']['input']['geospatial'][
-                                                                'distributary_topology'])
+        distributary_connections = pd.read_csv(Path(self.data_path,
+                                                    self.config['file_io']['input']['geospatial'][
+                                                        'distributary_topology'])
                                                )
 
-        gauge_basins = gpd.read_file(os.path.join(self.data_path,
-                                                  self.config['file_io']['input']['geospatial']['gauge_basins'])
+        gauge_basins = gpd.read_file(Path(self.data_path,
+                                          self.config['file_io']['input']['geospatial']['gauge_basins'])
                                      )
 
         # check whether flow type is given explicitely
@@ -492,7 +489,7 @@ class Model:
             confidence_acceptance_level=self.config['waterbalance']['confidence_acceptance_level'],
             time_series_analysis_option=self.config['waterbalance']['time_series_analysis_option'],
             basin_id_col=self.config['waterbalance']['basin_id_col'],
-            )
+        )
 
 
 def main(config_file=None, output=True):
@@ -510,10 +507,10 @@ def main(config_file=None, output=True):
         sbat.get_water_balance()
     # write the output
     if output:
-        os.makedirs(os.path.join(sbat.output_dir, 'data'), exist_ok=True)
-        sbat.sections_meta.to_csv(os.path.join(sbat.output_dir, 'data', 'section_meta.csv'))
-        sbat.q_diff.to_csv(os.path.join(sbat.output_dir, 'data', 'q_diff.csv'))
-        sbat.gdf_network_map.to_file(os.path.join(sbat.output_dir, 'data', 'section_network_map.gpkg'), driver='GPKG')
+        Path(sbat.output_dir, 'data').mkdir(parents=True, exist_ok=True)
+        sbat.sections_meta.to_csv(Path(sbat.output_dir, 'data', 'section_meta.csv'))
+        sbat.q_diff.to_csv(Path(sbat.output_dir, 'data', 'q_diff.csv'))
+        sbat.gdf_network_map.to_file(Path(sbat.output_dir, 'data', 'section_network_map.gpkg'), driver='GPKG')
 
     return sbat
 

@@ -5,16 +5,15 @@ loads all our data and calculates the monthly baseflow
 @author: Nixdorf.E
 """
 
-from .demuth import baseflow_demuth
+from pathlib import Path
 
-import os
-import pandas as pd
-from datetime import datetime
-import numpy as np
 import baseflow as bf_package
-
-import seaborn as sns
 from matplotlib import pyplot as plt
+import numpy as np
+import pandas as pd
+import seaborn as sns
+
+from .demuth import baseflow_demuth
 
 
 def clean_gauge_ts(Q):
@@ -257,7 +256,7 @@ def add_gauge_stats(df_data, gauge_meta, col_name='bf', decadal_stats=False):
 def plot_bf_results(data=dict(), meta_data=pd.DataFrame(), meta_data_decadal=pd.DataFrame(),
                     parameters_to_plot=['bf_daily', 'bf_monthly', 'bfi_monthly'],
                     streams_to_plot=['spree', 'lausitzer_neisse', 'schwarze_elster'],
-                    output_dir=os.path.join(os.getcwd(), 'bf_analysis', 'figures'),
+                    output_dir=Path(Path.cwd(), 'bf_analysis', 'figures'),
                     decadal_plots=True
                     ):
     """
@@ -278,7 +277,7 @@ def plot_bf_results(data=dict(), meta_data=pd.DataFrame(), meta_data_decadal=pd.
 
     """
     # first we generate the output dir
-    os.makedirs(output_dir, exist_ok=True)
+    output_dir.mkdir(parents=True, exist_ok=True)
     # first we plot some histogram and boxplots
     for parameter in parameters_to_plot:
         if parameter in data.keys():
@@ -291,7 +290,7 @@ def plot_bf_results(data=dict(), meta_data=pd.DataFrame(), meta_data_decadal=pd.
             s1 = sns.histplot(data=subset.reset_index(), x='value', kde=True)
             plt.title('Distribution of ' + parameter)
             plt.tight_layout()
-            fig.savefig(os.path.join(output_dir, 'distribution_of_' + parameter + '.png'), dpi=300)
+            fig.savefig(Path(output_dir, 'distribution_of_' + parameter + '.png'), dpi=300)
             plt.close()
 
             # for each method
@@ -300,7 +299,7 @@ def plot_bf_results(data=dict(), meta_data=pd.DataFrame(), meta_data_decadal=pd.
             plt.legend(title=parameter + '_method', loc='upper left', labels=subset.variable.unique())
             plt.title(parameter + ' Distribution per Method')
             plt.tight_layout()
-            fig.savefig(os.path.join(output_dir, parameter + '_distribution_per_method.png'), dpi=300)
+            fig.savefig(Path(output_dir, parameter + '_distribution_per_method.png'), dpi=300)
             plt.close()
             # for each gauge
             palette = sns.color_palette(['grey'], len(subset.gauge.unique()))
@@ -310,7 +309,7 @@ def plot_bf_results(data=dict(), meta_data=pd.DataFrame(), meta_data_decadal=pd.
             plt.xlabel(parameter)
             plt.title(parameter + ' Distribution over Gauges')
             plt.tight_layout()
-            fig.savefig(os.path.join(output_dir, parameter + '_distribution_over_gauges.png'), dpi=300)
+            fig.savefig(Path(output_dir, parameter + '_distribution_over_gauges.png'), dpi=300)
             plt.close()
             # we further make some boxplots
             fig, ax = plt.subplots()
@@ -320,7 +319,7 @@ def plot_bf_results(data=dict(), meta_data=pd.DataFrame(), meta_data_decadal=pd.
             plt.ylabel(parameter)
             plt.title(parameter + ' Statistical Difference by Method')
             plt.tight_layout()
-            fig.savefig(os.path.join(output_dir, parameter + '_statistical_difference_by_method.png'), dpi=300)
+            fig.savefig(Path(output_dir, parameter + '_statistical_difference_by_method.png'), dpi=300)
             plt.close()
             # %%
             fig, ax = plt.subplots()
@@ -328,7 +327,7 @@ def plot_bf_results(data=dict(), meta_data=pd.DataFrame(), meta_data_decadal=pd.
             fig.set_dpi(300)
             s6 = sns.boxplot(data=subset, x='value', y='gauge')
             plt.tight_layout()
-            fig.savefig(os.path.join(output_dir, parameter + '_per_gauge.png'), dpi=300)
+            fig.savefig(Path(output_dir, parameter + '_per_gauge.png'), dpi=300)
             plt.close()
 
     # next we plot the top 15 gauges with the largest deviations
@@ -342,7 +341,7 @@ def plot_bf_results(data=dict(), meta_data=pd.DataFrame(), meta_data_decadal=pd.
         fig, ax = plt.subplots()
         sns.barplot(data=meta_data.reset_index().sort_values(cv_col, ascending=False)[0:index_max], x=cv_col,
                     y='gauge').set(title=cv_col)
-        fig.savefig(os.path.join(output_dir, 'Gauges_with_largest_' + cv_col + '.png'), dpi=300, bbox_inches="tight")
+        fig.savefig(Path(output_dir, 'Gauges_with_largest_' + cv_col + '.png'), dpi=300, bbox_inches="tight")
         plt.close()
     # we make lineplots along the river systems
     para_cols = [col for col in meta_data.columns if '_mean' in col]
@@ -380,7 +379,7 @@ def plot_bf_results(data=dict(), meta_data=pd.DataFrame(), meta_data_decadal=pd.
             plt.xticks(rotation=90)
             ax.set_xticklabels(gauge_ticklabels)
             plt.tight_layout()
-            fig.savefig(os.path.join(output_dir, para_col + '_' + stream + '.png'), dpi=300)
+            fig.savefig(Path(output_dir, para_col + '_' + stream + '.png'), dpi=300)
             plt.close()
 
     if decadal_plots:
@@ -418,5 +417,5 @@ def plot_bf_results(data=dict(), meta_data=pd.DataFrame(), meta_data_decadal=pd.
                 plt.xticks(rotation=90)
                 ax.set_xticklabels(gauge_ticklabels)
                 plt.tight_layout()
-                fig.savefig(os.path.join(output_dir, para_col + '_' + stream + '.png'), dpi=300)
+                fig.savefig(Path(output_dir, para_col + '_' + stream + '.png'), dpi=300)
                 plt.close()

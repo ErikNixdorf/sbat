@@ -7,16 +7,17 @@ confidence_interval
 hash_
 
 """
-import pandas as pd
-import os
-import numpy as np
-import geopandas as gpd
+
 from copy import deepcopy
-from shapely.geometry import Point, MultiPoint, LineString, MultiLineString, MultiPolygon
-from shapely.ops import nearest_points, cascaded_union, unary_union
-import secrets
 import logging
+import secrets
 from typing import Dict, Any
+
+import geopandas as gpd
+import numpy as np
+import pandas as pd
+from shapely.geometry import Point, MultiPoint, LineString, MultiLineString, MultiPolygon
+from shapely.ops import nearest_points, unary_union
 
 
 def multilinestring_to_singlelinestring(
@@ -145,14 +146,14 @@ def generate_upstream_network(gauge_meta=pd.DataFrame(), tributary_connections=p
                 # calculate whether there is an inflow inbetween:
                 if branch_type == 'tributaries_up':
                     subtributaries = subtributaries[(
-                                                                subtributaries.km_zufluss_Vorfluter_ab_muendung_vorfluter - branch_gauge.km_muendung_hauptfluss_model) < 0]
+                                                            subtributaries.km_zufluss_Vorfluter_ab_muendung_vorfluter - branch_gauge.km_muendung_hauptfluss_model) < 0]
                     subdistributaries = subdistributaries[(
-                                                                      subdistributaries.km_abfluss_hauptfluss_ab_muendung_hauptfluss - branch_gauge.km_muendung_hauptfluss_model) < 0]
+                                                                  subdistributaries.km_abfluss_hauptfluss_ab_muendung_hauptfluss - branch_gauge.km_muendung_hauptfluss_model) < 0]
                 elif branch_type == 'distributaries_up':
                     subtributaries = subtributaries[(
-                                                                subtributaries.km_zufluss_Vorfluter_ab_muendung_vorfluter - branch_gauge.km_muendung_hauptfluss_model) > 0]
+                                                            subtributaries.km_zufluss_Vorfluter_ab_muendung_vorfluter - branch_gauge.km_muendung_hauptfluss_model) > 0]
                     subdistributaries = subdistributaries[(
-                                                                      subdistributaries.km_abfluss_hauptfluss_ab_muendung_hauptfluss - branch_gauge.km_muendung_hauptfluss_model) > 0]
+                                                                  subdistributaries.km_abfluss_hauptfluss_ab_muendung_hauptfluss - branch_gauge.km_muendung_hauptfluss_model) > 0]
 
                 # append to data
                 gauge_connection_dict[branch_type] = pd.concat([gauge_connection_dict[branch_type], subtributaries])
@@ -421,7 +422,7 @@ def map_network_sections(
                     # upstream depends whether there is a gauge or not
                     if branch.upstream_point != 'river_spring':
                         pnt_branch_gauge = \
-                        gauge_meta.loc[gauge_meta.index == branch['upstream_point'], 'geometry'].iloc[0]
+                            gauge_meta.loc[gauge_meta.index == branch['upstream_point'], 'geometry'].iloc[0]
                         pnt_id_upstream = river_pnts.distance(pnt_branch_gauge).idxmin()
 
                     # we rearrange if it does make sense with the flow direction
