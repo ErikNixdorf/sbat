@@ -187,8 +187,15 @@ def fit_reservoir_function(t, Q, Q_0,
         Q_0_min = Q_0 * 0.9999
         Q_0_max = Q_0 * 1.0001
     else:
-        Q_0_min = 0.000001
-        Q_0_max = Q_0 * 1.0001
+        if Q_0 > 0:
+            Q_0_min = 0.000001
+            Q_0_max = Q_0 * 1.0001
+        elif Q_0 < 0:
+            Q_0_min = min(Q) * 1.0001
+            Q_0_max = max(Q) * 0.9999
+        else:
+            raise Warning('Q_0 equals zero is not covered, return none')
+            return None
 
     # Define n_min and n_max
     n_min = 10e-10
@@ -211,16 +218,17 @@ def fit_reservoir_function(t, Q, Q_0,
         if reservoirs == 0:
             p0 = [Q_0, 0.05, 0]
         elif reservoirs == 1:
-            p0 = [Q_0, 0.05, 0, Q_0 / 2, 0.005, int(t.mean())]
+            p0 = [Q_0, 0.05, 0, Q_0_min+(1/2)*(Q_0_max-Q_0_min), 0.005, int(t.mean())]
         elif reservoirs == 2:
-            p0 = [Q_0, 0.05, 0, Q_0 / (1 / 3), 0.005, int(t.mean() / 2), Q_0 / (2 / 3), 0.0005, int(t.mean() * 1.5)]
-
+            p0 = [Q_0, 0.05, 0, Q_0_min+(1/3)*(Q_0_max-Q_0_min), 0.005, int(t.mean()/2), Q_0_min+(2/3)*(Q_0_max-Q_0_min), 0.0005, int(t.mean()*1.5)]
+    
             # Define the bounds for curve_fit
         bounds_min = [Q_0_min, n_min, t0_min] * (reservoirs + 1)
         bounds_max = [Q_0_max, n_max, t0_max] * (reservoirs + 1)
         bounds = (bounds_min, bounds_max)
 
         # Fit the function
+
         fit_parameter, pcov = curve_fit(model_function, t, Q, p0=p0, bounds=bounds, maxfev=2000)
 
         Q_int = model_function(t, *fit_parameter)
@@ -286,16 +294,30 @@ def find_recession_limbs(Q, smooth_window_size=15,
     recession limb, including the maximum flow rate, and returns them as a pandas DataFrame.
 
     """
-    # %% Clean
+    #%% Clean
     Q = clean_gauge_ts(Q)
     Q = Q.rename('Q')
-    Q = Q.to_frame()
-    # %% We apply a  savgol filter
+    Q = Q.to_frame()    
+    
+    #%% if length is below window_size we return None
+    if len(Q) <= smooth_window_size:
+        Q = None
+        return Q
+    
+    #%% We apply a  savgol filter
+        
     if smooth_window_size > 0:
-        Q['Q'] = savgol_filter(Q.values.flatten(), int(round_up_to_odd(smooth_window_size)), 2)
+        #first we check where are the nans in the data and mask it
+        nan_mask = Q['Q'].isna().values
+        #apply filter on interpolated data
+        Q['Q'] = savgol_filter(Q.interpolate().values.flatten(), int(round_up_to_odd(smooth_window_size)), 2)        
+        #use the mask again to get the nan back
+        Q.loc[nan_mask,'Q'] = np.nan
+        
 
-    # %% Get numbers for all slopes with the same direction
-    # inspired by https://stackoverflow.com/questions/55133427/pandas-splitting-data-frame-based-on-the-slope-of-data
+    
+    #%% Get numbers for all slopes with the same direction
+    #inspired by https://stackoverflow.com/questions/55133427/pandas-splitting-data-frame-based-on-the-slope-of-data
 
     Q['diff'] = Q.diff().fillna(0)
     Q.loc[Q['diff'] < 0, 'diff'] = -1
@@ -381,7 +403,7 @@ def find_recession_limbs(Q, smooth_window_size=15,
         # rebuild the function
         Q = Q_with_inflection.copy(deep=True)
         Q['section_id'] = Q['section_id_new']
-        Q = Q.set_index('Datum').drop(columns=['section_id_new'])
+        Q = Q.set_index('date').drop(columns=['section_id_new'])
         section_length = Q.groupby('section_id').size()
         Q['section_length'] = Q['section_id']
         Q['section_length'] = Q['section_length'].replace(section_length)
@@ -440,6 +462,8 @@ def analyse_recession_curves(Q, mrc_algorithm: str = 'demuth',
     """
 
     # %% we define output mrc_data, first two are master curve fit para, third is performance
+    gauge_name = Q.name
+    print(f'Analyse recession curves for gauge {gauge_name}')
     mrc_out = tuple((None, None, None))
 
     if isinstance(Q, pd.Series):
@@ -452,11 +476,14 @@ def analyse_recession_curves(Q, mrc_algorithm: str = 'demuth',
         Q = find_recession_limbs(Q['Q'], smooth_window_size=smooth_window_size,
                                  minimum_recession_curve_length=minimum_recession_curve_length)
 
-    # if there are no falling limbs within the interval we just return the data
-    if len(Q) == 0 or len(Q['section_id'].unique()) < minimum_limbs:
-        print('No Recession limb within the dataset')
-        Q = None
-        return Q, mrc_out
+    #if there are no falling limbs within the interval we just return the data
+    if Q is None:
+        print(f'No falling limbs within constraints for gauge {gauge_name}')
+        return Q,mrc_out
+    elif len(Q) == 0 or len(Q['section_id'].unique()) < minimum_limbs:
+        print(f'No falling limbs within constraints for gauge {gauge_name}')
+        Q = None        
+        return Q,mrc_out
 
     # %% if mrc_algorithm is zero, we just compute_individual branches
     # %% if we are not interested in a master_recession curve we just calculate single coefficients
@@ -585,7 +612,6 @@ def analyse_recession_curves(Q, mrc_algorithm: str = 'demuth',
 
     return Q, mrc_out
 
-
 # %% plotting
 def plot_recession_results(meta_data=pd.DataFrame(), meta_data_decadal=pd.DataFrame(),
                            parameters_to_plot=['Q0', 'pearson_r', 'n'],
@@ -593,6 +619,7 @@ def plot_recession_results(meta_data=pd.DataFrame(), meta_data_decadal=pd.DataFr
                            output_dir=Path(Path.cwd(), 'bf_analysis', 'figures'),
                            decadal_plots=True
                            ):
+
     """
     Plot the results of the baseflow calculation
 
@@ -704,13 +731,14 @@ def plot_recession_results(meta_data=pd.DataFrame(), meta_data_decadal=pd.DataFr
 
 
 def test_recession_curve_analysis():
+
     # %% definitions
     moving__average_filter_steps = 3  # daily
     minimum_recession_curve_length = 10
     mrc_algorithm = 'matching_strip'
     recession_algorithm = 'boussinesq'
     Q = pd.read_csv(Path(os.path.dirname(__file__), 'input', 'discharge', 'example.csv'),
-                    index_col=0, parse_dates=['Datum'],
+                    index_col=0, parse_dates=['date'],
                     date_parser=dateparse_q,
                     squeeze=True)
     Q_0, n = analyse_recession_curves(Q, mrc_algorithm=mrc_algorithm,

@@ -136,11 +136,19 @@ def map_topo_parameters(row: pd.Series, df2: pd.DataFrame, parameters: List[str]
     if isinstance(row.name, Tuple):
         gauge_name = row.name[0]
     else:
-        gauge_name = row.name
+        gauge_name=row.name
+    
+    #check whether the gauge is actually in the basin_list
+    if gauge_name in df2['basin_id'].values:
+        topo_params = df2[df2['basin_id'] == gauge_name][parameters].iloc[0]
+    else:
+        print(f'No basin parameters for gauge {gauge_name}')
+        topo_params = df2.iloc[0,:][parameters]
+        #replace all by nan
+        topo_params[~topo_params.isna()] = np.nan
+        
+    row=row.append(topo_params)
 
-    topo_params = df2[df2['basin_id'] == gauge_name][parameters].iloc[0]
-
-    row = row.append(topo_params)
     return row
 
 

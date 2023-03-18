@@ -91,7 +91,6 @@ class Model:
 
         with open(config_file_path) as c:
             self.config = yaml.safe_load(c)
-
         # define some directorys
         self.data_path = Path(self.model_path,
                               self.config['file_io']['input']['data_dir']
@@ -108,7 +107,7 @@ class Model:
 
         self.gauge_ts = pd.read_csv(gauge_ts_path,
                                     index_col=0,
-                                    parse_dates=['Datum'],
+                                    parse_dates=['date'],
                                     date_parser=dateparse)
 
         if self.config['data_cleaning']['test_mode']:
@@ -279,7 +278,7 @@ class Model:
                 else:
                     Q = self.bf_output['bf_daily']
                     print('we average the baseflow methods ')
-                    Q = Q.reset_index().groupby(['Datum', 'gauge']).mean().reset_index()
+                    Q = Q.reset_index().groupby(['date', 'gauge']).mean().reset_index()
                     # wide to long
                     Q = Q.pivot(index='Datum', columns='gauge', values='value').copy()
 
@@ -288,26 +287,31 @@ class Model:
 
 
         elif self.config['recession']['curve_data']['curve_type'] == 'waterbalance':
-            print('Recession Analysis is conducted using the waterbalance data')
-            # checking whether the water_balance exist and if the same flow type has been used
+
+            logging.info('Recession Analysis is conducted using the waterbalance data')
+            #in the case of waterbalance we can not compute a master recession curve due to possibly negative values
+            logging.info('mrc_curve not defined for curve_type is waterbalance')
+            self.config['recession']['fitting']['mastercurve_algorithm'] = None             
+             # checking whether the water_balance exist and if the same flow type has been used
             if not hasattr(self, 'sections_meta') or not self.config['recession']['curve_data']['flow_type'] == \
                                                          self.config['waterbalance']['flowtype']:
                 print('Water_Balance Model is run first in order to get the correct input data for recession')
                 self.get_water_balance(flow_type=self.config['recession']['curve_data']['flow_type'])
-
-                Q = self.sections_meta.pivot(columns='downstream_point', values='balance', index='Date')
-                Q.index = pd.to_datetime(Q.index).rename('Datum')
+                
+                Q = self.sections_meta.pivot(columns='downstream_point',values='balance',index='Date')
+                Q.index = pd.to_datetime(Q.index).rename('date')
                 Q.columns.name = 'gauge'
-
+ 
         if self.config['time']['compute_each_decade']:
             Q['decade'] = [x[0:3] + '5' for x in Q.index.strftime('%Y')]
         else:
             Q['decade'] = -9999
-
+            
         # start the recession
         metrics = list()
         for decade, Q_decade in Q.groupby('decade'):
             # drop all gauges where no data is within the decade
+
             Q_decade = Q_decade.dropna(axis=1, how='all').drop(columns='decade')
             # we loop trough all gauges to get the recession curve
             recession_results = Q_decade.apply(lambda x: analyse_recession_curves(x,
@@ -435,20 +439,16 @@ class Model:
                                               self.config['file_io']['input']['geospatial']['river_network'])
                                          )
 
-        tributary_connections = pd.read_csv(Path(self.data_path,
+        network_connections = pd.read_csv(Path(self.data_path,
                                                  self.config['file_io']['input']['geospatial'][
-                                                     'tributary_topology'])
+                                                     'branches_topology'])
                                             )
-        distributary_connections = pd.read_csv(Path(self.data_path,
-                                                    self.config['file_io']['input']['geospatial'][
-                                                        'distributary_topology'])
-                                               )
 
         gauge_basins = gpd.read_file(Path(self.data_path,
                                           self.config['file_io']['input']['geospatial']['gauge_basins'])
                                      )
+        #check whether flow type is given explicitely
 
-        # check whether flow type is given explicitely
         if 'flow_type' in kwargs:
             flow_type = kwargs['flow_type']
         else:
@@ -470,10 +470,12 @@ class Model:
 
             # in any case for the baseflow we have to bring the format from long to wide
             print('Average baseflow data for each gauge and time step')
-            data_ts = data_ts.groupby(['gauge', 'Datum']).mean().reset_index().pivot(index='Datum', columns='gauge',
+            
+            data_ts = data_ts.groupby(['gauge', 'date']).mean().reset_index().pivot(index='date', columns='gauge',
                                                                                      values='value')
-
+                                                                                     
         elif flow_type == 'discharge':
+
             print('Use daily discharge')
             data_ts = self.gauge_ts.copy()
 
@@ -484,8 +486,7 @@ class Model:
             data_ts=data_ts,
             network=network_geometry,
             basins=gauge_basins,
-            tributary_connections=tributary_connections,
-            distributary_connections=distributary_connections,
+            network_connections=network_connections,
             confidence_acceptance_level=self.config['waterbalance']['confidence_acceptance_level'],
             time_series_analysis_option=self.config['waterbalance']['time_series_analysis_option'],
             basin_id_col=self.config['waterbalance']['basin_id_col'],
@@ -495,6 +496,7 @@ class Model:
 def main(config_file=None, output=True):
     sbat = Model(config_file_path=config_file)
     # get discharge data
+
     sbat.get_discharge_stats()
 
     # get baseflow

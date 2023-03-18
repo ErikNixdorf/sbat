@@ -2,16 +2,17 @@
 Call Function
 """
 
-from sbat.sbat import main
+import sbat
 
-# %% generate the object
-# sbat=Model()
+#%% generate the object
+#sbat=Model()
+model=sbat.main(output=True)
 
-
-sbat = main(output=True)
-
-# get baseflow
-# sbat.get_baseflow()
+#get baseflow
+#sbat.get_baseflow()
 
 
-# sbat.get_water_balance()
+#sbat.get_water_balance()
+
+
+
