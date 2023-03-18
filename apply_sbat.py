@@ -3,14 +3,13 @@ Call Function
 """
 import sbat
 
-from sbat.sbat import main,Model
 
 
 #%% generate the object
 #sbat=Model()
 
 
-sbat=main(output=True)
+model=sbat.main(output=True)
 
 
 

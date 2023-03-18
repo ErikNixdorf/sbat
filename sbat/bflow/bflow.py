@@ -102,7 +102,7 @@ def melt_gauges(df,additional_columns=dict({'a':'b'})):
     for key, value in additional_columns.items():
         df_melted[key]=value
     #add date
-    df_melted['Datum']=pd.concat([pd.Series(df.index)] * len(df.columns), ignore_index=True)
+    df_melted['date']=pd.concat([pd.Series(df.index)] * len(df.columns), ignore_index=True)
     
     return df_melted
     
@@ -145,11 +145,11 @@ def compute_baseflow(data_ts,data_meta,methods='all',
         bf_daily,KGEs=call_bf_package(Q,methods=methods,area=basin_area)
         
         
-        bf_daily_melted=bf_daily.reset_index().melt(id_vars='Datum')
+        bf_daily_melted=bf_daily.reset_index().melt(id_vars='date')
         bf_daily_melted['gauge']=gauge
         bfs_daily=pd.concat([bfs_daily,bf_daily_melted])  
         
-        bf_output.update({'bf_daily':bfs_daily.set_index('Datum')})     
+        bf_output.update({'bf_daily':bfs_daily.set_index('date')})     
         
     
         if calculate_monthly:
@@ -189,7 +189,7 @@ def compute_baseflow(data_ts,data_meta,methods='all',
                 #we compute the BFI
                 bfi_monthly=bf_monthly.divide(Q.resample('m').mean(),axis=0)
                 #append
-                bfis_monthly=pd.concat([bfis_monthly,melt_gauges(bfi_monthly,additional_columns=dict({'gauge':gauge})).set_index('Datum')])
+                bfis_monthly=pd.concat([bfis_monthly,melt_gauges(bfi_monthly,additional_columns=dict({'gauge':gauge})).set_index('date')])
                 #compute gauge attributes
                 gauge_attributes[['bfi_mean_'+col for col in bf_monthly]]=bfi_monthly.mean()
                 gauge_attributes[['bfi_std_'+col for col in bf_monthly]]=bfi_monthly.std()
@@ -204,7 +204,7 @@ def compute_baseflow(data_ts,data_meta,methods='all',
         
         #update the dictionary
             bf_output.update({'bf_attributes':gauges_attributes,
-                              'bf_monthly':bfs_monthly.set_index('Datum')
+                              'bf_monthly':bfs_monthly.set_index('date')
                               }
                              )
     return bf_output
