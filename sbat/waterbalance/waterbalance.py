@@ -463,6 +463,11 @@ def map_network_sections(
             print('Stream Line needs at least two points, we move by one point, but you should check geometry')
             river_pnts = river_pnts.iloc[pnt_id_upstream:pnt_id_downstream + 2]
 
+
+        section_line = LineString(MultiPoint(river_pnts.geometry.to_list()))
+                
+        #get the lines of the tributaries
+        trib_lines = list()
         
         for branch_name in ['tributaries_up', 'distributaries_up']:
         
@@ -739,8 +744,7 @@ def get_section_water_balance(gauge_data: pd.DataFrame = pd.DataFrame(),
     # %% run the main functions
 
     gauges_connection_dict = generate_upstream_network(gauge_meta=gauge_data,
-                                                       tributary_connections=tributary_connections,
-                                                       distributary_connections=distributary_connections)
+                                                       network_connections=network_connections)
 
     sections_meta, q_diff = calculate_network_balance(ts_data=ts_stats,
                                                       network_dict=gauges_connection_dict,
