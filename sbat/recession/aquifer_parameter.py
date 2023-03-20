@@ -64,7 +64,7 @@ def get_drainage_topographic_parameters(basin, basin_id_col='basin',
         'z': heights
     }, geometry=[Point(x, y) for x, y in coords], crs=river_network.crs)
     # we clip the river network by the basin
-    basin_network = gpd.clip(river_network, basin).explode()
+    basin_network = gpd.clip(river_network, basin).explode(index_parts=True)
 
     if basin_network.empty:
         print(f'No river sections within basin {basin_name}')
@@ -136,20 +136,17 @@ def map_topo_parameters(row: pd.Series, df2: pd.DataFrame, parameters: List[str]
     if isinstance(row.name, Tuple):
         gauge_name = row.name[0]
     else:
-        gauge_name=row.name
-    
-    #check whether the gauge is actually in the basin_list
+        gauge_name = row.name
+
+    # check whether the gauge is actually in the basin_list
     if gauge_name in df2['basin_id'].values:
         topo_params = df2[df2['basin_id'] == gauge_name][parameters].iloc[0]
     else:
         print(f'No basin parameters for gauge {gauge_name}')
-        topo_params = df2.iloc[0,:][parameters]
-        #replace all by nan
+        topo_params = df2.iloc[0, :][parameters]
+        # replace all by nan
         topo_params[~topo_params.isna()] = np.nan
-        
-    row=row.append(topo_params)
-
-    return row
+    return pd.concat([row, topo_params])
 
 
 # %% Next we map it on the recession parameters and calculate the aquifer parameters
