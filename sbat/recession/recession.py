@@ -593,7 +593,7 @@ def analyse_recession_curves(Q, mrc_algorithm: str = 'demuth',
             t_shift = inv_func(limb['Q0'].iloc[0], Q0_max, fit_parameter[1])
             # add t_shift to section time
             limb['section_time'] = limb['section_time'] + t_shift
-            df_merged = df_merged.append(limb.set_index('section_time')['Q'])
+            df_merged = pd.concat([df_merged, limb.set_index('section_time')['Q']])
 
         # we compute a new mean fitting model of the shifted time series
         df_merged = df_merged.sort_index()
