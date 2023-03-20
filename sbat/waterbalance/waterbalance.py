@@ -389,7 +389,9 @@ def calculate_network_balance(ts_data=pd.DataFrame(),
             # calculate the water balance
             balance = ts_data[gauge] - ts_data_gauge_up - ts_tributaries + ts_distributaries
             df_section['balance'] = balance.values
-            df_section['balance_confidence'] = np.divide(balance.values, (ts_data[gauge] + ts_data_gauge_up).values)
+
+            with np.errstate(invalid='ignore'):
+                df_section['balance_confidence'] = np.divide(balance.values, (ts_data[gauge] + ts_data_gauge_up).values)
 
         # add index data
         df_section['Date'] = ts_data.index
