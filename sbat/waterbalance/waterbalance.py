@@ -527,7 +527,6 @@ def map_network_sections(
 
                     # we append the trib geometries
                     trib_lines.append(LineString(river_pnts_extracted.geometry))
-
         trib_lines.append(section_line)
         section_lines = MultiLineString(lines=trib_lines)
 
