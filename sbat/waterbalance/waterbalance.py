@@ -464,15 +464,15 @@ def map_network_sections(
             river_pnts = river_pnts.iloc[pnt_id_upstream:pnt_id_downstream + 2]
 
 
-        section_line = LineString(MultiPoint(river_pnts.geometry.to_list()))
-                
+        section_line = LineString(river_pnts.geometry.to_list())
+
         #get the lines of the tributaries
         trib_lines = list()
-        
+
         for branch_name in ['tributaries_up', 'distributaries_up']:
-        
+
             # we loop trough the dataset        
-            for (_, branch) in gauge[branch_name].iterrows():        
+            for (_, branch) in gauge[branch_name].iterrows():
                 # extract the river line if available        
                 if branch['stream'] not in network.reach_name.tolist():
                     print (branch['stream'],
@@ -480,23 +480,23 @@ def map_network_sections(
                     continue
                 river_line = network[network.reach_name == branch['stream'
                                      ]].geometry.iloc[0]
-        
+
                 # first we check whether there is really data in the dataset        
-                if len(gauge[branch_name]) > 0:        
+                if len(gauge[branch_name]) > 0:
                     # we get the river line        
-                    if branch['stream'] not in network.reach_name.tolist():        
+                    if branch['stream'] not in network.reach_name.tolist():
                         print (branch['stream'],
                                'not in network data, check correct names')
                         continue
-        
+
                     # extract the river line        
                     river_line = network[network.reach_name == branch['stream'
                                          ]].geometry.iloc[0]
-        
+
                     # get all river points as geodataframe        
                     river_pnts = gpd.GeoDataFrame(geometry=[Point(pt) for pt in
                             river_line.coords])
-        
+
                     # next we will find upstream and downstream
                     # downstream is always the points        
                     if branch_name == 'tributaries_up':
@@ -526,7 +526,7 @@ def map_network_sections(
                         river_pnts_extracted = river_pnts.iloc[pnt_id_upstream:pnt_id_downstream + 2]
 
                     # we append the trib geometries
-                    trib_lines.append(LineString(MultiPoint(river_pnts_extracted.geometry.to_list())))
+                    trib_lines.append(LineString(river_pnts_extracted.geometry.to_list()))
 
         trib_lines.append(section_line)
         section_lines = MultiLineString(lines=trib_lines)
@@ -734,7 +734,7 @@ def get_section_water_balance(gauge_data: pd.DataFrame = pd.DataFrame(),
 
     # our gauge data has to converted to geodataframe
     # make a geodataframe out of the data
-    geometry = [Point(xy) for xy in zip(gauge_data['easting'], gauge_data['northing'])] 
+    geometry = [Point(xy) for xy in zip(gauge_data['easting'], gauge_data['northing'])]
 
     gauge_data = gpd.GeoDataFrame(gauge_data, crs=network.crs, geometry=geometry)
 
