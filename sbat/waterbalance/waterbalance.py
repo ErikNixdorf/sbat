@@ -16,7 +16,7 @@ from typing import Dict, Any
 import geopandas as gpd
 import numpy as np
 import pandas as pd
-from shapely.geometry import Point, MultiPoint, LineString, MultiLineString, MultiPolygon
+from shapely.geometry import Point, LineString, MultiLineString, MultiPolygon
 from shapely.ops import nearest_points, unary_union
 
 
