@@ -432,7 +432,6 @@ def map_network_sections(
     # %% we write a function to get the basin_data
 
     gdf_balances = gpd.GeoDataFrame()
-
     # %% We will loop through the gauge sections and extract the relevant stream reaches and clip them
     for _, gauge in network_dict.items():
         # first we get the line within the main reach
@@ -539,10 +538,7 @@ def map_network_sections(
             (k, gauge[k]) for k in ['id', 'reach_name', 'upstream_point', 'downstream_point'] if k in gauge.keys())
         gdf_balance = gpd.GeoDataFrame(pd.DataFrame.from_dict({0: df_columns_dict}).T, geometry=[section_lines],
                                        crs=network.crs)
-
-        # append
-        gdf_balances = gdf_balances.append(gdf_balance, ignore_index=True)
-
+        gdf_balances = pd.concat([gdf_balances, gdf_balance])
     return gdf_balances.set_crs(network.crs)
 
 

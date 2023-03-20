@@ -278,7 +278,7 @@ class Model:
                 else:
                     Q = self.bf_output['bf_daily']
                     print('we average the baseflow methods ')
-                    Q = Q.reset_index().groupby(['date', 'gauge']).mean().reset_index()
+                    Q = Q.reset_index().groupby(['date', 'gauge']).mean(numeric_only=True).reset_index()
                     # wide to long
                     Q = Q.pivot(index='date', columns='gauge', values='value').copy()
 
