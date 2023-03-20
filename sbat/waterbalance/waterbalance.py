@@ -464,7 +464,7 @@ def map_network_sections(
             river_pnts = river_pnts.iloc[pnt_id_upstream:pnt_id_downstream + 2]
 
 
-        section_line = LineString(MultiPoint(river_pnts.geometry.to_list()))
+        section_line = LineString(MultiPoint(river_pnts.geometry.to_list()).geoms)
                 
         #get the lines of the tributaries
         trib_lines = list()
@@ -526,7 +526,7 @@ def map_network_sections(
                         river_pnts_extracted = river_pnts.iloc[pnt_id_upstream:pnt_id_downstream + 2]
 
                     # we append the trib geometries
-                    trib_lines.append(LineString(MultiPoint(river_pnts_extracted.geometry.to_list())))
+                    trib_lines.append(LineString(MultiPoint(river_pnts_extracted.geometry.to_list()).geoms))
 
         trib_lines.append(section_line)
         section_lines = MultiLineString(lines=trib_lines)
