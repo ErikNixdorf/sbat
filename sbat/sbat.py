@@ -190,7 +190,7 @@ class Model:
             if self.config['time']['compute_each_decade']:
                 gauge_meta_decadal = gauge_meta_updated.set_index(['gauge', 'decade'])
                 if hasattr(self, 'gauge_meta_decadal'):
-                    new_cols = set(gauge_meta_decadal.columns) - set(self.gauge_meta_decadal.columns)
+                    new_cols = list(set(gauge_meta_decadal.columns) - set(self.gauge_meta_decadal.columns))
                     self.gauge_meta_decadal = pd.concat([self.gauge_meta_decadal, gauge_meta_decadal[new_cols]], axis=1)
                 else:
                     self.gauge_meta_decadal = gauge_meta_decadal.copy()
@@ -231,7 +231,7 @@ class Model:
             # we we have decadal data we append
             if hasattr(self, 'gauge_meta_decadal'):
                 gauge_meta_updated = gauge_meta_updated.reset_index().set_index(['gauge', 'decade'])
-                new_cols = set(gauge_meta_updated.columns) - set(self.gauge_meta_decadal.columns)
+                new_cols = list(set(gauge_meta_updated.columns) - set(self.gauge_meta_decadal.columns))
                 self.gauge_meta_decadal = pd.concat(
                     [self.gauge_meta_decadal, gauge_meta_updated[new_cols].copy(deep=True)], axis=1)
             else:
