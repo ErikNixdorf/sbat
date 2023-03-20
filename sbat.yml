@@ -6,15 +6,15 @@ file_io:
     input:
         data_dir: data/ # all data is located relativ to this path
         gauges:
-            gauge_meta: gauges\\gauges_metadata.csv
-            gauge_time_series: gauges\\gauges_q_ts.csv
+            gauge_meta: gauges/gauges_metadata.csv
+            gauge_time_series: gauges/gauges_q_ts.csv
 
         hydrogeology:
             gw_levels: hydrogeology/gw_heads.tif
         geospatial:
-            river_network: geospatial\\river_network_z.gpkg
-            gauge_basins: geospatial\\pegeleinzugsgebiete.gpkg
-            branches_topology: gauges\branches_topology.csv
+            river_network: geospatial/river_network_z.gpkg
+            gauge_basins: geospatial/pegeleinzugsgebiete.gpkg
+            branches_topology: gauges/branches_topology.csv
     output:
         output_directory: output/
         plot_results: false
