@@ -366,7 +366,8 @@ def generate_upstream_network(
 # %% Next function how to calculate the balance
 def calculate_network_balance(ts_data=pd.DataFrame(),
                               network_dict=dict(),
-                              confidence_acceptance_level=0.05):
+                              confidence_acceptance_level=0.05,
+                              get_decadal_stats=True):
     """
     Calculates the water balance for a network of gauges using time series data and 
     a dictionary representing the network topology.
@@ -382,6 +383,8 @@ def calculate_network_balance(ts_data=pd.DataFrame(),
     confidence_acceptance_level : float, optional
         A float representing the confidence interval below which water balance values are set to NaN. Default is 0.05.
     
+    get_decadal_stats: boolean, optional
+        decides whether decadal stats will be calculated or not
     Returns:
     --------
     sections_meta : pd.DataFrame()
@@ -464,6 +467,11 @@ def calculate_network_balance(ts_data=pd.DataFrame(),
     low_confidence_mask = abs(sections_meta['balance_confidence']) < confidence_acceptance_level
     sections_meta.loc[low_confidence_mask, 'balance'] = np.nan
     q_diff = sections_meta.pivot(index='Date', columns='downstream_point', values='balance')
+
+    if get_decadal_stats:
+        sections_meta['decade']=sections_meta['Date'].apply(lambda x: x[:3]+'5')
+    else:
+        sections_meta['decade']=-9999
 
     return sections_meta, q_diff
 
@@ -602,6 +610,7 @@ def map_network_sections(
 
         # append
         gdf_balances = gdf_balances.append(gdf_balance, ignore_index=True)
+    
 
     return gdf_balances.set_crs(network.crs)
 
@@ -635,6 +644,8 @@ def aggregate_time_series(data_ts, analyse_option='overall_mean'):
         return data_ts
 
     ts_stats.index = ts_stats.index.strftime("%Y-%m-%d")
+    
+
 
     return ts_stats
 
@@ -717,7 +728,7 @@ def get_section_basins(basins: gpd.GeoDataFrame,
     section_basins = pd.concat(section_basins)
     # overwrite some layers
     # assuming a representative Circle, we assume the radius of this circle is the mean length towards the stream
-    section_basins['area'] = section_basins.geometry.area
+    section_basins['basin_area'] = section_basins.geometry.area
     section_basins['L_represent'] = np.sqrt(section_basins['area'] / np.pi)
 
     return section_basins

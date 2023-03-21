@@ -496,8 +496,9 @@ class Model:
         if self.config['time']['compute_each_decade'] == True:
             
             #we update the meta_data with the decadal average balance
-            
-            
+            balance_mean = self.sections_meta.groupby(['downstream_point','decade']).mean().loc[:,'balance']
+            self.gauge_meta_decadal = pd.concat([self.gauge_meta_decadal,balance_mean],axis=1)
+            self.gauge_meta_decadal.index.names=('gauge','decade')
 
             # map the data from the recession analysis
             self.gdf_network_map=map_time_dependent_cols_to_gdf(self.gdf_network_map,
@@ -526,10 +527,13 @@ class Model:
                                               self.gauge_meta.reset_index()],
                                              axis=1
                                              )
+            #add the information for the basin_area
+
             self.section_basins = pd.concat([self.section_basins.reset_index(),
                                              self.gauge_meta.reset_index()
                                              ],
                                             axis=1)
+
 
 
 
