@@ -146,7 +146,7 @@ def map_topo_parameters(row: pd.Series, df2: pd.DataFrame, parameters: List[str]
         topo_params = df2.iloc[0, :][parameters]
         # replace all by nan
         topo_params[~topo_params.isna()] = np.nan
-    # FutureWarning about elementwise comparison comes from the concatenation, reason unknown
+    # Change row_name if it is a tuple to a string to avoid future warning
     if len(row.name)>1:
         row.name=row.name[0]
     return pd.concat([row, topo_params])

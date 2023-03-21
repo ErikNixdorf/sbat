@@ -103,7 +103,7 @@ def generate_upstream_network(
         gauge_connection_dict["reach_name"] = gauge["stream"]
 
         # check whether there is an upstream gauge in the system
-        stream_gauges = gauge_meta[gauge_meta["stream"] == gauge["stream"]]
+        stream_gauges = gauge_meta[gauge_meta["stream"] == gauge["stream"]].copy()
         stream_gauges["upstream_distance"] = (
                 stream_gauges["distance_to_mouth"] - gauge["distance_to_mouth"]
         )
@@ -112,7 +112,7 @@ def generate_upstream_network(
         # tributaries upstream
         tributaries = tributary_connections.loc[
                       tributary_connections["main_stream"] == gauge["stream"], :
-                      ]
+                      ].copy()
         tributaries["upstream_distance"] = (
                 tributaries["distance_junction_from_receiving_water_mouth"]
                 - gauge["distance_to_mouth"]
@@ -122,7 +122,7 @@ def generate_upstream_network(
         # similar we look for distributaries upstream
         distributaries = distributary_connections.loc[
                          distributary_connections["main_stream"] == gauge["stream"], :
-                         ]
+                         ].copy()
         distributaries["upstream_distance"] = (
                 distributaries["distance_junction_from_receiving_water_mouth"]
                 - gauge["distance_to_mouth"]
