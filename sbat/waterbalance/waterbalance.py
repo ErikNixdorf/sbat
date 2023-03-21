@@ -20,6 +20,67 @@ from shapely.geometry import Point, MultiPoint, LineString, MultiLineString, Mul
 from shapely.ops import nearest_points, unary_union
 
 
+def map_time_dependent_cols_to_gdf(geodf,time_dep_df,
+                                   geodf_index_col='downstream_point',
+                                   time_dep_df_index_col ='gauge',
+                                   time_dep_df_time_col = 'decade',
+                                   nan_value = -99999,
+                                   ):
+    """
+    Map time-dependent columns from a dataframe to a geodataframe based on shared index columns.
+
+    Parameters
+    ----------
+    geodf : geopandas.GeoDataFrame
+        The geodataframe to be expanded with time-dependent columns.
+    time_dep_df : pandas.DataFrame
+        The dataframe with time-dependent columns to be mapped onto the geodataframe.
+    geodf_index_col : str, optional
+        The name of the index column in the geodataframe. Default is 'downstream_point'.
+    time_dep_df_index_col : str, optional
+        The name of the index column in the time-dependent dataframe. Default is 'gauge'.
+    time_dep_df_time_col : str, optional
+        The name of the time-dependent column in the time-dependent dataframe. Default is 'decade'.
+
+    Returns
+    -------
+    geopandas.GeoDataFrame
+        The expanded geodataframe with time-dependent columns mapped onto it.
+    """
+    
+    #check which row of geodataframe has to be expanded how often
+    copy_dict=time_dep_df.groupby(time_dep_df_index_col).size().to_dict()
+    #set_index of the geodataframe
+    geodf=geodf.set_index(geodf_index_col)
+
+    # create expanded gdf 
+    expanded_df=pd.DataFrame()
+    #loop trough original gdf in order to expand the rows
+    for _,row in geodf.iterrows():
+        row_extended = [row]*copy_dict[row.name]
+        expanded_df = pd.concat([expanded_df,
+                                 pd.DataFrame(row_extended)
+                                 ]
+                                )
+    #merge with the decadal dataset
+    df_merged = pd.concat([expanded_df.reset_index(),
+                           time_dep_df.reset_index()
+                           ],
+                          axis=1
+                          )
+    # we clean the data
+    df_merged = df_merged.loc[~df_merged[time_dep_df_time_col].isna(),:]
+    
+    #replace NaN Values
+    df_merged=df_merged.replace(np.nan,nan_value)
+    
+    #generate the output geodataframe
+    geodf_out = gpd.GeoDataFrame(data=df_merged,
+                               geometry=df_merged['geometry'],
+                               crs=geodf.crs)
+    
+    return geodf_out
+
 def multilinestring_to_singlelinestring(
         multilinestring,
         start_point,
@@ -753,11 +814,13 @@ def get_section_water_balance(gauge_data: pd.DataFrame = pd.DataFrame(),
                                            gauge_meta=gauge_data,
                                            network=network)
 
-    # we want a function to calculate the network subbasin
+    # we want a function to calculate the network subbasin area
 
     section_basins = get_section_basins(basins=basins,
                                         network_dict=gauges_connection_dict,
                                         basin_id_col=basin_id_col)
+    
+    #we map the balance 
 
     # return the results
     return sections_meta, q_diff, gdf_network_map, section_basins
