@@ -465,9 +465,10 @@ def map_network_sections(
             print('Stream Line needs at least two points, we move by one point, but you should check geometry')
             river_pnts = river_pnts.iloc[pnt_id_upstream:pnt_id_downstream + 2]
 
-        section_line = LineString(river_pnts.geometry.to_list())
 
-        # get the lines of the tributaries
+        section_line = LineString(river_pnts.geometry)
+                
+        #get the lines of the tributaries
         trib_lines = list()
 
         for branch_name in ['tributaries_up', 'distributaries_up']:
@@ -527,8 +528,7 @@ def map_network_sections(
                         river_pnts_extracted = river_pnts.iloc[pnt_id_upstream:pnt_id_downstream + 2]
 
                     # we append the trib geometries
-                    trib_lines.append(LineString(river_pnts_extracted.geometry.to_list()))
-
+                    trib_lines.append(LineString(river_pnts_extracted.geometry))
         trib_lines.append(section_line)
         section_lines = MultiLineString(lines=trib_lines)
 
