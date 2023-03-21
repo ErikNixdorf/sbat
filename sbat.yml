@@ -25,7 +25,7 @@ data_cleaning:
     test_mode: true
 #infomation on time processing
 time:
-    compute_each_decade: true
+    compute_each_decade: false
     start_date: 1990-01-01
     end_date: 2021-12-31
 
