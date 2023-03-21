@@ -512,7 +512,10 @@ class Model:
             
         
         elif self.config['time']['compute_each_decade'] == False:
-            self.gdf_network_map = pd.concat([self.gdf_network_map,self.gauge_meta.reset_index()],axis=1)
+            self.gdf_network_map = pd.concat([self.gdf_network_map,
+                                              self.gauge_meta.reset_index()],
+                                             axis=1
+                                             )
             self.section_basins = pd.concat([self.section_basins.reset_index(),
                                              self.gauge_meta.reset_index()
                                              ],
