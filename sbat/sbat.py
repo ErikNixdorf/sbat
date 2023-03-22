@@ -190,7 +190,7 @@ class Model:
             if self.config['time']['compute_each_decade']:
                 gauge_meta_decadal = gauge_meta_updated.set_index(['gauge', 'decade'])
                 if hasattr(self, 'gauge_meta_decadal'):
-                    new_cols = set(gauge_meta_decadal.columns) - set(self.gauge_meta_decadal.columns)
+                    new_cols = list(set(gauge_meta_decadal.columns) - set(self.gauge_meta_decadal.columns))
                     self.gauge_meta_decadal = pd.concat([self.gauge_meta_decadal, gauge_meta_decadal[new_cols]], axis=1)
                 else:
                     self.gauge_meta_decadal = gauge_meta_decadal.copy()
@@ -231,7 +231,7 @@ class Model:
             # we we have decadal data we append
             if hasattr(self, 'gauge_meta_decadal'):
                 gauge_meta_updated = gauge_meta_updated.reset_index().set_index(['gauge', 'decade'])
-                new_cols = set(gauge_meta_updated.columns) - set(self.gauge_meta_decadal.columns)
+                new_cols = list(set(gauge_meta_updated.columns) - set(self.gauge_meta_decadal.columns))
                 self.gauge_meta_decadal = pd.concat(
                     [self.gauge_meta_decadal, gauge_meta_updated[new_cols].copy(deep=True)], axis=1)
             else:
@@ -278,7 +278,7 @@ class Model:
                 else:
                     Q = self.bf_output['bf_daily']
                     print('we average the baseflow methods ')
-                    Q = Q.reset_index().groupby(['date', 'gauge']).mean().reset_index()
+                    Q = Q.reset_index().groupby(['date', 'gauge']).mean(numeric_only=True).reset_index()
                     # wide to long
                     Q = Q.pivot(index='date', columns='gauge', values='value').copy()
 
@@ -289,24 +289,24 @@ class Model:
         elif self.config['recession']['curve_data']['curve_type'] == 'waterbalance':
 
             logging.info('Recession Analysis is conducted using the waterbalance data')
-            #in the case of waterbalance we can not compute a master recession curve due to possibly negative values
+            # in the case of waterbalance we can not compute a master recession curve due to possibly negative values
             logging.info('mrc_curve not defined for curve_type is waterbalance')
-            self.config['recession']['fitting']['mastercurve_algorithm'] = None             
-             # checking whether the water_balance exist and if the same flow type has been used
+            self.config['recession']['fitting']['mastercurve_algorithm'] = None
+            # checking whether the water_balance exist and if the same flow type has been used
             if not hasattr(self, 'sections_meta') or not self.config['recession']['curve_data']['flow_type'] == \
                                                          self.config['waterbalance']['flowtype']:
                 print('Water_Balance Model is run first in order to get the correct input data for recession')
                 self.get_water_balance(flow_type=self.config['recession']['curve_data']['flow_type'])
-                
-                Q = self.sections_meta.pivot(columns='downstream_point',values='balance',index='Date')
+
+                Q = self.sections_meta.pivot(columns='downstream_point', values='balance', index='Date')
                 Q.index = pd.to_datetime(Q.index).rename('date')
                 Q.columns.name = 'gauge'
- 
+
         if self.config['time']['compute_each_decade']:
             Q['decade'] = [x[0:3] + '5' for x in Q.index.strftime('%Y')]
         else:
             Q['decade'] = -9999
-            
+
         # start the recession
         metrics = list()
         for decade, Q_decade in Q.groupby('decade'):
@@ -440,14 +440,14 @@ class Model:
                                          )
 
         network_connections = pd.read_csv(Path(self.data_path,
-                                                 self.config['file_io']['input']['geospatial'][
-                                                     'branches_topology'])
-                                            )
+                                               self.config['file_io']['input']['geospatial'][
+                                                   'branches_topology'])
+                                          )
 
         gauge_basins = gpd.read_file(Path(self.data_path,
                                           self.config['file_io']['input']['geospatial']['gauge_basins'])
                                      )
-        #check whether flow type is given explicitely
+        # check whether flow type is given explicitely
 
         if 'flow_type' in kwargs:
             flow_type = kwargs['flow_type']
@@ -470,10 +470,11 @@ class Model:
 
             # in any case for the baseflow we have to bring the format from long to wide
             print('Average baseflow data for each gauge and time step')
-            
-            data_ts = data_ts.groupby(['gauge', 'date']).mean().reset_index().pivot(index='date', columns='gauge',
-                                                                                     values='value')
-                                                                                     
+
+            data_ts = data_ts.groupby(['gauge', 'date']).mean(numeric_only=True).reset_index().pivot(index='date',
+                                                                                                     columns='gauge',
+                                                                                                     values='value')
+
         elif flow_type == 'discharge':
 
             print('Use daily discharge')
