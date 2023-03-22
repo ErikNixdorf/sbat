@@ -15,7 +15,7 @@ import rasterio
 from bflow.bflow import compute_baseflow, add_gauge_stats, plot_bf_results
 from recession.recession import analyse_recession_curves, plot_recession_results
 from recession.aquifer_parameter import get_hydrogeo_properties
-from waterbalance.waterbalance import get_section_water_balance
+from waterbalance.waterbalance import get_section_water_balance, map_time_dependent_cols_to_gdf
 
 
 def iterdict(d):
@@ -492,6 +492,50 @@ class Model:
             time_series_analysis_option=self.config['waterbalance']['time_series_analysis_option'],
             basin_id_col=self.config['waterbalance']['basin_id_col'],
         )
+        
+        #we map the mean_balance information on the geodataframes
+        if self.config['time']['compute_each_decade'] == True:
+            
+            #we update the meta_data with the decadal average balance
+            balance_mean = self.sections_meta.groupby(['downstream_point','decade']).mean().loc[:,'balance']
+            self.gauge_meta_decadal = pd.concat([self.gauge_meta_decadal,balance_mean],axis=1)
+            self.gauge_meta_decadal.index.names=('gauge','decade')
+
+            # map the data from the recession analysis
+            self.gdf_network_map=map_time_dependent_cols_to_gdf(self.gdf_network_map,
+                                                                self.gauge_meta_decadal,
+                                                                geodf_index_col='downstream_point',
+                                                                time_dep_df_index_col ='gauge',
+                                                                time_dep_df_time_col = 'decade',
+                                                                )
+            
+            self.section_basins=map_time_dependent_cols_to_gdf(self.section_basins, 
+                                                               self.gauge_meta_decadal,
+                                                               geodf_index_col='basin',
+                                                                time_dep_df_index_col ='gauge',
+                                                                time_dep_df_time_col = 'decade',
+                                                                )
+            
+        
+        elif self.config['time']['compute_each_decade'] == False:
+            
+            #Update the metadata by balance
+            balance_mean = self.sections_meta.groupby('downstream_point').mean().loc[:,'balance']
+            self.gauge_meta = pd.concat([self.gauge_meta,balance_mean],axis=1)
+            
+            # metadata added to geodataframes
+            self.gdf_network_map = pd.concat([self.gdf_network_map,
+                                              self.gauge_meta.reset_index()],
+                                             axis=1
+                                             )
+            #add the information for the basin_area
+
+            self.section_basins = pd.concat([self.section_basins.reset_index(),
+                                             self.gauge_meta.reset_index()
+                                             ],
+                                            axis=1)
+
+
 
 
 def main(config_file=None, output=True):
@@ -513,7 +557,8 @@ def main(config_file=None, output=True):
         Path(sbat.output_dir, 'data').mkdir(parents=True, exist_ok=True)
         sbat.sections_meta.to_csv(Path(sbat.output_dir, 'data', 'section_meta.csv'))
         sbat.q_diff.to_csv(Path(sbat.output_dir, 'data', 'q_diff.csv'))
-        sbat.gdf_network_map.to_file(Path(sbat.output_dir, 'data', 'section_network_map.gpkg'), driver='GPKG')
+        sbat.gdf_network_map.to_file(Path(sbat.output_dir, 'data', 'section_streamlines.gpkg'), driver='GPKG')
+        sbat.section_basins.to_file(Path(sbat.output_dir, 'data', 'section_subbasins.gpkg'), driver='GPKG')
 
     return sbat
 

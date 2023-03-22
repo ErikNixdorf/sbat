@@ -20,6 +20,67 @@ from shapely.geometry import Point, LineString, MultiLineString, MultiPolygon
 from shapely.ops import nearest_points, unary_union
 
 
+def map_time_dependent_cols_to_gdf(geodf,time_dep_df,
+                                   geodf_index_col='downstream_point',
+                                   time_dep_df_index_col ='gauge',
+                                   time_dep_df_time_col = 'decade',
+                                   nan_value = -99999,
+                                   ):
+    """
+    Map time-dependent columns from a dataframe to a geodataframe based on shared index columns.
+
+    Parameters
+    ----------
+    geodf : geopandas.GeoDataFrame
+        The geodataframe to be expanded with time-dependent columns.
+    time_dep_df : pandas.DataFrame
+        The dataframe with time-dependent columns to be mapped onto the geodataframe.
+    geodf_index_col : str, optional
+        The name of the index column in the geodataframe. Default is 'downstream_point'.
+    time_dep_df_index_col : str, optional
+        The name of the index column in the time-dependent dataframe. Default is 'gauge'.
+    time_dep_df_time_col : str, optional
+        The name of the time-dependent column in the time-dependent dataframe. Default is 'decade'.
+
+    Returns
+    -------
+    geopandas.GeoDataFrame
+        The expanded geodataframe with time-dependent columns mapped onto it.
+    """
+    
+    #check which row of geodataframe has to be expanded how often
+    copy_dict=time_dep_df.groupby(time_dep_df_index_col).size().to_dict()
+    #set_index of the geodataframe
+    geodf=geodf.set_index(geodf_index_col)
+
+    # create expanded gdf 
+    expanded_df=pd.DataFrame()
+    #loop trough original gdf in order to expand the rows
+    for _,row in geodf.iterrows():
+        row_extended = [row]*copy_dict[row.name]
+        expanded_df = pd.concat([expanded_df,
+                                 pd.DataFrame(row_extended)
+                                 ]
+                                )
+    #merge with the decadal dataset
+    df_merged = pd.concat([expanded_df.reset_index(),
+                           time_dep_df.reset_index()
+                           ],
+                          axis=1
+                          )
+    # we clean the data
+    df_merged = df_merged.loc[~df_merged[time_dep_df_time_col].isna(),:]
+    
+    #replace NaN Values
+    df_merged=df_merged.replace(np.nan,nan_value)
+    
+    #generate the output geodataframe
+    geodf_out = gpd.GeoDataFrame(data=df_merged,
+                               geometry=df_merged['geometry'],
+                               crs=geodf.crs)
+    
+    return geodf_out
+
 def multilinestring_to_singlelinestring(
         multilinestring,
         start_point,
@@ -306,7 +367,8 @@ def generate_upstream_network(
 # %% Next function how to calculate the balance
 def calculate_network_balance(ts_data=pd.DataFrame(),
                               network_dict=dict(),
-                              confidence_acceptance_level=0.05):
+                              confidence_acceptance_level=0.05,
+                              get_decadal_stats=True):
     """
     Calculates the water balance for a network of gauges using time series data and 
     a dictionary representing the network topology.
@@ -322,6 +384,8 @@ def calculate_network_balance(ts_data=pd.DataFrame(),
     confidence_acceptance_level : float, optional
         A float representing the confidence interval below which water balance values are set to NaN. Default is 0.05.
     
+    get_decadal_stats: boolean, optional
+        decides whether decadal stats will be calculated or not
     Returns:
     --------
     sections_meta : pd.DataFrame()
@@ -406,6 +470,11 @@ def calculate_network_balance(ts_data=pd.DataFrame(),
     low_confidence_mask = abs(sections_meta['balance_confidence']) < confidence_acceptance_level
     sections_meta.loc[low_confidence_mask, 'balance'] = np.nan
     q_diff = sections_meta.pivot(index='Date', columns='downstream_point', values='balance')
+
+    if get_decadal_stats:
+        sections_meta['decade']=sections_meta['Date'].apply(lambda x: x[:3]+'5')
+    else:
+        sections_meta['decade']=-9999
 
     return sections_meta, q_diff
 
@@ -540,7 +609,9 @@ def map_network_sections(
             (k, gauge[k]) for k in ['id', 'reach_name', 'upstream_point', 'downstream_point'] if k in gauge.keys())
         gdf_balance = gpd.GeoDataFrame(pd.DataFrame.from_dict({0: df_columns_dict}).T, geometry=[section_lines],
                                        crs=network.crs)
+
         gdf_balances = pd.concat([gdf_balances, gdf_balance])
+
     return gdf_balances.set_crs(network.crs)
 
 
@@ -573,6 +644,8 @@ def aggregate_time_series(data_ts, analyse_option='overall_mean'):
         return data_ts
 
     ts_stats.index = ts_stats.index.strftime("%Y-%m-%d")
+    
+
 
     return ts_stats
 
@@ -655,7 +728,7 @@ def get_section_basins(basins: gpd.GeoDataFrame,
     section_basins = pd.concat(section_basins)
     # overwrite some layers
     # assuming a representative Circle, we assume the radius of this circle is the mean length towards the stream
-    section_basins['area'] = section_basins.geometry.area
+    section_basins['basin_area'] = section_basins.geometry.area
     section_basins['L_represent'] = np.sqrt(section_basins['area'] / np.pi)
 
     return section_basins
@@ -750,11 +823,13 @@ def get_section_water_balance(gauge_data: pd.DataFrame = pd.DataFrame(),
                                            gauge_meta=gauge_data,
                                            network=network)
 
-    # we want a function to calculate the network subbasin
+    # we want a function to calculate the network subbasin area
 
     section_basins = get_section_basins(basins=basins,
                                         network_dict=gauges_connection_dict,
                                         basin_id_col=basin_id_col)
+    
+    #we map the balance 
 
     # return the results
     return sections_meta, q_diff, gdf_network_map, section_basins
