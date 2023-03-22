@@ -63,6 +63,7 @@ def map_time_dependent_cols_to_gdf(geodf,time_dep_df,
                                  ]
                                 )
     #merge with the decadal dataset
+    expanded_df.index.name=geodf_index_col
     df_merged = pd.concat([expanded_df.reset_index(),
                            time_dep_df.reset_index()
                            ],

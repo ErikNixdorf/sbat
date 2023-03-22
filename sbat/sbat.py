@@ -183,7 +183,7 @@ class Model:
                     , axis=1)
 
             # drop duplicate columns
-            gauge_meta_updated = gauge_meta_updated.loc[:, ~gauge_meta_updated.columns.duplicated()].reset_index()
+            gauge_meta_updated = gauge_meta_updated.loc[:, ~gauge_meta_updated.columns.duplicated()].reset_index().drop(columns='index')
 
             self.gauge_meta = gauge_meta_updated.groupby('gauge').first()
 
@@ -510,7 +510,7 @@ class Model:
                                                                 )
             
             self.section_basins=map_time_dependent_cols_to_gdf(self.section_basins, 
-                                                               self.gauge_meta_decadal,
+                                                               self.gauge_meta_decadal.drop(columns='basin_area'),
                                                                geodf_index_col='basin',
                                                                 time_dep_df_index_col ='gauge',
                                                                 time_dep_df_time_col = 'decade',
@@ -531,7 +531,7 @@ class Model:
             #add the information for the basin_area
 
             self.section_basins = pd.concat([self.section_basins.reset_index(),
-                                             self.gauge_meta.reset_index()
+                                             self.gauge_meta.reset_index().drop(columns='basin_area')
                                              ],
                                             axis=1)
 
