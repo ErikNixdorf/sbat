@@ -11,7 +11,7 @@ hash_
 from copy import deepcopy
 import logging
 import secrets
-from typing import Dict, Any
+from typing import Dict, Any, Union, Tuple, Optional
 
 import geopandas as gpd
 import numpy as np
@@ -20,12 +20,14 @@ from shapely.geometry import Point, LineString, MultiLineString, MultiPolygon
 from shapely.ops import nearest_points, unary_union
 
 
-def map_time_dependent_cols_to_gdf(geodf,time_dep_df,
-                                   geodf_index_col='downstream_point',
-                                   time_dep_df_index_col ='gauge',
-                                   time_dep_df_time_col = 'decade',
-                                   nan_value = -99999,
-                                   ):
+def map_time_dependent_cols_to_gdf(
+        geodf: gpd.GeoDataFrame,
+        time_dep_df: pd.DataFrame,
+        geodf_index_col: str = 'downstream_point',
+        time_dep_df_index_col: str = 'gauge',
+        time_dep_df_time_col: str = 'decade',
+        nan_value: Union[int, float] = -99999,
+        ) -> gpd.GeoDataFrame:
     """
     Map time-dependent columns from a dataframe to a geodataframe based on shared index columns.
 
@@ -41,6 +43,9 @@ def map_time_dependent_cols_to_gdf(geodf,time_dep_df,
         The name of the index column in the time-dependent dataframe. Default is 'gauge'.
     time_dep_df_time_col : str, optional
         The name of the time-dependent column in the time-dependent dataframe. Default is 'decade'.
+    nan_value : Union[int, float], optional
+            The value to replace NaN values in the output geodataframe. Default is -99999.
+
 
     Returns
     -------
@@ -83,11 +88,11 @@ def map_time_dependent_cols_to_gdf(geodf,time_dep_df,
     return geodf_out
 
 def multilinestring_to_singlelinestring(
-        multilinestring,
-        start_point,
+        multilinestring: MultiLineString,
+        start_point: Point,
         search_radius: float = 2000,
         min_distance: float = 200,
-):
+) :
     """
     Converts a multilinestring to a single linestring starting from a given point.
 
@@ -142,8 +147,25 @@ def multilinestring_to_singlelinestring(
 
 # %% We loop trough the gauges in order to define the geometry
 def generate_upstream_network(
-        gauge_meta=pd.DataFrame(), network_connections=pd.DataFrame()
-):
+    gauge_meta: pd.DataFrame, 
+    network_connections: pd.DataFrame
+    ) -> dict:
+    """
+    Generate the upstream network of gauges, tributaries, and distributaries.
+
+    Args:
+        gauge_meta (pd.DataFrame): A DataFrame containing metadata for each gauge
+            including the stream name, distance to mouth, etc.
+        network_connections (pd.DataFrame): A DataFrame containing the network
+            connections between streams, including the type of connection (tributary
+            or distributary), the distance from the junction to the receiving water mouth,
+            and the main stream name.
+
+    Returns:
+        dict: A dictionary containing gauge metadata and a list of tributaries and
+            distributaries for each gauge, where the key is the gauge id (a hexadecimal
+            string).
+    """
     gauges_connection_dict = dict()
 
     # %% The Idea is we loop trough the gauges, find the upstream stream and calculate the section water balance
@@ -366,10 +388,12 @@ def generate_upstream_network(
 
 
 # %% Next function how to calculate the balance
-def calculate_network_balance(ts_data=pd.DataFrame(),
-                              network_dict=dict(),
-                              confidence_acceptance_level=0.05,
-                              get_decadal_stats=True):
+def calculate_network_balance(
+        ts_data: pd.DataFrame = pd.DataFrame(),
+        network_dict: Dict[str, Dict[str, Tuple[str, str]]] = dict(),
+        confidence_acceptance_level: float = 0.05,
+        get_decadal_stats: bool = True,
+    ) -> Tuple[pd.DataFrame, pd.DataFrame]:
     """
     Calculates the water balance for a network of gauges using time series data and 
     a dictionary representing the network topology.
@@ -484,7 +508,7 @@ def map_network_sections(
         network_dict: Dict,
         gauge_meta: pd.DataFrame,
         network: gpd.GeoDataFrame,
-):
+) -> gpd.GeoDataFrame:
     """
     Parameters
     ----------
@@ -617,7 +641,30 @@ def map_network_sections(
 
 
 # add a function for time series manipulation
-def aggregate_time_series(data_ts, analyse_option='overall_mean'):
+def aggregate_time_series(data_ts: pd.DataFrame, 
+                          analyse_option: Optional[str] = 'overall_mean',
+                          ) -> pd.DataFrame:
+    """
+    Aggregates time series data based on the selected option
+    
+    Parameters:
+    -----------
+    data_ts : pd.DataFrame()
+        A DataFrame containing time series data for a given gauge
+        
+    analyse_option : str, optional
+        A string representing the desired data aggregation option. Default is 'overall_mean'
+        Available options:
+            - 'overall_mean': Takes entire time series
+            - 'annual_mean': Resamples data to annual mean
+            - 'summer_mean': Resamples data to summer mean (June to September)
+            - 'daily': Uses daily statistics
+    
+    Returns:
+    --------
+    ts_stats : pd.DataFrame()
+        A DataFrame containing the aggregated time series data
+    """    
     if analyse_option is None:
         print('No data aggregation option select, continue with original time series')
         return data_ts
@@ -744,7 +791,7 @@ def get_section_water_balance(gauge_data: pd.DataFrame = pd.DataFrame(),
                               confidence_acceptance_level: float = 0.05,
                               time_series_analysis_option: str = 'overall_mean',
                               basin_id_col: str = 'basin',
-                              ):
+                              ) -> Tuple:
     """
     Calculates the water balance for a network of stream gauges and their upstream
     and downstream connections, based on time series data and metadata.

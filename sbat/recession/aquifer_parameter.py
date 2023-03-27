@@ -14,22 +14,34 @@ import geopandas as gpd
 import numpy as np
 import pandas as pd
 import rasterio
+from rasterio.io import DatasetReader
 from shapely.geometry import Point
+from pandas.core.series import Series
 
+def extract_coords(pt: Point) -> Tuple[float, float,float]:
+    """
+    Extracts the x and y and z coordinates from a Shapely Point object.
 
-def extract_coords(pt):
+    Args:
+        pt: A Point object representing a point in 3D space.
+
+    Returns:
+        A tuple containing the x and y and z coordinates of the point.
+    """
     return pt.x, pt.y, pt.z
 
 
 # %% Get drainage parameters
-def get_drainage_topographic_parameters(basin, basin_id_col='basin',
-                                        gw_surface='rasterio_raster',
-                                        river_network=gpd.GeoDataFrame()):
+def get_drainage_topographic_parameters(basin: gpd.GeoDataFrame, 
+                                        basin_id_col: str = 'basin',
+                                        gw_surface: DatasetReader = None,
+                                        river_network: gpd.GeoDataFrame = None) -> Series:
     """
     Computes topographic parameters of a given drainage basin based on a groundwater surface and a river network.
     
     Args:
     - basin (GeoDataFrame): A GeoDataFrame containing a single drainage basin to compute topographic parameters for.
+    - basin_id_col (str): Column name for basin ID.
     - gw_surface (Raster): A raster file containing groundwater surface data.
     - river_network (GeoDataFrame): A GeoDataFrame containing river network data for the region.
     
@@ -48,7 +60,7 @@ def get_drainage_topographic_parameters(basin, basin_id_col='basin',
                                    'L_represent': basin.T['L_represent']}, index=[int(basin.T.value)],
                              geometry=[basin.T.geometry], crs=river_network.crs)
     basin_name = basin['basin_id'].iloc[0]
-    print('Check basin ', basin_name)
+    print(f'Check basin {basin_name}')
     # get the boundary of the basin
     boundary = basin.iloc[0].geometry.boundary
 
@@ -115,7 +127,8 @@ def get_drainage_topographic_parameters(basin, basin_id_col='basin',
 
 
 # map it on the gauge_data
-def map_topo_parameters(row: pd.Series, df2: pd.DataFrame, parameters: List[str] = ['h_m', 'dist_m', 'network_length']):
+def map_topo_parameters(row: pd.Series, df2: pd.DataFrame, 
+                        parameters: List[str] = ['h_m', 'dist_m', 'network_length']):
     """
     Maps topographic parameters from a separate DataFrame `df2` to each row of a pandas Series `row` based on a matching gauge
     ID in the two DataFrames.
@@ -239,13 +252,28 @@ def infer_hydrogeo_parameters(basin_data: pd.DataFrame,
 
 
 # %% Wrapper Function to call all functions
-def get_hydrogeo_properties(gauge_data=pd.DataFrame(),
-                            basins=gpd.GeoDataFrame,
-                            gw_surface='rasterio',
-                            network=gpd.GeoDataFrame,
-                            conceptual_model='maillet',
-                            basin_id_col='basin',
-                            ):
+def get_hydrogeo_properties(
+    gauge_data: pd.DataFrame = pd.DataFrame(),
+    basins: gpd.GeoDataFrame = gpd.GeoDataFrame(),
+    gw_surface: str = 'rasterio',
+    network: gpd.GeoDataFrame = gpd.GeoDataFrame(),
+    conceptual_model: str = 'maillet',
+    basin_id_col: str = 'basin',
+    ) -> pd.DataFrame:
+    """
+    Calculate hydrogeological properties for a set of gauging stations based on given inputs.
+
+    Args:
+        gauge_data (pd.DataFrame, optional): Dataframe containing information on gauging stations. Defaults to pd.DataFrame().
+        basins (gpd.GeoDataFrame, optional): Geodataframe containing information on drainage basins. Defaults to gpd.GeoDataFrame().
+        gw_surface (str, optional): Type of surface representation for groundwater flow calculations. Defaults to 'rasterio'.
+        network (gpd.GeoDataFrame, optional): Geodataframe containing information on river networks. Defaults to gpd.GeoDataFrame().
+        conceptual_model (str, optional): Type of conceptual hydrological model used to calculate properties. Defaults to 'maillet'.
+        basin_id_col (str, optional): Name of the column containing basin IDs in the basins dataframe. Defaults to 'basin'.
+
+    Returns:
+        pd.DataFrame: Dataframe containing hydrogeological properties for the input gauging stations.
+    """    
     # %% run the steps
     # get drainage parameters
     basins_out = basins.apply(
@@ -263,52 +291,3 @@ def get_hydrogeo_properties(gauge_data=pd.DataFrame(),
                                            h_m='h_m')
     return gauge_data
 
-
-# %% call both functions for test purpose
-
-
-def test():
-    # load the basins
-    basin_path = 'pegeleinzugsgebiete.gpkg'
-    basins = gpd.read_file(basin_path)  #
-    basins['basin_id'] = basins['basin'].copy()
-    # load gauge data
-    gauge_meta = pd.read_csv('gauge_meta.csv')
-
-    # intersect
-
-    basins = basins.loc[basins['basin_id'].isin(gauge_meta.gauge), :]
-
-    # load the gw_map
-    gw_surface_path = Path('gw_heads.tif')
-    gw_surface = rasterio.open(gw_surface_path)
-
-    # load the river network
-    river_network_path = 'river_network_z.gpkg'
-    river_network = gpd.read_file(river_network_path)
-
-    # %% run the steps
-    # get drainage parameters
-    basins_out = basins.apply(
-        lambda row: get_drainage_topographic_parameters(row, gw_surface=gw_surface, river_network=river_network),
-        axis=1)
-    # map to gauge data
-    gauge_meta = gauge_meta.apply(lambda x: map_topo_parameters(x, basins_out), axis=1)
-    # get hydrogeological parameters
-    gauge_meta = infer_hydrogeo_parameters(basin_data=gauge_meta,
-                                           conceptual_model='maillet',
-                                           Q0='Q0_rec',
-                                           alpha='n0_rec',
-                                           dist_m='dist_m',
-                                           network_length='network_length',
-                                           h_m='h_m')
-
-    gauge_meta = infer_hydrogeo_parameters(basin_data=gauge_meta,
-                                           conceptual_model='boussinesq',
-                                           Q0='Q0_rec',
-                                           alpha='n0_rec',
-                                           dist_m='dist_m',
-                                           network_length='network_length',
-                                           h_m='h_m')
-
-    return gauge_meta

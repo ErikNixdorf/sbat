@@ -32,8 +32,7 @@ time:
 #now we provide the parameters for each module
 baseflow:
     methods:
-        - UKIH
-        - Fixed
+        - demuth
     compute_baseflow_index: true
     calculate_monthly: true
     update_metadata: true
