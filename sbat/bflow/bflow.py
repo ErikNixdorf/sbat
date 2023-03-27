@@ -12,23 +12,24 @@ from matplotlib import pyplot as plt
 import numpy as np
 import pandas as pd
 import seaborn as sns
-
+from typing import Optional, Tuple, Union, List
 from .demuth import baseflow_demuth
 
 
-def clean_gauge_ts(Q):
+def clean_gauge_ts(Q: pd.Series) -> Optional[pd.Series]:
     """
-    Cleans the gauge time series from nans
+    Cleans the gauge time series from NaNs.
 
     Parameters
     ----------
-    Q : TYPE
-        DESCRIPTION.
+    Q : pd.Series
+        The gauge time series.
 
     Returns
     -------
-    Q : TYPE
-        DESCRIPTION.
+    Q : pd.Series or None
+        The cleaned gauge time series. If there are only NaNs in the series,
+        None is returned.
 
     """
     # remove starting and ending nan
@@ -38,23 +39,34 @@ def clean_gauge_ts(Q):
 
     # if there are only nan we do not need the data:
     if Q.isna().sum() == len(Q):
-        print('compute baseflow for gauge....', Q.name, ' not possible')
+        print(f"compute baseflow for gauge {Q.name} not possible")
         return None
     return Q
 
 
-def call_bf_package(Q, methods='all', area=None):
+def call_bf_package(Q: pd.Series, methods: str = 'all', 
+                    area: Optional[float] = None,
+                    ) -> Tuple[pd.DataFrame, np.ndarray]:
     """
-    Function that converts pandas df to numpy and calls the baseflow package
+    Function that converts pandas Series to numpy and calls the baseflow package
 
     Parameters
     ----------
-    Q : TYPE
-        DESCRIPTION.
+    Q : pd.Series
+        The time series of streamflow discharge observations
+    methods : str, optional
+        Method(s) used for baseflow separation. Default is 'all'.
+        Available methods: 'BFI', 'BFI_N', 'Lyne_Hollick', 'Chapman', 'Eckhardt', 'FixedQ', 'ZRW', 'Cooper'
+    area : float, optional
+        Area of the catchment in square kilometers. If provided, it is converted to square meters for use in baseflow
+        calculations. Default is None.
 
     Returns
     -------
-    None.
+    bf_daily : pd.DataFrame
+        Time series of daily baseflow discharge
+    KGEs : np.ndarray
+        Kling-Gupta efficiency (KGE) values for each baseflow separation method used
 
     """
     # we write out the dates with NaNs
@@ -83,21 +95,24 @@ def call_bf_package(Q, methods='all', area=None):
     return bf_daily, KGEs
 
 
-def melt_gauges(df, additional_columns=dict({'a': 'b'})):
+def melt_gauges(df: pd.DataFrame, 
+                additional_columns: dict = {'a': 'b'}
+                ) -> pd.DataFrame:
     """
-    Small function to melt gauge data and add information
+    Melt gauge data and add additional columns.
 
     Parameters
     ----------
-    df : TYPE
-        DESCRIPTION.
-    additional_columns : TYPE, optional
-        DESCRIPTION. The default is dict({'a':'b'}).
+    df : pd.DataFrame
+        Input dataframe containing gauge data.
+    additional_columns : dict, optional
+        Additional columns to be added to the output dataframe.
+        Default is {'a': 'b'}.
 
     Returns
     -------
-    df_melted : TYPE
-        DESCRIPTION.
+    pd.DataFrame
+        Melted dataframe with additional columns and date column.
 
     """
     df_melted = df.melt()
@@ -111,9 +126,37 @@ def melt_gauges(df, additional_columns=dict({'a': 'b'})):
 
 
 # %%We calculate baseflows using the baseflow package
-def compute_baseflow(data_ts, data_meta, methods='all',
-                     compute_bfi=True,
-                     calculate_monthly=True):
+def compute_baseflow(data_ts: pd.DataFrame, data_meta: pd.DataFrame, methods: Union[str, List[str]] = 'all',
+                     compute_bfi: bool = True,
+                     calculate_monthly: bool = True) -> dict:
+    """
+       Compute baseflow for all gauges in the given data.
+    
+       Parameters
+       ----------
+       data_ts : pandas.DataFrame
+           The streamflow data for all gauges.
+       data_meta : pandas.DataFrame
+           The metadata for the gauges, including basin areas.
+       methods : str or list of str, optional
+           The methods to use for baseflow separation. Can be one of 'all', or a single algorithm e.g. demuth
+           for documentation check the external baseflow package
+       compute_bfi : bool, optional
+           Whether to compute baseflow index (BFI) as well. Defaults to True.
+       calculate_monthly : bool, optional
+           Whether to calculate baseflow and BFI values for each month. Defaults to True.
+           Otherwise daily is provided
+    
+       Returns
+       -------
+       dict
+           A dictionary containing the following keys:
+           - 'bf_daily': a pandas DataFrame with daily baseflow values for each gauge.
+           - 'bf_monthly': a pandas DataFrame with monthly baseflow values for each gauge.
+           - 'bfi_monthly': a pandas DataFrame with monthly BFI values for each gauge, if compute_bfi is True.
+           - 'bf_attributes': a pandas DataFrame with various attributes for each gauge, such as mean and standard
+           deviation of baseflow and BFI values, and Demuth curve type, if applicable.
+       """
     # prepare the output data
     bf_output = dict()
 
@@ -208,20 +251,25 @@ def compute_baseflow(data_ts, data_meta, methods='all',
     return bf_output
 
 
-def add_gauge_stats(df_data, gauge_meta, col_name='bf', decadal_stats=False):
+def add_gauge_stats(df_data: pd.DataFrame, gauge_meta: pd.DataFrame, col_name: str = 'bf', decadal_stats: bool = False) -> pd.DataFrame:
     """
-    Adds the mean of the dataset and the std
+    Adds the mean, standard deviation, and coefficient of variation to a DataFrame containing gauge metadata.
 
     Parameters
     ----------
-    df_data : TYPE
-        DESCRIPTION.
-    gauge_meta : TYPE
-        DESCRIPTION.
+    df_data : pandas.DataFrame
+        A DataFrame containing the data for the gauge.
+    gauge_meta : pandas.DataFrame
+        A DataFrame containing the metadata for the gauge.
+    col_name : str, optional
+        The name of the column to use for the statistics. Default is 'bf'.
+    decadal_stats : bool, optional
+        Whether to compute decadal statistics. Default is False.
 
     Returns
     -------
-    None.
+    pandas.DataFrame
+        The updated DataFrame containing the metadata and statistics.
 
     """
     # compute the mean and std of the dataframe
