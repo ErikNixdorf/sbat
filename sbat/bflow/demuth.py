@@ -8,30 +8,39 @@ import os
 import numpy as np
 import pandas as pd
 from scipy.stats import linregress
-
+from typing import Optional
 # functiton to dateparse
 dateparse = lambda x: datetime.strptime(x, '%Y-%m-%d')
 
 
 # %% Functions for our tool
 # get monthly minima
-def get_monthly_nmq(Q, min_days=15, minimum_years=10):
+def get_monthly_nmq(Q: pd.DataFrame = pd.DataFrame(), 
+                    min_days: int = 15, 
+                    minimum_years: int = 10
+                    ) -> pd.Series:
     """
-    
+    Calculates the monthly NMQ (non-exceedance flow) from a time series of streamflow values.
 
     Parameters
     ----------
-    Q : TYPE
-        DESCRIPTION.
-    min_days : TYPE, optional
-        DESCRIPTION. The default is 15.
-    minimum_years : TYPE, optional
-        DESCRIPTION. The default is 10.
+    Q : pandas.Series
+        A time series of streamflow values.
+    min_days : int, optional
+        The minimum number of days with non-missing data required for a month to be included in the NMQ calculation.
+        The default is 15.
+    minimum_years : int, optional
+        The minimum number of complete years of data required for the function to return a result.
+        The default is 10.
 
     Returns
     -------
-    None.
 
+     nmq: A pandas.Series containing the monthly NMQ values.
+    Raises
+    ------
+    ValueError
+        If the input time series has fewer than `minimum_years` complete years of data.
     """
 
     # calculate the data points per month
@@ -44,28 +53,32 @@ def get_monthly_nmq(Q, min_days=15, minimum_years=10):
     nmq = nmq[nmq.dates_per_month >= min_days]
     nmq = nmq.drop(columns=['dates_per_month'])
     # check for minimum length of time series
-    if len(nmq.index.year.unique()) >= minimum_years:
+    valid_years=sorted(nmq.index.year.unique())
+    if len(valid_years) >= minimum_years:
         return nmq.squeeze().rename('nmq')
     else:
-        print('Time Series length is less than the minimum of ', minimum_years, 'years')
+        print(f"Time series has {len(valid_years)} complete years of data, which is less than the minimum of {minimum_years} years.")
         return None
 
 
 # sort split dataset prior to
-def sort_split_ts(nmq):
+def sort_split_ts(nmq: pd.Series) -> tuple:
     """
-    We sort and split the dataset into our two halfes
+    Sorts and splits the dataset into two halves based on the median value.
 
     Parameters
     ----------
-    nmq : TYPE
-        DESCRIPTION.
+    nmq_data : pd.Series
+        The NMQ data as a pandas Series.
 
     Returns
     -------
-    None.
-
+    tuple
+        A tuple containing the month indices, smaller half of data, and larger half of data.
     """
+    
+    if nmq.empty:
+        raise ValueError("The input DataFrame is empty")
     # first we calculate the thresholds
     nmq_median = nmq.median()
     nmq_min = nmq.quantile(0.05)
@@ -74,7 +87,7 @@ def sort_split_ts(nmq):
     nmq_sorted = nmq.sort_values().copy()
     nmq_sorted = nmq_sorted.reset_index()
 
-    month_indices = dict(zip(nmq_sorted.index, nmq_sorted['Datum']))
+    month_indices = dict(zip(nmq_sorted.index, nmq_sorted['date']))
     # change to series
     nmq_sorted = nmq_sorted['nmq']
 
@@ -91,7 +104,26 @@ def sort_split_ts(nmq):
 
 
 # do the regression
-def nmq_regression(nmq_s_half, nmq_l_half, label_curve_type=True):
+def regress_baseflow(nmq_s_half: pd.Series, 
+                     nmq_l_half: pd.Series, 
+                     label_curve_type: bool = True) -> pd.DataFrame:
+    """
+    Calculate the baseflow of a stream according to the demuth methodusing the recursive digital filter method.
+
+    Parameters
+    ----------
+    nmq_s_half : pd.Series
+        A sorted pandas series containing the smaller half of the data.
+    nmq_l_half : pd.Series
+        A sorted pandas series containing the larger half of the data.
+    label_curve_type : bool, optional
+        If True, label the curve type as Type 1 or Type 2. Defaults to True.
+
+    Returns
+    -------
+    pd.DataFrame
+        A pandas dataframe containing the linearized nmq and its curve type (if label_curve_type=True).
+    """
     # start with an initial linear regression
     reg_result_init = linregress(nmq_s_half.index, nmq_s_half.values)
     # get the initial r_value
@@ -126,44 +158,51 @@ def nmq_regression(nmq_s_half, nmq_l_half, label_curve_type=True):
 
 
 # %% the main function
-def baseflow_demuth(Q, gauge_name='gauge', reduce_excess_baseflow=True):
+def baseflow_demuth(Q: pd.Series = pd.Series(), 
+                    gauge_name: str ='gauge',
+                    reduce_excess_baseflow: bool = True,
+                    ) -> pd.DataFrame:
     """
     Calculation of baseflow after Demuth(1993) and Kille(1970)
 
     Parameters
     ----------
-    Q : TYPE
-        DESCRIPTION.
+    Q : pd.Series
+        Streamflow data.
     
-    reduce_excess_baseflow: If this is TRUE, baseflow results larger than the actual discharge will be set equal to discharge
-    
+    gauge_name : str, optional
+        Name of the gauge (default is 'gauge').
 
+    reduce_excess_baseflow : bool, optional
+        If True, baseflow results larger than the actual discharge will be set equal to discharge (default is True).
+        
     Returns
     -------
-    None.
+    pd.DataFrame
+        DataFrame containing baseflow series, the name of the gauge, curve type, and date index.
 
     """
+
     # get monthy minimum
     nmq = get_monthly_nmq(Q)
 
     # if no data is included we drop it
     if nmq is None:
-        print('No Calculation possible for gauge ', gauge_name, ' due to lack of data')
+        print(f'No Calculation possible for gauge{gauge_name} due to lack of data')
         # just write nans
-        baseflow = Q.resample('m').mean()
+        baseflow = pd.DataFrame({'baseflow': Q.resample('M').mean(), 'curve_type': 0})
         baseflow[gauge_name] = np.nan
-        baseflow['curve_type'] = 0
         return baseflow
 
     # sort the data
     month_indices, nmq_s_half, nmq_l_half = sort_split_ts(nmq)
 
     # do the regression
-    baseflow = nmq_regression(nmq_s_half, nmq_l_half, label_curve_type=True)
+    baseflow = regress_baseflow(nmq_s_half, nmq_l_half, label_curve_type=True)
 
     # use the months as index again
-    baseflow['Datum'] = baseflow.index.map(month_indices)
-    baseflow.set_index('Datum', drop=True, inplace=True)
+    baseflow['date'] = baseflow.index.map(month_indices)
+    baseflow.set_index('date', drop=True, inplace=True)
 
     # we finally overwrite if baseflow is larger than the original flow by the nmq
     if reduce_excess_baseflow:
@@ -174,12 +213,3 @@ def baseflow_demuth(Q, gauge_name='gauge', reduce_excess_baseflow=True):
     print('demuth baseflow was calculated for gauge ', gauge_name)
     return baseflow
 
-
-# %% some testing script
-def test_demuth(filepath=os.path.join(os.path.dirname(__file__), 'input', 'example.csv')):
-    Q = pd.read_csv(filepath, index_col=0, parse_dates=['Datum'], date_parser=dateparse)
-    ts_name = Q.columns[0]
-
-    baseflow = baseflow_demuth(Q, gauge_name=ts_name)
-
-    return baseflow
