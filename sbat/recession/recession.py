@@ -12,6 +12,7 @@ from datetime import datetime
 import os
 from pathlib import Path
 
+from typing import Tuple, Union
 from matplotlib import pyplot as plt
 import numpy as np
 import pandas as pd
@@ -23,11 +24,19 @@ dateparse_q = lambda x: datetime.strptime(x, '%Y-%m-%d')
 dateparse_p = lambda x: datetime.strptime(x, '%Y%m%d')
 
 
-def round_up_to_odd(f):
+def round_up_to_odd(f: float) -> int:
+    """Round up a given float to the nearest odd integer.
+
+    Args:
+        f (float): The float number to be rounded up to the nearest odd integer.
+    
+    Returns:
+        int: The nearest odd integer to the input float number after rounding up.
+    """
     return np.ceil(f) // 2 * 2 + 1
 
 
-def get_rmse(simulations, evaluation):
+def get_rmse(simulations: np.ndarray, evaluation: np.ndarray) -> np.ndarray:
     """Root Mean Square Error (RMSE).
     :Calculation Details:
         .. math::
@@ -42,7 +51,7 @@ def get_rmse(simulations, evaluation):
     return rmse_
 
 
-def clean_gauge_ts(Q):
+def clean_gauge_ts(Q: pd.Series) -> pd.Series:
     """
     Cleans the gauge time series from NaNs
 
@@ -74,81 +83,111 @@ def clean_gauge_ts(Q):
 
 # define the regression function
 # https://ngwa.onlinelibrary.wiley.com/doi/epdf/10.1111/j.1745-6584.2002.tb02539.x
-def boussinesq_1(x, Q_0, n_0, x_0):
+def boussinesq_1(x: float, Q_0: float, n_0: float, x_0: float) -> float:
+    """
+    Calculate the water discharge using Boussinesq's equation
+    for one reservoir    
+    """
     return Q_0 / np.power((1 + n_0 * (x - x_0)), 2)
 
 
-def boussinesq_2(x, Q_0, n_0, x_0, Q_1, n_1, x_1):
+def boussinesq_2(x: float, Q_0: float, n_0: float, 
+                 x_0: float, Q_1: float, 
+                 n_1: float, x_1: float) -> float:
+    """
+    Calculate the water discharge using Boussinesq's equation
+    for two reservoirs    
+    """
     return Q_0 / np.power((1 + n_0 * (x - x_0)), 2) + Q_1 / np.power((1 + n_1 * (x - x_1)), 2)
 
 
-def boussinesq_3(x, Q_0, n_0, x_0, Q_1, n_1, x_1, Q_2, n_2, x_2):
+def boussinesq_3(x: float, Q_0: float, n_0: float, x_0: float, Q_1: float, n_1: float,
+                 x_1: float, Q_2: float, n_2: float, x_2: float) -> float:
+    """
+    Calculate the water discharge using Boussinesq's equation
+    for three reservoirs    
+    """    
     return Q_0 / np.power((1 + n_0 * (x - x_0)), 2) + Q_1 / np.power((1 + n_1 * (x - x_1)), 2) + Q_2 / np.power(
         (1 + n_2 * (x - x_2)), 2)
 
 
-def maillet_1(x, Q_0, n_0, x_0):
+def maillet_1(x: float, Q_0: float, n_0: float, x_0: float) -> float:
+    """
+    Calculate the water discharge using Maillet's equation
+    for one reservoir    
+    """
     return Q_0 * np.exp(-n_0 * (x - x_0))
 
 
-def maillet_2(x, Q_0, n_0, x_0, Q_1, n_1, x_1):
+def maillet_2(x: float, Q_0: float, n_0: float, 
+                 x_0: float, Q_1: float, 
+                 n_1: float, x_1: float) -> float:
+    """
+    Calculate the water discharge using Maillet's equation
+    for two reservoir    
+    """
     return Q_0 * np.exp(-n_0 * (x - x_0)) + Q_1 * np.exp(-n_1 * (x - x_1))
 
 
-def maillet_3(x, Q_0, n_0, x_0, Q_1, n_1, x_1, Q_2, n_2, x_2):
+def maillet_3(x: float, Q_0: float, n_0: float, x_0: float, Q_1: float, n_1: float,
+                 x_1: float, Q_2: float, n_2: float, x_2: float) -> float:
+    """
+    Calculate the water discharge using Maillet's equation
+    for three reservoirs   
+    """
     return Q_0 * np.exp(-n_0 * (x - x_0)) + Q_1 * np.exp(-n_1 * (x - x_1)) + Q_2 * np.exp(-n_2 * (x - x_2))
 
 
-def boussinesq_inv(Q, Q_0, n):
+
+def boussinesq_inv(Q: float, Q_0: float, n: float) -> float:
     """
     Inverted function to get the time where the value appears
 
-    Parameters
-    ----------
-    Q : TYPE
-        DESCRIPTION.
-    Q_0 : TYPE
-        DESCRIPTION.
-    n : TYPE
-        DESCRIPTION.
+    This function is used in the context of hydraulics to calculate the time
+    when a certain value of water discharge from the basin appears in a channel, based on
+    Boussinesq's equation.
 
-    Returns
-    -------
-    None.
+    Args:
+        Q (float): The value of water discharge for which to calculate the time.
+        Q_0 (float): The reference value of water discharge used in Boussinesq's equation.
+        n (float): The reservoir storage coefficient used in Boussinesq's equation.
 
+    Returns:
+        float: The time when the specified value of water discharge appears in the channel.
     """
+    
     t = np.divide(np.sqrt(Q_0 / Q), n) - np.divide(1, n)
 
     return t
 
 
-def maillet_inv(Q, Q_0, n):
+def maillet_inv(Q: float, Q_0: float, n: float) -> float:
     """
-    Inverted function to get the time where the value appears    
+    Inverted function to get the time where the value appears
 
-    Parameters
-    ----------
-    Q : TYPE
-        DESCRIPTION.
-    Q_0 : TYPE
-        DESCRIPTION.
-    n : TYPE
-        DESCRIPTION.
+    This function is used in the context of hydraulics to calculate the time
+    when a certain value of water discharge from the basin appears in a channel, based on
+    Maillet's equation.
 
-    Returns
-    -------
-    None.
+    Args:
+        Q (float): The value of water discharge for which to calculate the time.
+        Q_0 (float): The reference value of water discharge used in Boussinesq's equation.
+        n (float): The reservoir storage coefficient used in Boussinesq's equation.
 
+    Returns:
+        float: The time when the specified value of water discharge appears in the channel.
     """
+    
     t = np.log(Q_0 / Q) / n
     return t
 
 
-def fit_reservoir_function(t, Q, Q_0,
-                           constant_Q_0=True,
-                           no_of_partial_sums=3,
-                           min_improvement_ratio=1.01,
-                           recession_algorithm='boussinesq'):
+def fit_reservoir_function(t: np.ndarray, Q: np.ndarray, Q_0: float,
+                           constant_Q_0: bool = True,
+                           no_of_partial_sums: int = 3,
+                           min_improvement_ratio: float = 1.01,
+                           recession_algorithm: str = 'boussinesq',
+                           ) -> Tuple[np.ndarray, np.ndarray]:
     """
     proposes the analytical solution of the nonlinear
     differential flow equation assuming a Depuit–Boussinesq
@@ -156,22 +195,22 @@ def fit_reservoir_function(t, Q, Q_0,
 
     Parameters
     ----------
-    t : TYPE
-        DESCRIPTION.
-    Q : TYPE
-        DESCRIPTION.
-    Q_0 : TYPE
-        DESCRIPTION.
-    constant_Q_0 : TYPE, optional
-        DESCRIPTION. The default is True.
+    t (numpy.ndarray): Array of time steps
+    Q (numpy.ndarray): Array of observed discharge values at each time step
+    Q_0 (float): A float value representing the initial discharge
+    constant_Q_0 (bool, optional): A boolean indicating whether Q_0 is constant. 
+        Defaults to True.
+    no_of_partial_sums (int, optional): An integer representing the number of reservoirs to use. 
+        Defaults to 3.
+    min_improvement_ratio (float, optional): A float value representing the minimum ratio of improvement in R value 
+        between two consecutive iterations. Defaults to 1.01.
+    recession_algorithm (str, optional): A string representing the recession algorithm to use. 
+        Defaults to 'boussinesq'.
 
-    Returns
-    -------
-    popt : TYPE
-        DESCRIPTION.
-    pcov : TYPE
-        DESCRIPTION.
 
+    Returns:
+        Tuple[np.ndarray, np.ndarray]: A tuple of two numpy ndarrays representing 
+        the optimized parameters for the model and the covariance matrix.
     """
 
     # define the acceptable maximum of partial sums
@@ -248,9 +287,11 @@ def fit_reservoir_function(t, Q, Q_0,
     return output
 
 
-def find_recession_limbs(Q, smooth_window_size=15,
-                         minimum_recession_curve_length=10,
-                         split_at_inflection_points=True):
+def find_recession_limbs(Q: Union[pd.DataFrame, pd.Series], 
+                         smooth_window_size: int = 15,
+                         minimum_recession_curve_length: int = 10,
+                         split_at_inflection_points: bool = True) -> pd.DataFrame:
+    
     """
     Identifies and extracts recession limbs from a time series of streamflow.
 
@@ -730,21 +771,3 @@ def plot_recession_results(meta_data=pd.DataFrame(), meta_data_decadal=pd.DataFr
                 plt.close()
 
 
-def test_recession_curve_analysis():
-
-    # %% definitions
-    moving__average_filter_steps = 3  # daily
-    minimum_recession_curve_length = 10
-    mrc_algorithm = 'matching_strip'
-    recession_algorithm = 'boussinesq'
-    Q = pd.read_csv(Path(os.path.dirname(__file__), 'input', 'discharge', 'example.csv'),
-                    index_col=0, parse_dates=['date'],
-                    date_parser=dateparse_q,
-                    squeeze=True)
-    Q_0, n = analyse_recession_curves(Q, mrc_algorithm=mrc_algorithm,
-                                      recession_algorithm=recession_algorithm,
-                                      moving__average_filter_steps=moving__average_filter_steps,
-                                      minimum_recession_curve_length=minimum_recession_curve_length)
-
-# %% run the test case
-# test_recession_curve_analysis()
