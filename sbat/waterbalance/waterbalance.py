@@ -19,7 +19,7 @@ import pandas as pd
 from shapely.geometry import Point, LineString, MultiLineString, MultiPolygon
 from shapely.ops import nearest_points, unary_union
 
-bflow_logger = logging.getLogger('sbat.waterbalance')
+waterbalance_logger = logging.getLogger('sbat.waterbalance')
 def map_time_dependent_cols_to_gdf(
         geodf: gpd.GeoDataFrame,
         time_dep_df: pd.DataFrame,
@@ -128,7 +128,7 @@ def multilinestring_to_singlelinestring(
 
         # if distance is too close remove point and continue
         if pp_distance < min_distance:
-            logger.info(f"Points too close ({pp_distance:.2f}m), removing point")
+            waterbalance_logger.info(f"Points too close ({pp_distance:.2f}m), removing point")
             unsorted_point_bag = unsorted_point_bag.difference(closest_point_updated)
             continue
 
@@ -138,8 +138,8 @@ def multilinestring_to_singlelinestring(
             sorted_point_bag.append(closest_point_updated)
             closest_point = deepcopy(closest_point_updated)
         else:
-            logger.info(f"Closest point too far ({pp_distance:.2f}m) from existing line, probably a branch")
-            logger.debug(f"Loop stopped at iteration {iteration}, try to increase resolution to avoid")
+            waterbalance_logger.info(f"Closest point too far ({pp_distance:.2f}m) from existing line, probably a branch")
+            waterbalance_logger.debug(f"Loop stopped at iteration {iteration}, try to increase resolution to avoid")
             break
     return sorted_point_bag
 
