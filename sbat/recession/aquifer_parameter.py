@@ -8,16 +8,17 @@ Three parts:
 """
 
 from pathlib import Path
+import logging
 from typing import List, Tuple
 
 import geopandas as gpd
 import numpy as np
 import pandas as pd
-import rasterio
 from rasterio.io import DatasetReader
 from shapely.geometry import Point
 from pandas.core.series import Series
 
+bflow_logger = logging.getLogger('sbat.aquifer_parameter')
 def extract_coords(pt: Point) -> Tuple[float, float,float]:
     """
     Extracts the x and y and z coordinates from a Shapely Point object.
@@ -60,7 +61,7 @@ def get_drainage_topographic_parameters(basin: gpd.GeoDataFrame,
                                    'L_represent': basin.T['L_represent']}, index=[int(basin.T.value)],
                              geometry=[basin.T.geometry], crs=river_network.crs)
     basin_name = basin['basin_id'].iloc[0]
-    print(f'Check basin {basin_name}')
+    logging.info(f'Check basin {basin_name}')
     # get the boundary of the basin
     boundary = basin.iloc[0].geometry.boundary
 
@@ -79,7 +80,7 @@ def get_drainage_topographic_parameters(basin: gpd.GeoDataFrame,
     basin_network = gpd.clip(river_network, basin).explode(index_parts=True)
 
     if basin_network.empty:
-        print(f'No river sections within basin {basin_name}')
+        logging.info(f'No river sections within basin {basin_name}')
         basin['h_m'] = np.nan
         basin['dist_m'] = np.nan
         basin['network_length'] = np.nan
@@ -155,7 +156,7 @@ def map_topo_parameters(row: pd.Series, df2: pd.DataFrame,
     if gauge_name in df2['basin_id'].values:
         topo_params = df2[df2['basin_id'] == gauge_name][parameters].iloc[0]
     else:
-        print(f'No basin parameters for gauge {gauge_name}')
+        logging.info(f'No basin parameters for gauge {gauge_name}')
         topo_params = df2.iloc[0, :][parameters]
         # replace all by nan
         topo_params[~topo_params.isna()] = np.nan

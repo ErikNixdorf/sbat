@@ -86,7 +86,7 @@ class Model:
 
         # load the config_data
         if not config_file_path:
-            print('take standard configfile location')
+            logger.info('take standard configfile location')
             config_file_path = Path(self.model_path, 'sbat.yml')
 
         with open(config_file_path) as c:
@@ -111,7 +111,7 @@ class Model:
                                     date_parser=dateparse)
 
         if self.config['data_cleaning']['test_mode']:
-            print('test case, focus on three gauges only')
+            logger.info('test case, focus on three gauges only')
             self.gauge_ts = self.gauge_ts.iloc[:, 0:3]
 
         # we are only interested in meta data for which we have time series information
@@ -123,12 +123,12 @@ class Model:
 
         # remove nan values
         if self.config['data_cleaning']['drop_na_axis'] == None:
-            print('No Nan Values are removed from time series data prior to computation')
+            logger.info('No Nan Values are removed from time series data prior to computation')
         elif self.config['data_cleaning']['drop_na_axis'] == 1:
-            print('Remove Gauges which contain a nan entry')
+            logger.info('Remove Gauges which contain a nan entry')
             self.gauge_ts.dropna(axis=1, how='any').dropna(axis=0, how='any')
         elif self.config['data_cleaning']['drop_na_axis'] == 0:
-            print('Remove time steps which contain a nan entry')
+            logger.info('Remove time steps which contain a nan entry')
             self.gauge_ts.dropna(axis=0, how='any').dropna(axis=1, how='any')
 
         if len(self.gauge_ts) == 0:
@@ -147,11 +147,11 @@ class Model:
             self.gauge_meta = self.gauge_meta.iloc[self.gauge_meta.index.isin(self.gauge_ts.columns), :]
             # reduce the datasets to all which have metadata
             self.gauge_ts = self.gauge_ts[self.gauge_meta.index.to_list()]
-            print(self.gauge_ts.shape[1], 'gauges with valid meta data')
+            logger.info(f'{self.gauge_ts.shape[1]} gauges with valid meta data')
 
         # if we want to compute for each decade we do this here
         if self.config['time']['compute_each_decade']:
-            print('Statistics for each gauge will be computed for each decade')
+            logger.info('Statistics for each gauge will be computed for each decade')
             self.gauge_meta_decadal = pd.DataFrame()
 
     # function which controls the baseflow module
@@ -171,7 +171,7 @@ class Model:
             monthly_keys = [key for key in self.bf_output.keys() if len(self.bf_output[key]) > 0 and 'monthly' in key]
 
             if monthly_keys:
-                print('Updating metadata with the mean of monthly data')
+                logger.info('Updating metadata with the mean of monthly data')
                 gauge_meta_updated = pd.concat([pd.concat([add_gauge_stats(subset.drop(columns=['gauge', 'variable']),
                                                                            self.gauge_meta.loc[gauge, :].to_frame().T,
                                                                            col_name=key,
@@ -199,7 +199,7 @@ class Model:
                     columns=[col for col in gauge_meta_updated.columns if '_dec' in col] + ['decade'])
 
         if self.config['file_io']['output']['plot_results']:
-            print('plot_results of baseflow computation')
+            logger.info('plot_results of baseflow computation')
             plot_bf_results(data=self.bf_output, meta_data=self.gauge_meta,
                             meta_data_decadal=self.gauge_meta_decadal,
                             parameters_to_plot=['bf_daily', 'bf_monthly', 'bfi_monthly'],
@@ -263,13 +263,13 @@ class Model:
         def add_series_id(df, series_id):
             return df.assign(series_id=series_id)
 
-        logging.info('Started Recession Curve Analysis')
+        logger.info('Started Recession Curve Analysis')
         # first we create a new object where we store the time_series
         self.recession_limbs_ts = pd.DataFrame()
 
         # first we check whether we want to compute the recession of the water balance or of the hydrograph
         if self.config['recession']['curve_data']['curve_type'] == 'hydrograph':
-            print('Recession Analysis is conducted using the hydrograph data')
+            logger.info('Recession Analysis is conducted using the hydrograph data')
 
             # first we check whether baseflow data exist
             if self.config['recession']['curve_data']['flow_type'] == 'baseflow':
@@ -277,7 +277,7 @@ class Model:
                     raise ValueError('Compute baseflow with function get_baseflow first')
                 else:
                     Q = self.bf_output['bf_daily']
-                    print('we average the baseflow methods ')
+                    logger.info('we average the baseflow methods ')
                     Q = Q.reset_index().groupby(['date', 'gauge']).mean(numeric_only=True).reset_index()
                     # wide to long
                     Q = Q.pivot(index='date', columns='gauge', values='value').copy()
@@ -288,14 +288,14 @@ class Model:
 
         elif self.config['recession']['curve_data']['curve_type'] == 'waterbalance':
 
-            logging.info('Recession Analysis is conducted using the waterbalance data')
+            logger.info('Recession Analysis is conducted using the waterbalance data')
             # in the case of waterbalance we can not compute a master recession curve due to possibly negative values
-            logging.info('mrc_curve not defined for curve_type is waterbalance')
+            logger.info('mrc_curve not defined for curve_type is waterbalance')
             self.config['recession']['fitting']['mastercurve_algorithm'] = None
             # checking whether the water_balance exist and if the same flow type has been used
             if not hasattr(self, 'sections_meta') or not self.config['recession']['curve_data']['flow_type'] == \
                                                          self.config['waterbalance']['flowtype']:
-                print('Water_Balance Model is run first in order to get the correct input data for recession')
+                logger.info('Water_Balance Model is run first in order to get the correct input data for recession')
                 self.get_water_balance(flow_type=self.config['recession']['curve_data']['flow_type'])
 
                 Q = self.sections_meta.pivot(columns='downstream_point', values='balance', index='Date')
@@ -339,7 +339,7 @@ class Model:
             recession_results = recession_results.dropna(axis=1)
 
             if recession_results.empty:
-                logging.info(f'No recession data for decade{decade}')
+                logger.info(f'No recession data for decade {decade}')
                 continue
 
             metric = pd.DataFrame.from_records(recession_results.iloc[1, :],
@@ -374,7 +374,7 @@ class Model:
                 [self.gauge_meta, df_metrics.reset_index().set_index('gauge').drop(columns=['decade'])], axis=1)
 
         if self.config['file_io']['output']['plot_results']:
-            logging.info('plot_results')
+            logger.info('plot_results')
             plot_recession_results(meta_data=self.gauge_meta,
                                    meta_data_decadal=self.gauge_meta_decadal,
                                    parameters_to_plot=['Q0_rec', 'pearson_r', 'n0_rec'],
@@ -383,7 +383,7 @@ class Model:
                                    decadal_plots=self.config['time']['compute_each_decade'],
                                    )
 
-        logging.info('Recession Curve Analysis Finished')
+        logger.info('Recession Curve Analysis Finished')
 
         # %%we infer the hydrogeological parameters if needed
         if self.config['recession']['fitting']['infer_hydrogeological_parameters']:
@@ -431,7 +431,7 @@ class Model:
     def get_water_balance(self, **kwargs):
         """Calculate water balance per section"""
 
-        print('We analyse the Water Balance per Section')
+        logger.info('We analyse the Water Balance per Section')
 
         # %% First we load the data
 
@@ -455,7 +455,7 @@ class Model:
             flow_type = self.config['waterbalance']['flow_type']
 
         if flow_type == 'baseflow':
-            print('Use baseflow time series')
+            logger.info('Use baseflow time series')
             # check whether the baseflow as already be computed
             if not hasattr(self, 'bf_output'):
                 raise ValueError('Calculate Baseflow first before baseflow water balance can be calculated')
@@ -465,11 +465,11 @@ class Model:
                     self.config['waterbalance']['time_series_analysis_option'] in self.bf_output.keys():
                 data_ts = self.bf_output['bf_daily'].copy()
             else:
-                print('Monthly Averaged values are used')
+                logger.info('Monthly Averaged values are used')
                 data_ts = self.bf_output['bf_monthly'].copy()
 
             # in any case for the baseflow we have to bring the format from long to wide
-            print('Average baseflow data for each gauge and time step')
+            logger.info('Average baseflow data for each gauge and time step')
 
             data_ts = data_ts.groupby(['gauge', 'date']).mean(numeric_only=True).reset_index().pivot(index='date',
                                                                                                      columns='gauge',
@@ -477,7 +477,7 @@ class Model:
 
         elif flow_type == 'discharge':
 
-            print('Use daily discharge')
+            logger.info('Use daily discharge')
             data_ts = self.gauge_ts.copy()
 
         # start the calculation
@@ -539,6 +539,8 @@ class Model:
 
 
 def main(config_file=None, output=True):
+
+
     sbat = Model(config_file_path=config_file)
     # get discharge data
 
@@ -563,7 +565,20 @@ def main(config_file=None, output=True):
     return sbat
 
 
+
 if __name__ == "__main__":
+
+    logger = logging.getLogger('sbat')
+    logger.setLevel(logging.INFO)
+
+    fh = logging.FileHandler('sbat.log')
+    fh.setLevel(logging.INFO)
+    formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(name)s - %(message)s')
+    fh.setFormatter(formatter)
+
+    logger.addHandler(fh)
+
+
     if sys.argv == 1:
         cfg_file = sys.argv.pop(1)
         main(config_file=cfg_file)

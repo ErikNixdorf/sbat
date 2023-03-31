@@ -3,7 +3,7 @@ This module computes monthly baseflow using the separation method of Kille (1970
 extended and formalized by Demuth 1993
 """
 from datetime import datetime
-import os
+import logging
 
 import numpy as np
 import pandas as pd
@@ -12,7 +12,7 @@ from typing import Optional
 # functiton to dateparse
 dateparse = lambda x: datetime.strptime(x, '%Y-%m-%d')
 
-
+bflow_logger = logging.getLogger('sbat.demuth')
 # %% Functions for our tool
 # get monthly minima
 def get_monthly_nmq(Q: pd.DataFrame = pd.DataFrame(), 
@@ -57,7 +57,7 @@ def get_monthly_nmq(Q: pd.DataFrame = pd.DataFrame(),
     if len(valid_years) >= minimum_years:
         return nmq.squeeze().rename('nmq')
     else:
-        print(f"Time series has {len(valid_years)} complete years of data, which is less than the minimum of {minimum_years} years.")
+        logging.info(f"Time series has {len(valid_years)} complete years of data, which is less than the minimum of {minimum_years} years.")
         return None
 
 
@@ -188,7 +188,7 @@ def baseflow_demuth(Q: pd.Series = pd.Series(),
 
     # if no data is included we drop it
     if nmq is None:
-        print(f'No Calculation possible for gauge{gauge_name} due to lack of data')
+        logging.info(f'No Calculation possible for gauge {gauge_name} due to lack of data')
         # just write nans
         baseflow = pd.DataFrame({'baseflow': Q.resample('M').mean(), 'curve_type': 0})
         baseflow[gauge_name] = np.nan
@@ -210,6 +210,6 @@ def baseflow_demuth(Q: pd.Series = pd.Series(),
         baseflow.loc[~(baseflow.baseflow / nmq <= 1), 'baseflow'] = nmq[~(baseflow.baseflow / nmq <= 1)]
 
     baseflow.rename(columns={'baseflow': gauge_name}, inplace=True)
-    print('demuth baseflow was calculated for gauge ', gauge_name)
+    logging.info(f'demuth baseflow was calculated for gauge {gauge_name}')
     return baseflow
 
