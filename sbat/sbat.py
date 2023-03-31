@@ -567,17 +567,15 @@ def main(config_file=None, output=True):
 
 
 if __name__ == "__main__":
-
     logger = logging.getLogger('sbat')
     logger.setLevel(logging.INFO)
 
-    fh = logging.FileHandler('sbat.log')
+    fh = logging.FileHandler('sbat.log', mode='w')
     fh.setLevel(logging.INFO)
     formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(name)s - %(message)s')
     fh.setFormatter(formatter)
 
     logger.addHandler(fh)
-
 
     if sys.argv == 1:
         cfg_file = sys.argv.pop(1)
