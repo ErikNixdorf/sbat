@@ -1,7 +1,7 @@
 *.pyc
 .idea/
 build/
-/output/data/
+/output/
 /info/
 /hooks/
 test_schuettung_q.py

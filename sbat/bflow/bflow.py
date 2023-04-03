@@ -14,7 +14,6 @@ import numpy as np
 import pandas as pd
 import seaborn as sns
 from typing import Optional, Tuple, Union, List
-from .demuth import baseflow_demuth
 
 bflow_logger = logging.getLogger('sbat.bflow')
 
@@ -84,6 +83,9 @@ def call_bf_package(Q: pd.Series, methods: str = 'all',
     if area is not None:
         bflow_logger.info('Assume that area is in km2, recompute to m2')
         area = area / 1000 / 1000
+    
+    if isinstance(methods,List) and 'all' in methods:
+        methods='all'
 
     b, KGEs = bf_package.separation(Q_array, date, area=area, method=methods)
 
@@ -201,28 +203,14 @@ def compute_baseflow(data_ts: pd.DataFrame, data_meta: pd.DataFrame, methods: Un
             # get monthly values
             # from previous methods
             bf_monthly = bf_daily.resample('m').mean()
-            # compute demuth method
-            if methods == 'all' or 'demuth' in methods:
-                # merge with monthly values from Demuth
-                bf_demuth = baseflow_demuth(Q.to_frame(), gauge_name=gauge)
-                # if demuth has wrong curve type, we just write the data nan
-                if bf_demuth.curve_type.iloc[0] == 2:
-                    bflow_logger.warning('Demuth Curve Typ 2, write values to NaN')
-                    bf_demuth[gauge] = np.nan
-                bf_monthly = pd.concat([bf_monthly, bf_demuth.rename(columns={gauge: 'demuth'})['demuth']], axis=1)
-
             # append daily and monthly data
             # monthly
             bfs_monthly = pd.concat([bfs_monthly, melt_gauges(bf_monthly, additional_columns=dict({'gauge': gauge}))])
-            # daily
 
             # compute the statistics per gauge
             KGE_cols = ['kge_' + col for col in bf_daily]
             gauge_attributes = pd.DataFrame(dict(zip(KGE_cols, KGEs)), index=[gauge])
-            if methods == 'all' or 'demuth' in methods:
-                gauge_attributes['demuth_curve_type'] = bf_demuth['curve_type'].iloc[0]
-            else:
-                gauge_attributes['demuth_curve_type'] = np.nan
+
             gauge_attributes[['nmq_mean_' + col for col in bf_monthly]] = bf_monthly.mean()
             gauge_attributes[['nmq_std_' + col for col in bf_monthly]] = bf_monthly.std()
 
