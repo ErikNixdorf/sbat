@@ -5,6 +5,7 @@ loads all our data and calculates the monthly baseflow
 @author: Nixdorf.E
 """
 
+import logging
 from pathlib import Path
 
 import baseflow as bf_package
@@ -15,6 +16,7 @@ import seaborn as sns
 from typing import Optional, Tuple, Union, List
 from .demuth import baseflow_demuth
 
+bflow_logger = logging.getLogger('sbat.bflow')
 
 def clean_gauge_ts(Q: pd.Series) -> Optional[pd.Series]:
     """
@@ -39,7 +41,7 @@ def clean_gauge_ts(Q: pd.Series) -> Optional[pd.Series]:
 
     # if there are only nan we do not need the data:
     if Q.isna().sum() == len(Q):
-        print(f"compute baseflow for gauge {Q.name} not possible")
+        bflow_logger.warning(f"compute baseflow for gauge {Q.name} not possible")
         return None
     return Q
 
@@ -80,7 +82,7 @@ def call_bf_package(Q: pd.Series, methods: str = 'all',
     Q_array = Q.interpolate().values.astype(float).flatten()
 
     if area is not None:
-        print('Assume that area is in km2, recompute to m2')
+        bflow_logger.info('Assume that area is in km2, recompute to m2')
         area = area / 1000 / 1000
 
     b, KGEs = bf_package.separation(Q_array, date, area=area, method=methods)
@@ -171,13 +173,13 @@ def compute_baseflow(data_ts: pd.DataFrame, data_meta: pd.DataFrame, methods: Un
         #    continue
 
         i += 1
-        print('compute baseflow for gauge....', gauge)
+        bflow_logger.info(f'compute baseflow for gauge {gauge}')
         Q = data_ts[gauge]
 
         # clean the data prior to processing
         Q = clean_gauge_ts(Q)
         if Q is None:
-            print('No calculation possible for gauge', gauge)
+            bflow_logger.warning(f'No calculation possible for gauge {gauge} due to lack of discharge data')
             continue
         # call the baseflow module
         if 'basin_area' in data_meta.columns:
@@ -205,7 +207,7 @@ def compute_baseflow(data_ts: pd.DataFrame, data_meta: pd.DataFrame, methods: Un
                 bf_demuth = baseflow_demuth(Q.to_frame(), gauge_name=gauge)
                 # if demuth has wrong curve type, we just write the data nan
                 if bf_demuth.curve_type.iloc[0] == 2:
-                    print('Demuth Curve Typ 2, write values to NaN')
+                    bflow_logger.warning('Demuth Curve Typ 2, write values to NaN')
                     bf_demuth[gauge] = np.nan
                 bf_monthly = pd.concat([bf_monthly, bf_demuth.rename(columns={gauge: 'demuth'})['demuth']], axis=1)
 
@@ -241,7 +243,7 @@ def compute_baseflow(data_ts: pd.DataFrame, data_meta: pd.DataFrame, methods: Un
             # append the gauge attributes
             gauges_attributes = pd.concat([gauges_attributes, gauge_attributes])
 
-            print('compute baseflow for gauge....', gauge, '...done')
+            bflow_logger.info(f'compute baseflow for gauge....{gauge}...done')
 
             # update the dictionary
             bf_output.update({'bf_attributes': gauges_attributes,
@@ -402,7 +404,7 @@ def plot_bf_results(data=dict(), meta_data=pd.DataFrame(), meta_data_decadal=pd.
 
             stream_gauges = meta_data[meta_data.gewaesser == stream].reset_index()
             if len(stream_gauges) == 0:
-                print('no gauges along stream', stream)
+                bflow_logger.warning(f'no gauges along stream {stream}')
                 continue
             stream_gauges['river_km'] = stream_gauges['km_muendung_hauptfluss_model'].max() - stream_gauges[
                 'km_muendung_hauptfluss_model']
@@ -434,7 +436,7 @@ def plot_bf_results(data=dict(), meta_data=pd.DataFrame(), meta_data_decadal=pd.
             plt.close()
 
     if decadal_plots:
-        print('We finally need the decadal plots')
+        bflow_logger.info('Plot decadal stats')
         para_cols = [col for col in meta_data_decadal.columns if 'dec_mean' in col]
         para_cols.extend([col for col in meta_data_decadal.columns if 'dec_cv' in col])
 
@@ -444,7 +446,7 @@ def plot_bf_results(data=dict(), meta_data=pd.DataFrame(), meta_data_decadal=pd.
 
                 stream_gauges = meta_data_decadal[meta_data_decadal.gewaesser == stream].reset_index()
                 if len(stream_gauges) == 0:
-                    print('no gauges along stream', stream)
+                    bflow_logger.info(f'no gauges along stream {stream}')
                     continue
                 # https://stackoverflow.com/questions/62004561/is-this-an-error-in-the-seaborn-lineplot-hue-parameter
                 stream_gauges['river_km'] = stream_gauges['km_muendung_hauptfluss_model'].max() - stream_gauges[

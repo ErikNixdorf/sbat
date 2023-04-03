@@ -9,7 +9,7 @@ Currently two methods (boussinesq and maillet as well as two types of Master rec
 
 from copy import copy
 from datetime import datetime
-import os
+import logging
 from pathlib import Path
 
 from typing import Tuple, Union
@@ -19,6 +19,8 @@ import pandas as pd
 from scipy.optimize import curve_fit
 from scipy.signal import savgol_filter
 import seaborn as sns
+
+recession_logger = logging.getLogger('sbat.recession')
 
 dateparse_q = lambda x: datetime.strptime(x, '%Y-%m-%d')
 dateparse_p = lambda x: datetime.strptime(x, '%Y%m%d')
@@ -218,7 +220,7 @@ def fit_reservoir_function(t: np.ndarray, Q: np.ndarray, Q_0: float,
 
     # we first check whether the user requests more than the maximum of three partial sums
     if no_of_partial_sums > max_sums:
-        print(f"Maximum of partial sums is {max_sums}, reducing to allowed maximum.")
+        recession_logger.warning(f"Maximum of partial sums is {max_sums}, reducing to allowed maximum.")
         no_of_partial_sums = max_sums
 
     # next we overwrite Q_0 if it is not constant, this makes only sene if there is one reservoir only
@@ -504,7 +506,7 @@ def analyse_recession_curves(Q, mrc_algorithm: str = 'demuth',
 
     # %% we define output mrc_data, first two are master curve fit para, third is performance
     gauge_name = Q.name
-    print(f'Analyse recession curves for gauge {gauge_name}')
+    recession_logger.info(f'Analyse recession curves for gauge {gauge_name}')
     mrc_out = tuple((None, None, None))
 
     if isinstance(Q, pd.Series):
@@ -512,17 +514,17 @@ def analyse_recession_curves(Q, mrc_algorithm: str = 'demuth',
 
         # %% First we check whether we need to compute the section intervals
     if define_falling_limb_intervals == True or 'section_id' not in Q.columns:
-        # print('Find the recession parts of the time series prior to fitting')
+        # recession_logger.info('Find the recession parts of the time series prior to fitting')
 
         Q = find_recession_limbs(Q['Q'], smooth_window_size=smooth_window_size,
                                  minimum_recession_curve_length=minimum_recession_curve_length)
 
     #if there are no falling limbs within the interval we just return the data
     if Q is None:
-        print(f'No falling limbs within constraints for gauge {gauge_name}')
+        recession_logger.info(f'No falling limbs within constraints for gauge {gauge_name}')
         return Q,mrc_out
     elif len(Q) == 0 or len(Q['section_id'].unique()) < minimum_limbs:
-        print(f'No falling limbs within constraints for gauge {gauge_name}')
+        recession_logger.info(f'No falling limbs within constraints for gauge {gauge_name}')
         Q = None        
         return Q,mrc_out
 
@@ -608,8 +610,8 @@ def analyse_recession_curves(Q, mrc_algorithm: str = 'demuth',
         r_mrc = df_rec_merged.corr().to_numpy()[0, 1]
 
         # update the output_data
-        mrc_out = ((fit_parameter[0], fit_parameter[1], r_mrc))
-        print('pearson r of method', mrc_algorithm, 'with recession model', recession_algorithm, ' is ',
+        mrc_out = (fit_parameter[0], fit_parameter[1], r_mrc)
+        recession_logger.info(f'pearson r of method {mrc_algorithm} with recession model {recession_algorithm} is ',
               np.round(r_mrc, 2))
 
     if mrc_algorithm == 'demuth':
@@ -649,7 +651,7 @@ def analyse_recession_curves(Q, mrc_algorithm: str = 'demuth',
 
         # update the output_data
         mrc_out = (fit_parameter[0], fit_parameter[1], r_mrc)
-        print(f'pearson r of method {mrc_algorithm} with recession model {recession_algorithm} is {np.round(r_mrc, 2)}')
+        recession_logger.info(f'pearson r of method {mrc_algorithm} with recession model {recession_algorithm} is {np.round(r_mrc, 2)}')
 
     return Q, mrc_out
 
@@ -707,7 +709,7 @@ def plot_recession_results(meta_data=pd.DataFrame(), meta_data_decadal=pd.DataFr
 
                 stream_gauges = meta_data[meta_data.gewaesser == stream].reset_index()
                 if len(stream_gauges) == 0:
-                    print('no gauges along stream', stream)
+                    recession_logger.warning(f'no gauges along stream {stream}')
                     continue
                 stream_gauges['river_km'] = stream_gauges['km_muendung_hauptfluss_model'].max() - stream_gauges[
                     'km_muendung_hauptfluss_model']
@@ -735,7 +737,7 @@ def plot_recession_results(meta_data=pd.DataFrame(), meta_data_decadal=pd.DataFr
                 plt.close()
 
     elif decadal_plots:
-        print('We finally need the decadal plots')
+        recession_logger.info('Plotting the recession performance for each decade')
 
         # loop through data
         for para_col in parameters_to_plot:
@@ -743,7 +745,7 @@ def plot_recession_results(meta_data=pd.DataFrame(), meta_data_decadal=pd.DataFr
 
                 stream_gauges = meta_data_decadal[meta_data_decadal.gewaesser == stream].reset_index()
                 if len(stream_gauges) == 0:
-                    print('no gauges along stream', stream)
+                    recession_logger.info(f'no gauges along stream {stream}')
                     continue
                 # https://stackoverflow.com/questions/62004561/is-this-an-error-in-the-seaborn-lineplot-hue-parameter
                 stream_gauges['river_km'] = stream_gauges['km_muendung_hauptfluss_model'].max() - stream_gauges[

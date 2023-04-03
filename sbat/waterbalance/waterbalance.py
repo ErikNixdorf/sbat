@@ -19,7 +19,7 @@ import pandas as pd
 from shapely.geometry import Point, LineString, MultiLineString, MultiPolygon
 from shapely.ops import nearest_points, unary_union
 
-
+waterbalance_logger = logging.getLogger('sbat.waterbalance')
 def map_time_dependent_cols_to_gdf(
         geodf: gpd.GeoDataFrame,
         time_dep_df: pd.DataFrame,
@@ -112,8 +112,7 @@ def multilinestring_to_singlelinestring(
     List[shapely.geometry.Point]
         The sorted vertices of the single linestring.
     """
-    # start logging
-    logger = logging.getLogger(__name__)
+
     # one annoything is that the Neisse River is not a nicely sorted linestring, so we need to resort all vertices,
     # from downstream to upstream
     closest_point = deepcopy(start_point)
@@ -129,7 +128,7 @@ def multilinestring_to_singlelinestring(
 
         # if distance is too close remove point and continue
         if pp_distance < min_distance:
-            logger.info(f"Points too close ({pp_distance:.2f}m), removing point")
+            waterbalance_logger.info(f"Points too close ({pp_distance:.2f}m), removing point")
             unsorted_point_bag = unsorted_point_bag.difference(closest_point_updated)
             continue
 
@@ -139,8 +138,8 @@ def multilinestring_to_singlelinestring(
             sorted_point_bag.append(closest_point_updated)
             closest_point = deepcopy(closest_point_updated)
         else:
-            logger.info(f"Closest point too far ({pp_distance:.2f}m) from existing line, probably a branch")
-            logger.debug(f"Loop stopped at iteration {iteration}, try to increase resolution to avoid")
+            waterbalance_logger.info(f"Closest point too far ({pp_distance:.2f}m) from existing line, probably a branch")
+            waterbalance_logger.debug(f"Loop stopped at iteration {iteration}, try to increase resolution to avoid")
             break
     return sorted_point_bag
 
@@ -254,7 +253,7 @@ def generate_upstream_network(
                 # calculate the most downstream gauge of the tributary
                 branch_gauges = gauge_meta[gauge_meta["stream"] == branch["stream"]]
                 if len(branch_gauges) == 0:
-                    print("No Gauge at tributary ", branch["stream"])
+                    logging.info(f'No Gauge at tributary {branch["stream"]}')
                     continue
                 # take the one closest to the river mouth
                 if branch_type == "tributaries_up":
@@ -429,11 +428,11 @@ def calculate_network_balance(
     for gauge in gauge_keys:
 
         # we write some empty dataframes for the tributaries
-        ts_distributaries = pd.Series(np.zeros((nr_ts)), index=ts_data.index)
+        ts_distributaries = pd.Series(np.zeros(nr_ts), index=ts_data.index)
         ts_tributaries = ts_distributaries.copy()
         ts_data_gauge_up = ts_distributaries.copy()
 
-        print('add water balance to gauge ', gauge)
+        logging.info(f'add water balance to gauge {gauge}')
 
         # generate an empty dataframe to fill the balance data for each time step
         gauge_boundary_names = {k: network_dict[gauge][k] for k in ['upstream_point', 'downstream_point'] if
@@ -484,7 +483,7 @@ def calculate_network_balance(
 
         # add index data
         df_section['Date'] = ts_data.index
-        print(f'Water balance added to gauge {gauge}')
+        logging.info(f'Water balance added to gauge {gauge}')
 
         sections_meta.append(df_section)
 
@@ -532,7 +531,7 @@ def map_network_sections(
     for _, gauge in network_dict.items():
         # first we get the line within the main reach
         if gauge['reach_name'] not in network.reach_name.tolist():
-            print(gauge['reach_name'], 'not in network data, check correct names')
+            logging.info(f'{gauge["reach_name"]} not in network data, check correct names')
             continue
         river_line = network[network.reach_name == gauge['reach_name']].geometry.iloc[0]
         pnt_gauge = gauge_meta.loc[gauge_meta.index == gauge['downstream_point'], 'geometry'].iloc[0]
@@ -556,7 +555,7 @@ def map_network_sections(
         elif pnt_id_upstream < pnt_id_downstream:
             river_pnts = river_pnts.iloc[pnt_id_upstream:pnt_id_downstream + 1]
         else:
-            print('Stream Line needs at least two points, we move by one point, but you should check geometry')
+            logging.info('Stream Line needs at least two points, we move by one point, but you should check geometry')
             river_pnts = river_pnts.iloc[pnt_id_upstream:pnt_id_downstream + 2]
 
 
@@ -571,8 +570,7 @@ def map_network_sections(
             for (_, branch) in gauge[branch_name].iterrows():
                 # extract the river line if available        
                 if branch['stream'] not in network.reach_name.tolist():
-                    print(branch['stream'],
-                          'not in network data, check correct names')
+                    logging.info(f'{branch["stream"]} not in network data, check correct names')
                     continue
                 river_line = network[network.reach_name == branch['stream'
                 ]].geometry.iloc[0]
@@ -581,8 +579,7 @@ def map_network_sections(
                 if len(gauge[branch_name]) > 0:
                     # we get the river line        
                     if branch['stream'] not in network.reach_name.tolist():
-                        print(branch['stream'],
-                              'not in network data, check correct names')
+                        logging.info(f'{branch["stream"]} not in network data, check correct names')
                         continue
 
                     # extract the river line        
@@ -617,7 +614,7 @@ def map_network_sections(
                     elif pnt_id_upstream < pnt_id_downstream:
                         river_pnts_extracted = river_pnts.iloc[pnt_id_upstream:pnt_id_downstream + 1]
                     else:
-                        print(
+                        logging.info(
                             'Stream Line needs at least two points, we move by one point, but you should check geometry')
                         river_pnts_extracted = river_pnts.iloc[pnt_id_upstream:pnt_id_downstream + 2]
 
@@ -666,12 +663,12 @@ def aggregate_time_series(data_ts: pd.DataFrame,
         A DataFrame containing the aggregated time series data
     """    
     if analyse_option is None:
-        print('No data aggregation option select, continue with original time series')
+        logging.info('No data aggregation option select, continue with original time series')
         return data_ts
 
     # just for testing we take the mean
     if analyse_option == 'overall_mean':
-        print(analyse_option, 'takes entire time series')
+        logging.info(f'{analyse_option} takes entire time series')
         ts_stats = data_ts.mean()
         stats_name = 'mean_discharge_m_s'
         ts_stats = ts_stats.rename(stats_name).to_frame().T
@@ -680,15 +677,15 @@ def aggregate_time_series(data_ts: pd.DataFrame,
         ts_stats = data_ts.resample('Y').mean()
 
     elif analyse_option == 'summer_mean':
-        print('Calculating summer mean (June to September)')
+        logging.info('Calculating summer mean (June to September)')
         ts_stats = data_ts.loc[data_ts.index.month.isin([6, 7, 8, 9])].resample('Y').mean()
 
     # daily calculations
     elif analyse_option == 'daily':
-        print('Calculating daily statistics')
+        logging.info('Calculating daily statistics')
         ts_stats = data_ts.copy()
     else:
-        print('Invalid aggregation option selected, continuing with original time series')
+        logging.info('Invalid aggregation option selected, continuing with original time series')
         return data_ts
 
     ts_stats.index = ts_stats.index.strftime("%Y-%m-%d")
@@ -848,7 +845,7 @@ def get_section_water_balance(gauge_data: pd.DataFrame = pd.DataFrame(),
     gauge_data = gauge_data.loc[gauge_data.index.isin(ts_stats.columns), :]
     # reduce the datasets to all which have metadata
     ts_stats = ts_stats[gauge_data.index.to_list()]
-    print(ts_stats.shape[1], 'gauges with valid meta data')
+    logging.info(f'{ts_stats.shape[1]} gauges with valid meta data')
 
     # our gauge data has to converted to geodataframe
     # make a geodataframe out of the data
