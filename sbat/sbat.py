@@ -80,6 +80,11 @@ class Model:
         -------
         None
         """
+        if 'logger' not in globals():
+           global logger
+           logger = logging.getLogger('sbat')
+           logger.setLevel(logging.INFO)
+        
 
         # Define the model and output paths
         self.model_path = Path(__file__).parents[1]
@@ -98,6 +103,14 @@ class Model:
         # get the output_directory
         self.output_dir = Path(self.model_path, self.config['file_io']['output']['output_directory'])
         Path(self.output_dir).mkdir(parents=True, exist_ok=True)
+        
+        #define the logging output
+        fh = logging.FileHandler(Path(self.output_dir,'sbat.log'), mode='w')
+        formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(name)s - %(message)s')
+        fh.setFormatter(formatter)
+    
+        logger.addHandler(fh)                   
+        
         # %% we load the dataframes to our class
         # the gauge_ts
         gauge_ts_path = Path(self.model_path,
@@ -559,23 +572,17 @@ def main(config_file=None, output=True):
         sbat.q_diff.to_csv(Path(sbat.output_dir, 'data', 'q_diff.csv'))
         sbat.gdf_network_map.to_file(Path(sbat.output_dir, 'data', 'section_streamlines.gpkg'), driver='GPKG')
         sbat.section_basins.to_file(Path(sbat.output_dir, 'data', 'section_subbasins.gpkg'), driver='GPKG')
-
+    
+    logging.shutdown()
     return sbat
 
 
 
 if __name__ == "__main__":
-    logger = logging.getLogger('sbat')
-    logger.setLevel(logging.INFO)
-
-    fh = logging.FileHandler('sbat.log', mode='w')
-    formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(name)s - %(message)s')
-    fh.setFormatter(formatter)
-
-    logger.addHandler(fh)
 
     if sys.argv == 1:
         cfg_file = sys.argv.pop(1)
         main(config_file=cfg_file)
     else:
         main()
+    logging.shutdown()
