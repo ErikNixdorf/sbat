@@ -41,7 +41,7 @@ def clean_gauge_ts(Q: pd.Series) -> Optional[pd.Series]:
 
     # if there are only nan we do not need the data:
     if Q.isna().sum() == len(Q):
-        bflow_logger.info(f"compute baseflow for gauge {Q.name} not possible")
+        bflow_logger.warning(f"compute baseflow for gauge {Q.name} not possible")
         return None
     return Q
 
@@ -179,7 +179,7 @@ def compute_baseflow(data_ts: pd.DataFrame, data_meta: pd.DataFrame, methods: Un
         # clean the data prior to processing
         Q = clean_gauge_ts(Q)
         if Q is None:
-            bflow_logger.info('No calculation possible for gauge', gauge)
+            bflow_logger.warning(f'No calculation possible for gauge {gauge} due to lack of discharge data')
             continue
         # call the baseflow module
         if 'basin_area' in data_meta.columns:
@@ -207,7 +207,7 @@ def compute_baseflow(data_ts: pd.DataFrame, data_meta: pd.DataFrame, methods: Un
                 bf_demuth = baseflow_demuth(Q.to_frame(), gauge_name=gauge)
                 # if demuth has wrong curve type, we just write the data nan
                 if bf_demuth.curve_type.iloc[0] == 2:
-                    bflow_logger.info('Demuth Curve Typ 2, write values to NaN')
+                    bflow_logger.warning('Demuth Curve Typ 2, write values to NaN')
                     bf_demuth[gauge] = np.nan
                 bf_monthly = pd.concat([bf_monthly, bf_demuth.rename(columns={gauge: 'demuth'})['demuth']], axis=1)
 
@@ -404,7 +404,7 @@ def plot_bf_results(data=dict(), meta_data=pd.DataFrame(), meta_data_decadal=pd.
 
             stream_gauges = meta_data[meta_data.gewaesser == stream].reset_index()
             if len(stream_gauges) == 0:
-                bflow_logger.info(f'no gauges along stream {stream}')
+                bflow_logger.warning(f'no gauges along stream {stream}')
                 continue
             stream_gauges['river_km'] = stream_gauges['km_muendung_hauptfluss_model'].max() - stream_gauges[
                 'km_muendung_hauptfluss_model']
@@ -436,7 +436,7 @@ def plot_bf_results(data=dict(), meta_data=pd.DataFrame(), meta_data_decadal=pd.
             plt.close()
 
     if decadal_plots:
-        bflow_logger.info('We finally need the decadal plots')
+        bflow_logger.info('Plot decadal stats')
         para_cols = [col for col in meta_data_decadal.columns if 'dec_mean' in col]
         para_cols.extend([col for col in meta_data_decadal.columns if 'dec_cv' in col])
 

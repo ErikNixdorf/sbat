@@ -80,7 +80,7 @@ def get_drainage_topographic_parameters(basin: gpd.GeoDataFrame,
     basin_network = gpd.clip(river_network, basin).explode(index_parts=True)
 
     if basin_network.empty:
-        aquifer_logger.info(f'No river sections within basin {basin_name}')
+        aquifer_logger.warning(f'No river sections within basin {basin_name}')
         basin['h_m'] = np.nan
         basin['dist_m'] = np.nan
         basin['network_length'] = np.nan
@@ -156,7 +156,7 @@ def map_topo_parameters(row: pd.Series, df2: pd.DataFrame,
     if gauge_name in df2['basin_id'].values:
         topo_params = df2[df2['basin_id'] == gauge_name][parameters].iloc[0]
     else:
-        aquifer_logger.info(f'No basin parameters for gauge {gauge_name}')
+        aquifer_logger.warning(f'No basin parameters for gauge {gauge_name} provided')
         topo_params = df2.iloc[0, :][parameters]
         # replace all by nan
         topo_params[~topo_params.isna()] = np.nan

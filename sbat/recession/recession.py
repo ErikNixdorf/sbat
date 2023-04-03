@@ -220,7 +220,7 @@ def fit_reservoir_function(t: np.ndarray, Q: np.ndarray, Q_0: float,
 
     # we first check whether the user requests more than the maximum of three partial sums
     if no_of_partial_sums > max_sums:
-        recession_logger.info(f"Maximum of partial sums is {max_sums}, reducing to allowed maximum.")
+        recession_logger.warning(f"Maximum of partial sums is {max_sums}, reducing to allowed maximum.")
         no_of_partial_sums = max_sums
 
     # next we overwrite Q_0 if it is not constant, this makes only sene if there is one reservoir only
@@ -709,7 +709,7 @@ def plot_recession_results(meta_data=pd.DataFrame(), meta_data_decadal=pd.DataFr
 
                 stream_gauges = meta_data[meta_data.gewaesser == stream].reset_index()
                 if len(stream_gauges) == 0:
-                    recession_logger.info(f'no gauges along stream {stream}')
+                    recession_logger.warning(f'no gauges along stream {stream}')
                     continue
                 stream_gauges['river_km'] = stream_gauges['km_muendung_hauptfluss_model'].max() - stream_gauges[
                     'km_muendung_hauptfluss_model']
@@ -737,7 +737,7 @@ def plot_recession_results(meta_data=pd.DataFrame(), meta_data_decadal=pd.DataFr
                 plt.close()
 
     elif decadal_plots:
-        recession_logger.info('We finally need the decadal plots')
+        recession_logger.info('Plotting the recession performance for each decade')
 
         # loop through data
         for para_col in parameters_to_plot:
