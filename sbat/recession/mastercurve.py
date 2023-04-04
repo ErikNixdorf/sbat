@@ -6,7 +6,7 @@ import logging
 from typing import Tuple, Union, Dict, Any, Callable
 import pandas as pd
 import numpy as np
-mrc_logger = logging.getLogger('sbat.aquifer_parameter')
+mrc_logger = logging.getLogger('sbat.mastercurve')
 
 def adaptive_matching_strip_method(Q: pd.DataFrame, kwargs: dict) -> tuple:
     """
@@ -31,7 +31,7 @@ def adaptive_matching_strip_method(Q: pd.DataFrame, kwargs: dict) -> tuple:
         A tuple containing the parameters of the master curve function and the goodness-of-fit.
     """
     
-            # we first get the order of recession beginning with the highest initial values
+    # we first get the order of recession beginning with the highest initial values
     section_order = Q.groupby('section_id')['Q0'].max().sort_values(ascending=False).index.tolist()
     initDf = True
     for section_id in section_order:
@@ -104,15 +104,7 @@ def demuth_method(Q: pd.DataFrame, kwargs: dict) -> tuple:
         A tuple containing the parameters of the master curve function and the goodness-of-fit.
     """
     
-    # Check inputs
-    required_keys = ['fit_reservoir_function', 'recession_algorithm', 'inv_func']
-    for key in required_keys:
-        if key not in kwargs:
-            raise ValueError(f"Missing required argument: {key}")
-            
-    if not isinstance(Q, pd.DataFrame) or {'section_id', 'section_time', 'Q', 'Q0'} - set(Q.columns):
-        raise ValueError("Invalid input DataFrame, check whether section_id, section_time, Q, Q0 are named as columns")
-    
+
     # According to demuth method we first compute an initial fit for all data
     Q_data = Q['Q'].values
     Q_0 = Q['Q0'].mean()
@@ -152,7 +144,7 @@ def demuth_method(Q: pd.DataFrame, kwargs: dict) -> tuple:
     return Q_rec_merged, mrc_out
 
 
-def tabulating_method(Q,kwargs):
+def tabulating_method(Q: pd.DataFrame, kwargs: dict) -> tuple:
     """
     This MCRS algorithm is the Python Implementation of the tabulating method by Johnseon and Dils
     which has been described in Toebes and Strang
@@ -160,16 +152,64 @@ def tabulating_method(Q,kwargs):
     
     Parameters
     ----------
-    Q : TYPE
-        DESCRIPTION.
-    kwargs : TYPE
-        DESCRIPTION.
+    Q : pandas.DataFrame
+        A DataFrame with columns 'section_id', 'section_time', 'Q', and 'Q0'.
+    kwargs : dict
+        A dictionary with the following keys:
+        - 'fit_reservoir_function': a function that fits a reservoir model to a time series of discharge.
+        - 'recession_algorithm': a string specifying the algorithm to use for detecting recession limbs.
 
     Returns
     -------
-    None.
-
+    Q_rec_merged : pandas.Series
+        A time series of discharge values computed using the master curve method.
+    mrc_out : tuple
+        A tuple containing the parameters of the master curve function and the goodness-of-fit.
     """
+
+    
+    # Sort the dataframe columns by descending maximum discharge
+    max_discharge = Q.groupby('section_id')['Q'].max().sort_values(ascending=False).index
+    Q_sorted = Q.pivot(index='section_time', columns='section_id', values='Q')[max_discharge]
+   
+    # now we start to shift the sorted dataframe column by column to compute the row_wise difference
+    df_shifted = Q_sorted.iloc[:,0].to_frame()
+    
+
+    
+    for i in range(1,len(Q_sorted.columns)):
+        col_data = Q_sorted.iloc[:,i]
+        t_shift_max = len(col_data.dropna())
+        diff_mean_prev = np.inf
+        # we shift and compute the difference
+        for j in range(t_shift_max):
+            df_compared = pd.concat([df_shifted,col_data.shift(j)],axis=1)        
+            diff_mean = df_compared.dropna().diff().abs().mean().mean()
+            if diff_mean > diff_mean_prev:
+                break
+            elif np.isnan(diff_mean):
+                mrc_logger.warning(f'Shifting Column using tabular method does not provide improvement at event no {Q_sorted.columns[i]}')
+                #just add original data without a shift
+                df_compared = pd.concat([df_shifted,col_data.shift(0)],axis=1) 
+            else:
+                diff_mean_prev = diff_mean.copy()
+
+        #update df_shifted by using the row-wise mean
+        df_shifted = df_compared.mean(axis=1)
+        
+    #finally we fit with the recession function
+    fit_parameter, Q_rec_merged, r_mrc, _ = kwargs['fit_reservoir_function'](df_shifted.index.values,
+                                                                   df_shifted.values,
+                                                                   df_shifted.max(),
+                                                                   constant_Q_0=True,
+                                                                   no_of_partial_sums=1,
+                                                                   min_improvement_ratio=1.05,
+                                                                   recession_algorithm=kwargs['recession_algorithm'])
+    
+      # update the output_data
+    mrc_out = (fit_parameter[0], fit_parameter[1], r_mrc)
+      
+    return Q_rec_merged, mrc_out  
 
     
       
@@ -197,9 +237,19 @@ def get_master_recession_curve(keyword: str, Q: Any, mcr_parameter: Dict = {}) -
     KeyError
         If the provided keyword is not in the supported keyword list.
     """
-
+    # Check inputs
+    required_keys = ['fit_reservoir_function', 'recession_algorithm', 'inv_func']
+    for key in required_keys:
+        if key not in mcr_parameter:
+            raise ValueError(f"Missing required argument: {key}")
+            
+    if not isinstance(Q, pd.DataFrame) or {'section_id', 'section_time', 'Q', 'Q0'} - set(Q.columns):
+        raise ValueError("Invalid input DataFrame, check whether section_id, section_time, Q, Q0 are named as columns")
+    
+    #define the function map
     mrc_function_map: Dict[str, Callable]={'adaptive_matching_strip':adaptive_matching_strip_method,
-                      'demuth':demuth_method
+                      'demuth':demuth_method,
+                      'tabulating':tabulating_method,
                       }
     
     if keyword not in mrc_function_map:

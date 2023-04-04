@@ -51,7 +51,7 @@ recession:
         minimum_limbs: 20
         moving_average_filter_steps: 5
     fitting:
-        mastercurve_algorithm: adaptive_matching_strip
+        mastercurve_algorithm: tabulating
         recession_algorithm: boussinesq
         minimum_limbs: 20
         maximum_reservoirs: 2
