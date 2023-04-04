@@ -567,7 +567,7 @@ def analyse_recession_curves(Q, mrc_algorithm: str = 'demuth',
                              }
     
     
-    Q,mrc_out = get_master_recession_curve(mrc_algorithm,Q,mrc_hyperparameters)   
+    _ , mrc_out = get_master_recession_curve(mrc_algorithm,Q,mrc_hyperparameters)   
        
 
     recession_logger.info(f'pearson r of method {mrc_algorithm} with recession model {recession_algorithm} is {np.round(mrc_out[-1], 2)}')
