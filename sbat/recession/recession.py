@@ -20,6 +20,8 @@ from scipy.optimize import curve_fit
 from scipy.signal import savgol_filter
 import seaborn as sns
 
+from .mastercurve import get_master_recession_curve
+
 recession_logger = logging.getLogger('sbat.recession')
 
 dateparse_q = lambda x: datetime.strptime(x, '%Y-%m-%d')
@@ -557,101 +559,19 @@ def analyse_recession_curves(Q, mrc_algorithm: str = 'demuth',
     # reset index and overwrite Q
     Q = limb_sections
 
-    # %% master Recession Curve, either matching Strip or correlation Method
-    # we first find the inversion function to stick the recession curves together
-    # define the inversion_function
-    inv_func = globals()[recession_algorithm + '_inv']
+    # %% master Recession Curve, 
+    #define the hyperparameters
+    mrc_hyperparameters={'recession_algorithm':recession_algorithm,
+                             'inv_func':globals()[recession_algorithm + '_inv'],
+                             'fit_reservoir_function':fit_reservoir_function,
+                             }
+    
+    
+    _ , mrc_out = get_master_recession_curve(mrc_algorithm,Q,mrc_hyperparameters)   
+       
 
-    if mrc_algorithm == 'matching_strip':
+    recession_logger.info(f'pearson r of method {mrc_algorithm} with recession model {recession_algorithm} is {np.round(mrc_out[-1], 2)}')
 
-        # we first get the order of recession beginning with the highest initial values
-        section_order = Q.groupby('section_id')['Q0'].max().sort_values(ascending=False).index.tolist()
-        initDf = True
-        for section_id in section_order:
-
-            limb = Q[Q['section_id'] == section_id]
-            # we calculate the fit for the initial recession limb
-            if initDf:
-                Q_data = limb['Q'].values
-                Q_0 = limb['Q0'].iloc[0]
-                fit_parameter, Q_rec_merged, r_coef, _ = fit_reservoir_function(limb['section_time'].values,
-                                                                                limb['Q'].values,
-                                                                                limb['Q0'].iloc[0],
-                                                                                constant_Q_0=True,
-                                                                                no_of_partial_sums=1,
-                                                                                recession_algorithm=recession_algorithm)
-                df_rec_merged = pd.Series(Q_rec_merged, limb['section_time'].values).rename('Q')
-
-                initDf = False
-            else:
-
-                # fit the proper location in the already merged part
-                t_shift = inv_func(limb['Q0'].iloc[0], fit_parameter[0], fit_parameter[1])
-                # add t_shift to section time
-                limb.loc[:, 'section_time'] = limb.loc[:, 'section_time'] + t_shift
-                # add the limb with shifted time to the extending dataset
-                df_merged = pd.concat([pd.Series(Q_data, df_rec_merged.index).rename('Q'),
-                                       limb.set_index('section_time')['Q']]).sort_index()
-
-                fit_parameter, Q_rec_merged, r_coef, _ = fit_reservoir_function(df_merged.index.values,
-                                                                                df_merged.values,
-                                                                                Q_0,
-                                                                                constant_Q_0=True,
-                                                                                no_of_partial_sums=1,
-                                                                                recession_algorithm=recession_algorithm)
-
-                # compute the recession curve and parameters for the combined ones
-                df_rec_merged = pd.Series(Q_rec_merged, df_merged.index.values).rename('Q')
-                Q_data = np.append(Q_data, limb['Q'].values)
-
-        # after we got the final regression line we can calculate some performance
-        df_rec_merged = df_rec_merged.to_frame()
-        df_rec_merged['Q_data'] = Q_data
-        r_mrc = df_rec_merged.corr().to_numpy()[0, 1]
-
-        # update the output_data
-        mrc_out = (fit_parameter[0], fit_parameter[1], r_mrc)
-        recession_logger.info(f'pearson r of method {mrc_algorithm} with recession model {recession_algorithm} is ',
-              np.round(r_mrc, 2))
-
-    if mrc_algorithm == 'demuth':
-        # According to demuth method we first compute an initial fit for all data
-
-        Q_data = Q['Q'].values
-        Q_0 = Q['Q0'].mean()
-        fit_parameter, Q_rec, r_init, _ = fit_reservoir_function(Q['section_time'].values,
-                                                                 Q_data,
-                                                                 Q_0,
-                                                                 constant_Q_0=False,
-                                                                 no_of_partial_sums=1,
-                                                                 min_improvement_ratio=1.05,
-                                                                 recession_algorithm=recession_algorithm)
-
-        # we replace the first fit parameter with the actual Q_0, moving in upward direction
-        Q0_max = Q['Q0'].max()
-
-        # Every recession limb will be shifted in t_direction on the new base limp
-        df_merged = pd.Series(dtype=float)
-        for _, limb in Q.groupby('section_id'):
-            t_shift = inv_func(limb['Q0'].iloc[0], Q0_max, fit_parameter[1])
-            # add t_shift to section time
-            limb['section_time'] = limb['section_time'] + t_shift
-            df_merged = pd.concat([df_merged, limb.set_index('section_time')['Q']])
-
-        # we compute a new mean fitting model of the shifted time series
-        df_merged = df_merged.sort_index()
-
-        fit_parameter, Q_rec_merged, r_mrc, _ = fit_reservoir_function(df_merged.index.values,
-                                                                       df_merged.values,
-                                                                       Q0_max,
-                                                                       constant_Q_0=True,
-                                                                       no_of_partial_sums=1,
-                                                                       min_improvement_ratio=1.05,
-                                                                       recession_algorithm=recession_algorithm)
-
-        # update the output_data
-        mrc_out = (fit_parameter[0], fit_parameter[1], r_mrc)
-        recession_logger.info(f'pearson r of method {mrc_algorithm} with recession model {recession_algorithm} is {np.round(r_mrc, 2)}')
 
     return Q, mrc_out
 
