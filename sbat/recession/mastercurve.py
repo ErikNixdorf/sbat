@@ -72,13 +72,13 @@ def adaptive_matching_strip_method(Q: pd.DataFrame, kwargs: dict) -> tuple:
             Q_data = np.append(Q_data, limb['Q'].values)
 
     # after we got the final regression line we can calculate some performance
-    Q_rec_merged = df_rec_merged.values
-    r_mrc = np.corrcoef(Q_data,Q_rec_merged)[0,1]
+    Q_mrc= df_rec_merged.values
+    r_mrc = np.corrcoef(Q_data,Q_mrc)[0,1]
 
     # update the output_data
     mrc_out = (fit_parameter[0], fit_parameter[1], r_mrc)
     
-    return Q_rec_merged, mrc_out
+    return Q_mrc, mrc_out
 
 def demuth_method(Q: pd.DataFrame, kwargs: dict) -> tuple:  
     """
@@ -130,7 +130,7 @@ def demuth_method(Q: pd.DataFrame, kwargs: dict) -> tuple:
     # we compute a new mean fitting model of the shifted time series
     df_merged = df_merged.sort_index()
   
-    fit_parameter, Q_rec_merged, r_mrc, _ = kwargs['fit_reservoir_function'](df_merged.index.values,
+    fit_parameter, Q_mrc, r_mrc, _ = kwargs['fit_reservoir_function'](df_merged.index.values,
                                                                    df_merged.values,
                                                                    Q0_max,
                                                                    constant_Q_0=True,
@@ -141,7 +141,7 @@ def demuth_method(Q: pd.DataFrame, kwargs: dict) -> tuple:
     # update the output_data
     mrc_out = (fit_parameter[0], fit_parameter[1], r_mrc)
     
-    return Q_rec_merged, mrc_out
+    return Q_mrc, mrc_out
 
 
 def tabulating_method(Q: pd.DataFrame, kwargs: dict) -> tuple:
@@ -198,7 +198,7 @@ def tabulating_method(Q: pd.DataFrame, kwargs: dict) -> tuple:
         df_shifted = df_compared.mean(axis=1)
         
     #finally we fit with the recession function
-    fit_parameter, Q_rec_merged, r_mrc, _ = kwargs['fit_reservoir_function'](df_shifted.index.values,
+    fit_parameter, Q_mrc, r_mrc, _ = kwargs['fit_reservoir_function'](df_shifted.index.values,
                                                                    df_shifted.values,
                                                                    df_shifted.max(),
                                                                    constant_Q_0=True,
@@ -209,7 +209,7 @@ def tabulating_method(Q: pd.DataFrame, kwargs: dict) -> tuple:
       # update the output_data
     mrc_out = (fit_parameter[0], fit_parameter[1], r_mrc)
       
-    return Q_rec_merged, mrc_out  
+    return Q_mrc, mrc_out  
 
     
       

@@ -523,12 +523,14 @@ def analyse_recession_curves(Q, mrc_algorithm: str = 'demuth',
 
     #if there are no falling limbs within the interval we just return the data
     if Q is None:
+        Q_mrc = None
         recession_logger.info(f'No falling limbs within constraints for gauge {gauge_name}')
-        return Q,mrc_out
+        return Q, Q_mrc, mrc_out
     elif len(Q) == 0 or len(Q['section_id'].unique()) < minimum_limbs:
         recession_logger.info(f'No falling limbs within constraints for gauge {gauge_name}')
-        Q = None        
-        return Q,mrc_out
+        Q = None
+        Q_mrc = None        
+        return Q, Q_mrc, mrc_out
 
     # %% if mrc_algorithm is zero, we just compute_individual branches
     # %% if we are not interested in a master_recession curve we just calculate single coefficients
@@ -559,7 +561,12 @@ def analyse_recession_curves(Q, mrc_algorithm: str = 'demuth',
     # reset index and overwrite Q
     Q = limb_sections
 
-    # %% master Recession Curve, 
+    # %% master Recession Curve,
+    if mrc_algorithm is None:
+        recession_logger.warning('No Master Curve Recession Algorithm defined')        
+        Q_mrc = None        
+        return Q, Q_mrc, mrc_out
+    
     #define the hyperparameters
     mrc_hyperparameters={'recession_algorithm':recession_algorithm,
                              'inv_func':globals()[recession_algorithm + '_inv'],
@@ -567,13 +574,16 @@ def analyse_recession_curves(Q, mrc_algorithm: str = 'demuth',
                              }
     
     
-    _ , mrc_out = get_master_recession_curve(mrc_algorithm,Q,mrc_hyperparameters)   
+    Q_mrc , mrc_out = get_master_recession_curve(mrc_algorithm,
+                                                 Q, 
+                                                 mrc_hyperparameters,
+                                                 )   
        
 
     recession_logger.info(f'pearson r of method {mrc_algorithm} with recession model {recession_algorithm} is {np.round(mrc_out[-1], 2)}')
 
 
-    return Q, mrc_out
+    return Q, Q_mrc, mrc_out
 
 # %% plotting
 def plot_recession_results(meta_data=pd.DataFrame(), meta_data_decadal=pd.DataFrame(),

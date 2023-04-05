@@ -7,7 +7,7 @@ import logging
 from pathlib import Path
 import sys
 import yaml
-
+import numpy as np
 import geopandas as gpd
 import pandas as pd
 import rasterio
@@ -277,8 +277,6 @@ class Model:
             return df.assign(series_id=series_id)
 
         logger.info('Started Recession Curve Analysis')
-        # first we create a new object where we store the time_series
-        self.recession_limbs_ts = pd.DataFrame()
 
         # first we check whether we want to compute the recession of the water balance or of the hydrograph
         if self.config['recession']['curve_data']['curve_type'] == 'hydrograph':
@@ -322,60 +320,77 @@ class Model:
 
         # start the recession
         metrics = list()
+        recession_limbs = list()
+        Q_mrcs = list()
         for decade, Q_decade in Q.groupby('decade'):
             # drop all gauges where no data is within the decade
-
             Q_decade = Q_decade.dropna(axis=1, how='all').drop(columns='decade')
             # we loop trough all gauges to get the recession curve
-            recession_results = Q_decade.apply(lambda x: analyse_recession_curves(x,
-                                                                                  mrc_algorithm=
-                                                                                  self.config['recession']['fitting'][
-                                                                                      'mastercurve_algorithm'],
-                                                                                  recession_algorithm=
-                                                                                  self.config['recession']['fitting'][
-                                                                                      'recession_algorithm'],
-                                                                                  smooth_window_size=
-                                                                                  self.config['recession'][
-                                                                                      'curve_data'][
-                                                                                      'moving_average_filter_steps'],
-                                                                                  minimum_recession_curve_length=
-                                                                                  self.config['recession']['fitting'][
-                                                                                      'minimum_recession_curve_length'],
-                                                                                  maximum_reservoirs=
-                                                                                  self.config['recession']['fitting'][
-                                                                                      'maximum_reservoirs'],
-                                                                                  minimum_limbs=
-                                                                                  self.config['recession']['fitting'][
-                                                                                      'minimum_limbs']
-                                                                                  ), axis=0, result_type='expand')
-            # get the results
-            recession_results = recession_results.dropna(axis=1)
+            for gauge in Q_decade.columns:
+                logger.info(f'compute recession curves for gauge {gauge} within decade {decade}')
+                Q_rc, Q_mrc, mrc_out = analyse_recession_curves(Q_decade[gauge],
+                                mrc_algorithm=
+                                self.config['recession']['fitting'][
+                                    'mastercurve_algorithm'],
+                                recession_algorithm=
+                                self.config['recession']['fitting'][
+                                    'recession_algorithm'],
+                                smooth_window_size=
+                                self.config['recession'][
+                                    'curve_data'][
+                                    'moving_average_filter_steps'],
+                                minimum_recession_curve_length=
+                                self.config['recession']['fitting'][
+                                    'minimum_recession_curve_length'],
+                                maximum_reservoirs=
+                                self.config['recession']['fitting'][
+                                    'maximum_reservoirs'],
+                                minimum_limbs=
+                                self.config['recession']['fitting'][
+                                    'minimum_limbs']
+                                )
+                # if data is None we just continue
+                if Q_rc is None:
+                    logger.warning(f'No Recession curves computable for gauge {gauge} within decade {decade}')
+                    continue
+                                        
+                # we will add data to the metric
+                metric = pd.DataFrame(np.expand_dims(mrc_out,0),
+                                      columns=['Q0_rec', 'n0_rec', 'pearson_r'],
+                                      index=[0]
+                                      )
+                metric['decade'] = decade
+                metric['gauge'] = gauge
+                metric = metric.reset_index(drop=True).set_index(['gauge', 'decade'])
+                metrics.append(metric)
+                
+                # we will add data to the recession limbs
+                Q_rc['gauge'] = gauge
+                Q_rc['decade'] = decade
+                Q_rc['mrc_algorithm'] = self.config['recession']['fitting']['mastercurve_algorithm']
+                Q_rc['flow_type'] = self.config['recession']['curve_data']['flow_type']
+                Q_rc['curve_type'] = self.config['recession']['curve_data']['curve_type']
+                Q_rc['recession_algorithm'] = self.config['recession']['fitting']['recession_algorithm']
 
-            if recession_results.empty:
-                logger.info(f'No recession data for decade {decade}')
-                continue
+                recession_limbs.append(Q_rc)        
 
-            metric = pd.DataFrame.from_records(recession_results.iloc[1, :],
-                                               columns=['Q0_rec', 'n0_rec', 'pearson_r'],
-                                               index=recession_results.columns)
+                # convert master recession array to data Series
+                Q_mrc=pd.DataFrame(data = Q_mrc,
+                                   index = range(len(Q_mrc)),
+                                   columns=['Q_mrc']
+                                   )
+                Q_mrc['section_time'] = range(len(Q_mrc))
+                Q_mrc['gauge'] = gauge
+                Q_mrc['decade'] = decade
+                
+                Q_mrcs.append(Q_mrc)
+                
 
-            metric['decade'] = decade
-            metric = metric.reset_index().set_index(['gauge', 'decade'])
-            recession_limbs = recession_results.iloc[0, :]
+       #concatenating the data and transfriiing                                 
 
-            for i in recession_limbs.index:
-                recession_limbs[i]['gauge'] = i
+        self.recession_limbs_ts = pd.concat(recession_limbs, axis=0, sort=False).reset_index(drop = True)
 
-            # we finally create a long version
-            recession_limbs = pd.concat(list(recession_limbs), axis=0)
-            recession_limbs['decade'] = decade
-            recession_limbs['mrc_algorithm'] = self.config['recession']['fitting']['mastercurve_algorithm']
-            recession_limbs['flow_type'] = self.config['recession']['curve_data']['flow_type']
-            recession_limbs['curve_type'] = self.config['recession']['curve_data']['curve_type']
-            recession_limbs['recession_algorithm'] = self.config['recession']['fitting']['recession_algorithm']
-
-            self.recession_limbs_ts = pd.concat([self.recession_limbs_ts, recession_limbs], axis=0, sort=False)
-            metrics.append(metric)
+        self.master_recession_curves = pd.concat(Q_mrcs, axis=0).reset_index(drop = True)             
 
         # append the metrics data to the metadata
         df_metrics = pd.concat(metrics, axis=0)
