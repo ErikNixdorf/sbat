@@ -51,10 +51,10 @@ recession:
         minimum_limbs: 20
         moving_average_filter_steps: 5
     fitting:
-        mastercurve_algorithm: tabulating
+        mastercurve_algorithm: demuth
         recession_algorithm: boussinesq
         minimum_limbs: 20
-        maximum_reservoirs: 2
+        maximum_reservoirs: 1
         minimum_recession_curve_length: 10
         infer_hydrogeological_parameters: true
 #water balance

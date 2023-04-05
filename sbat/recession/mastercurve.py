@@ -8,6 +8,7 @@ import pandas as pd
 import numpy as np
 mrc_logger = logging.getLogger('sbat.mastercurve')
 
+
 def adaptive_matching_strip_method(Q: pd.DataFrame, kwargs: dict) -> tuple:
     """
     This is the Python implementation of the adapative matching strip method introduced by Posavec et al 2006
@@ -238,7 +239,7 @@ def get_master_recession_curve(keyword: str, Q: Any, mcr_parameter: Dict = {}) -
         If the provided keyword is not in the supported keyword list.
     """
     # Check inputs
-    required_keys = ['fit_reservoir_function', 'recession_algorithm', 'inv_func']
+    required_keys = ['fit_reservoir_function', 'recession_algorithm', 'inv_func','maximum_reservoirs']
     for key in required_keys:
         if key not in mcr_parameter:
             raise ValueError(f"Missing required argument: {key}")
@@ -247,9 +248,9 @@ def get_master_recession_curve(keyword: str, Q: Any, mcr_parameter: Dict = {}) -
         raise ValueError("Invalid input DataFrame, check whether section_id, section_time, Q, Q0 are named as columns")
     
     #define the function map
-    mrc_function_map: Dict[str, Callable]={'adaptive_matching_strip':adaptive_matching_strip_method,
-                      'demuth':demuth_method,
-                      'tabulating':tabulating_method,
+    mrc_function_map: Dict[str, Callable] = {'adaptive_matching_strip':adaptive_matching_strip_method,
+                      'demuth' : demuth_method,
+                      'tabulating': tabulating_method,
                       }
     
     if keyword not in mrc_function_map:

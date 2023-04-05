@@ -246,7 +246,10 @@ def fit_reservoir_function(t: np.ndarray, Q: np.ndarray, Q_0: float,
 
     # Define t0_min and t0_max, which define the time lag of certain reservoir
     t0_min = 0
-    t0_max = t.max() + 0.0000001
+    if no_of_partial_sums == 1:
+        t0_max=0.000000000001
+    else:
+        t0_max = t.max() + 0.0000001
 
     # depending on the number of number of reservoirs and the curve type we do a different fitting
     r_cor_old = 0.0001
@@ -549,7 +552,8 @@ def analyse_recession_curves(Q, mrc_algorithm: str = 'demuth',
         for reservoir in range(reservoirs):
             limb.loc[:, f'section_n_{reservoir}'] = fit_parameter[3 * (reservoir + 1) - 2]
             limb.loc[:, f'section_Q0_{reservoir}'] = fit_parameter[3 * (reservoir + 1) - 3]
-            limb.loc[:, f'section_x_{reservoir}'] = fit_parameter[3 * (reservoir + 1) - 1]
+            if maximum_reservoirs > 1:
+                limb.loc[:, f'section_x_{reservoir}'] = fit_parameter[3 * (reservoir + 1) - 1]
         limb.loc[:, 'section_corr'] = r_coef
         limb.loc[:, 'Q_interp'] = limb_int
         # merge sections
@@ -568,9 +572,10 @@ def analyse_recession_curves(Q, mrc_algorithm: str = 'demuth',
         return Q, Q_mrc, mrc_out
     
     #define the hyperparameters
-    mrc_hyperparameters={'recession_algorithm':recession_algorithm,
-                             'inv_func':globals()[recession_algorithm + '_inv'],
-                             'fit_reservoir_function':fit_reservoir_function,
+    mrc_hyperparameters={'recession_algorithm' : recession_algorithm,
+                             'inv_func' : globals()[recession_algorithm + '_inv'],
+                             'fit_reservoir_function' : fit_reservoir_function,
+                             'maximum_reservoirs' : maximum_reservoirs,
                              }
     
     
