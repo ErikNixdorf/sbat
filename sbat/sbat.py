@@ -503,7 +503,7 @@ class Model:
         if self.conf['time']['compute_each_decade'] == True:
             
             #we update the meta_data with the decadal average balance
-            balance_mean = self.sections_meta.groupby(['downstream_point','decade']).mean().loc[:,'balance']
+            balance_mean = self.sections_meta.groupby(['downstream_point','decade']).mean(numeric_only=True).loc[:,'balance']
             self.gauge_meta_decadal = pd.concat([self.gauge_meta_decadal,balance_mean],axis=1)
             self.gauge_meta_decadal.index.names=('gauge','decade')
 
