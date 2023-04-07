@@ -51,9 +51,13 @@ dateparse = lambda x: datetime.strptime(x, '%Y-%m-%d')
 
 
 class Model:
-    def __init__(self, conf=None):
+    def __init__(self, conf: dict = None):
         """Initialization method for a new Model instance. Reads configuration, builds the working directory and reads
-        the input data."""
+        the input data.
+
+        Args:
+
+        """
 
 
 
@@ -62,8 +66,8 @@ class Model:
             logger = logging.getLogger('sbat')
             logger.setLevel(logging.INFO)
 
-        self.conf = conf
-        self.paths = {"root": Path(__file__).parents[1]}
+        self.config = conf
+        self.paths: dict = {"root": Path(__file__).parents[1]}
 
         self.gauge_ts = None
         self.gauge_meta = None
@@ -82,7 +86,7 @@ class Model:
         self._read_data()
 
     @staticmethod
-    def config(config_file_path
+    def read_config(config_file_path : Path
              ) -> dict:
         """Creates a dictionary out of a YAML file."""
         with open(config_file_path) as c:
@@ -93,42 +97,42 @@ class Model:
         """Builds the working directory. Reads paths from configuration files and creates output directories."""
 
         self.paths["input_dir"] = Path(self.paths["root"],
-                                       self.conf['file_io']['input']['data_dir'])
+                                       self.config['file_io']['input']['data_dir'])
         self.paths["output_dir"] = Path(self.paths["root"],
-                                        self.conf['file_io']['output']['output_directory'])
+                                        self.config['file_io']['output']['output_directory'])
         self.paths["output_dir"].mkdir(parents=True, exist_ok=True)
 
         self.paths["gauge_ts_path"] = Path(self.paths["input_dir"],
-                                           self.conf['file_io']['input']['gauges']['gauge_time_series'])
+                                           self.config['file_io']['input']['gauges']['gauge_time_series'])
         self.paths["gauge_meta_path"] = Path(self.paths["input_dir"],
-                                             self.conf['file_io']['input']['gauges']['gauge_meta'])
+                                             self.config['file_io']['input']['gauges']['gauge_meta'])
 
     def _read_data(self):
         self.gauge_ts = pd.read_csv(self.paths["gauge_ts_path"], index_col=0, parse_dates=True)
 
         # todo: Is this test only for debugging? If yes it should be removed for release. For a public test case better
         #  reduce the input data itself
-        if self.conf['data_cleaning']['test_mode']:
+        if self.config['data_cleaning']['test_mode']:
             # logger.info('test case, focus on three gauges only')
             self.gauge_ts = self.gauge_ts.iloc[:, 0:3]
 
         # Slice gauge time series for start and end date
-        self.gauge_ts = self.gauge_ts.loc[self.conf['time']['start_date']:self.conf['time']['end_date']]
+        self.gauge_ts = self.gauge_ts.loc[self.config['time']['start_date']:self.config['time']['end_date']]
 
         # we are only interested in metadata for which we have time series information; remove all nans
         self.gauge_ts = self.gauge_ts.dropna(axis=1, how='all')
 
         # log non-standard configuration
-        if self.conf['data_cleaning']['drop_na_axis'] is None:
+        if self.config['data_cleaning']['drop_na_axis'] is None:
             logger.info('No Nan Values are removed from time series data prior to computation')
 
         # todo: I do not really get what the following elifs do. Does the order of the axes make a difference? If no we
         #  we can drop over both axes by passing a tuple `axis=(0, 1)`. More important, NaNs are dropped over axis 1 by
         #  default (see some lines above)
-        elif self.conf['data_cleaning']['drop_na_axis'] == 1:
+        elif self.config['data_cleaning']['drop_na_axis'] == 1:
             logger.info('Remove Gauges which contain a nan entry')
             self.gauge_ts.dropna(axis=1, how='any').dropna(axis=0, how='any')
-        elif self.conf['data_cleaning']['drop_na_axis'] == 0:
+        elif self.config['data_cleaning']['drop_na_axis'] == 0:
             logging.info('Remove time steps which contain a nan entry')
             self.gauge_ts.dropna(axis=0, how='any').dropna(axis=1, how='any')
 
@@ -140,7 +144,7 @@ class Model:
 
         self.gauge_meta = pd.read_csv(self.paths["gauge_meta_path"], index_col=0)
 
-        if self.conf['data_cleaning']['valid_datapairs_only']:
+        if self.config['data_cleaning']['valid_datapairs_only']:
             # reduce the metadata to the gauges for which we have actual time data
             self.gauge_meta = self.gauge_meta.loc[self.gauge_ts.columns]
             # reduce the datasets to all which have metadata
@@ -149,7 +153,7 @@ class Model:
 
         # if we want to compute for each decade we do this here
         # todo: I think there is a better way to solve this
-        if self.conf['time']['compute_each_decade']:
+        if self.config['time']['compute_each_decade']:
             logger.info('Statistics for each gauge will be computed for each decade')
             self.gauge_meta_decadal = pd.DataFrame()
     # function which controls the baseflow module
@@ -159,12 +163,12 @@ class Model:
         # first we compute the baseflow
         self.bf_output = compute_baseflow(self.gauge_ts,
                                           self.gauge_meta,
-                                          methods=self.conf['baseflow']['methods'],
-                                          compute_bfi=self.conf['baseflow']['compute_baseflow_index'],
-                                          calculate_monthly=self.conf['baseflow']['calculate_monthly'])
+                                          methods=self.config['baseflow']['methods'],
+                                          compute_bfi=self.config['baseflow']['compute_baseflow_index'],
+                                          calculate_monthly=self.config['baseflow']['calculate_monthly'])
 
         # second we update the medatadata if required
-        if self.conf['baseflow']['update_metadata']:
+        if self.config['baseflow']['update_metadata']:
             # get the monthly keys
             monthly_keys = [key for key in self.bf_output.keys() if len(self.bf_output[key]) > 0 and 'monthly' in key]
 
@@ -173,7 +177,7 @@ class Model:
                 gauge_meta_updated = pd.concat([pd.concat([add_gauge_stats(subset.drop(columns=['gauge', 'variable']),
                                                                            self.gauge_meta.loc[gauge, :].to_frame().T,
                                                                            col_name=key,
-                                                                           decadal_stats=self.conf['time'][
+                                                                           decadal_stats=self.config['time'][
                                                                                'compute_each_decade'],
                                                                            ).reset_index().reset_index().set_index(
                     ['index', 'gauge']) for gauge, subset in self.bf_output[key].groupby('gauge')]) for key in
@@ -186,7 +190,7 @@ class Model:
 
             self.gauge_meta = gauge_meta_updated.groupby('gauge').first()
 
-            if self.conf['time']['compute_each_decade']:
+            if self.config['time']['compute_each_decade']:
                 gauge_meta_decadal = gauge_meta_updated.set_index(['gauge', 'decade'])
                 if hasattr(self, 'gauge_meta_decadal'):
                     new_cols = list(set(gauge_meta_decadal.columns) - set(self.gauge_meta_decadal.columns))
@@ -197,14 +201,14 @@ class Model:
                 self.gauge_meta = self.gauge_meta.drop(
                     columns=[col for col in gauge_meta_updated.columns if '_dec' in col] + ['decade'])
 
-        if self.conf['file_io']['output']['plot_results']:
+        if self.config['file_io']['output']['plot_results']:
             logger.info('plot_results of baseflow computation')
             plot_bf_results(data=self.bf_output, meta_data=self.gauge_meta,
                             meta_data_decadal=self.gauge_meta_decadal,
                             parameters_to_plot=['bf_daily', 'bf_monthly', 'bfi_monthly'],
                             streams_to_plot=['spree', 'lausitzer_neisse', 'schwarze_elster'],
                             output_dir=Path(self.paths["output_dir"], 'bf_analysis', 'figures'),
-                            decadal_plots=self.conf['time']['compute_each_decade'],
+                            decadal_plots=self.config['time']['compute_each_decade'],
                             )
 
     # %%function that adds discharge statistics
@@ -217,8 +221,8 @@ class Model:
         for gauge, subset in data.melt(var_name='gauge', ignore_index=False).groupby('gauge'):
             output = add_gauge_stats(subset.drop(columns=['gauge']),
                                      self.gauge_meta.loc[gauge, :].to_frame().T,
-                                     col_name=self.conf['discharge']['col_name'],
-                                     decadal_stats=self.conf['time']['compute_each_decade'])
+                                     col_name=self.config['discharge']['col_name'],
+                                     decadal_stats=self.config['time']['compute_each_decade'])
             gauge_meta_updated = pd.concat([gauge_meta_updated, output])
 
         # the first                  column is the updated gauge_meta
@@ -226,7 +230,7 @@ class Model:
 
         # if decadal stats exist we save them
 
-        if self.conf['time']['compute_each_decade']:
+        if self.config['time']['compute_each_decade']:
             # we we have decadal data we append
             if hasattr(self, 'gauge_meta_decadal'):
                 gauge_meta_updated = gauge_meta_updated.reset_index().set_index(['gauge', 'decade'])
@@ -242,7 +246,7 @@ class Model:
             self.gauge_meta = self.gauge_meta.drop(columns=dec_cols)
 
         # if we want the monthly stats as well
-        if self.conf['discharge']['compute_monthly']:
+        if self.config['discharge']['compute_monthly']:
             col_name = 'q_monthly'
             data = self.gauge_ts.copy(deep=True).resample('M').mean()
             gauge_meta_updated = pd.DataFrame()
@@ -269,11 +273,11 @@ class Model:
         logger.info('Started Recession Curve Analysis')
 
         # first we check whether we want to compute the recession of the water balance or of the hydrograph
-        if self.conf['recession']['curve_data']['curve_type'] == 'hydrograph':
+        if self.config['recession']['curve_data']['curve_type'] == 'hydrograph':
             logger.info('Recession Analysis is conducted using the hydrograph data')
 
             # first we check whether baseflow data exist
-            if self.conf['recession']['curve_data']['flow_type'] == 'baseflow':
+            if self.config['recession']['curve_data']['flow_type'] == 'baseflow':
                 if not hasattr(self, 'bf_output'):
                     raise ValueError('Compute baseflow with function get_baseflow first')
                 else:
@@ -283,27 +287,27 @@ class Model:
                     # wide to long
                     Q = Q.pivot(index='date', columns='gauge', values='value').copy()
 
-            elif self.conf['recession']['curve_data']['curve_type'] == 'discharge':
+            elif self.config['recession']['curve_data']['curve_type'] == 'discharge':
                 Q = self.gauge_ts
 
 
-        elif self.conf['recession']['curve_data']['curve_type'] == 'waterbalance':
+        elif self.config['recession']['curve_data']['curve_type'] == 'waterbalance':
 
             logger.info('Recession Analysis is conducted using the waterbalance data')
             # in the case of waterbalance we can not compute a master recession curve due to possibly negative values
             logger.info('mrc_curve not defined for curve_type is waterbalance')
-            self.conf['recession']['fitting']['mastercurve_algorithm'] = None
+            self.config['recession']['fitting']['mastercurve_algorithm'] = None
             # checking whether the water_balance exist and if the same flow type has been used
-            if not hasattr(self, 'sections_meta') or not self.conf['recession']['curve_data']['flow_type'] == \
-                                                         self.conf['waterbalance']['flowtype']:
+            if not hasattr(self, 'sections_meta') or not self.config['recession']['curve_data']['flow_type'] == \
+                                                         self.config['waterbalance']['flowtype']:
                 logger.info('Water_Balance Model is run first in order to get the correct input data for recession')
-                self.get_water_balance(flow_type=self.conf['recession']['curve_data']['flow_type'])
+                self.get_water_balance(flow_type=self.config['recession']['curve_data']['flow_type'])
 
                 Q = self.sections_meta.pivot(columns='downstream_point', values='balance', index='Date')
                 Q.index = pd.to_datetime(Q.index).rename('date')
                 Q.columns.name = 'gauge'
 
-        if self.conf['time']['compute_each_decade']:
+        if self.config['time']['compute_each_decade']:
             Q['decade'] = [x[0:3] + '5' for x in Q.index.strftime('%Y')]
         else:
             Q['decade'] = -9999
@@ -320,23 +324,23 @@ class Model:
                 logger.info(f'compute recession curves for gauge {gauge} within decade {decade}')
                 Q_rc, Q_mrc, mrc_out = analyse_recession_curves(Q_decade[gauge],
                                 mrc_algorithm=
-                                self.conf['recession']['fitting'][
+                                self.config['recession']['fitting'][
                                     'mastercurve_algorithm'],
                                 recession_algorithm=
-                                self.conf['recession']['fitting'][
+                                self.config['recession']['fitting'][
                                     'recession_algorithm'],
                                 smooth_window_size=
-                                self.conf['recession'][
+                                self.config['recession'][
                                     'curve_data'][
                                     'moving_average_filter_steps'],
                                 minimum_recession_curve_length=
-                                self.conf['recession']['fitting'][
+                                self.config['recession']['fitting'][
                                     'minimum_recession_curve_length'],
                                 maximum_reservoirs=
-                                self.conf['recession']['fitting'][
+                                self.config['recession']['fitting'][
                                     'maximum_reservoirs'],
                                 minimum_limbs=
-                                self.conf['recession']['fitting'][
+                                self.config['recession']['fitting'][
                                     'minimum_limbs']
                                 )
                 # if data is None we just continue
@@ -357,10 +361,10 @@ class Model:
                 # we will add data to the recession limbs
                 Q_rc['gauge'] = gauge
                 Q_rc['decade'] = decade
-                Q_rc['mrc_algorithm'] = self.conf['recession']['fitting']['mastercurve_algorithm']
-                Q_rc['flow_type'] = self.conf['recession']['curve_data']['flow_type']
-                Q_rc['curve_type'] = self.conf['recession']['curve_data']['curve_type']
-                Q_rc['recession_algorithm'] = self.conf['recession']['fitting']['recession_algorithm']
+                Q_rc['mrc_algorithm'] = self.config['recession']['fitting']['mastercurve_algorithm']
+                Q_rc['flow_type'] = self.config['recession']['curve_data']['flow_type']
+                Q_rc['curve_type'] = self.config['recession']['curve_data']['curve_type']
+                Q_rc['recession_algorithm'] = self.config['recession']['fitting']['recession_algorithm']
 
                 recession_limbs.append(Q_rc)        
 
@@ -384,66 +388,66 @@ class Model:
 
         # append the metrics data to the metadata
         df_metrics = pd.concat(metrics, axis=0)
-        if self.conf['time']['compute_each_decade']:
+        if self.config['time']['compute_each_decade']:
             self.gauge_meta_decadal = pd.concat([self.gauge_meta_decadal, df_metrics], axis=1)
         else:
 
             self.gauge_meta = pd.concat(
                 [self.gauge_meta, df_metrics.reset_index().set_index('gauge').drop(columns=['decade'])], axis=1)
 
-        if self.conf['file_io']['output']['plot_results']:
+        if self.config['file_io']['output']['plot_results']:
             logger.info('plot_results')
             plot_recession_results(meta_data=self.gauge_meta,
                                    meta_data_decadal=self.gauge_meta_decadal,
                                    parameters_to_plot=['Q0_rec', 'pearson_r', 'n0_rec'],
                                    streams_to_plot=['spree', 'lausitzer_neisse', 'schwarze_elster'],
                                    output_dir=Path(self.paths["output_dir"], 'recession_analysis', 'figures'),
-                                   decadal_plots=self.conf['time']['compute_each_decade'],
+                                   decadal_plots=self.config['time']['compute_each_decade'],
                                    )
 
         logger.info('Recession Curve Analysis Finished')
 
         # %%we infer the hydrogeological parameters if needed
-        if self.conf['recession']['fitting']['infer_hydrogeological_parameters']:
+        if self.config['recession']['fitting']['infer_hydrogeological_parameters']:
             # decide which kind of basins we need
-            if self.conf['recession']['curve_data']['curve_type'] == 'waterbalance':
+            if self.config['recession']['curve_data']['curve_type'] == 'waterbalance':
                 basins = self.section_basins
-            elif self.conf['recession']['curve_data']['curve_type'] == 'hydrograph':
+            elif self.config['recession']['curve_data']['curve_type'] == 'hydrograph':
                 basins = gpd.read_file(Path(self.paths["input_dir"],
-                                            self.conf['file_io']['input']['geospatial']['gauge_basins'])
+                                            self.config['file_io']['input']['geospatial']['gauge_basins'])
                                        )
                 # we reduce the basins to the gauges for which we have meta information
-                basins = basins.loc[basins[self.conf['waterbalance']['basin_id_col']].isin(self.gauge_meta.index)]
+                basins = basins.loc[basins[self.config['waterbalance']['basin_id_col']].isin(self.gauge_meta.index)]
             else:
                 raise ValueError('curve type can either be waterbalance or hydrograph')
             # load the rasterio data
             gw_surface = rasterio.open(Path(self.paths["input_dir"],
-                                            self.conf['file_io']['input']['hydrogeology']['gw_levels']
+                                            self.config['file_io']['input']['hydrogeology']['gw_levels']
                                             )
                                        )
 
             network_geometry = gpd.read_file(Path(self.paths["input_dir"],
-                                                  self.conf['file_io']['input']['geospatial'][
+                                                  self.config['file_io']['input']['geospatial'][
                                                       'river_network'])
                                              )
 
             # get the properties
-            if self.conf['time']['compute_each_decade']:
+            if self.config['time']['compute_each_decade']:
                 self.gauge_meta_decadal = get_hydrogeo_properties(gauge_data=self.gauge_meta_decadal,
                                                                   basins=basins,
-                                                                  basin_id_col=self.conf['waterbalance'][
+                                                                  basin_id_col=self.config['waterbalance'][
                                                                       'basin_id_col'],
                                                                   gw_surface=gw_surface,
                                                                   network=network_geometry,
-                                                                  conceptual_model=self.conf['recession']['fitting'][
+                                                                  conceptual_model=self.config['recession']['fitting'][
                                                                       'recession_algorithm'])
             else:
                 self.gauge_meta = get_hydrogeo_properties(gauge_data=self.gauge_meta,
                                                           basins=basins,
-                                                          basin_id_col=self.conf['waterbalance']['basin_id_col'],
+                                                          basin_id_col=self.config['waterbalance']['basin_id_col'],
                                                           gw_surface=gw_surface,
                                                           network=network_geometry,
-                                                          conceptual_model=self.conf['recession']['fitting'][
+                                                          conceptual_model=self.config['recession']['fitting'][
                                                               'recession_algorithm'])
 
     def get_water_balance(self, **kwargs):
@@ -454,23 +458,23 @@ class Model:
         # %% First we load the data
 
         network_geometry = gpd.read_file(Path(self.paths["input_dir"],
-                                              self.conf['file_io']['input']['geospatial']['river_network'])
+                                              self.config['file_io']['input']['geospatial']['river_network'])
                                          )
 
         network_connections = pd.read_csv(Path(self.paths["input_dir"],
-                                               self.conf['file_io']['input']['geospatial'][
+                                               self.config['file_io']['input']['geospatial'][
                                                    'branches_topology'])
                                           )
 
         gauge_basins = gpd.read_file(Path(self.paths["input_dir"],
-                                          self.conf['file_io']['input']['geospatial']['gauge_basins'])
+                                          self.config['file_io']['input']['geospatial']['gauge_basins'])
                                      )
         # check whether flow type is given explicitely
 
         if 'flow_type' in kwargs:
             flow_type = kwargs['flow_type']
         else:
-            flow_type = self.conf['waterbalance']['flow_type']
+            flow_type = self.config['waterbalance']['flow_type']
 
         if flow_type == 'baseflow':
             logger.info('Use baseflow time series')
@@ -479,8 +483,8 @@ class Model:
                 raise ValueError('Calculate Baseflow first before baseflow water balance can be calculated')
 
             # prove whether explicitely daily values should be calculate otherwise we take monthly
-            if self.conf['waterbalance']['time_series_analysis_option'] == 'daily' and 'bf_' + \
-                    self.conf['waterbalance']['time_series_analysis_option'] in self.bf_output.keys():
+            if self.config['waterbalance']['time_series_analysis_option'] == 'daily' and 'bf_' + \
+                    self.config['waterbalance']['time_series_analysis_option'] in self.bf_output.keys():
                 data_ts = self.bf_output['bf_daily'].copy()
             else:
                 logger.info('Monthly Averaged values are used')
@@ -506,13 +510,13 @@ class Model:
             network=network_geometry,
             basins=gauge_basins,
             network_connections=network_connections,
-            confidence_acceptance_level=self.conf['waterbalance']['confidence_acceptance_level'],
-            time_series_analysis_option=self.conf['waterbalance']['time_series_analysis_option'],
-            basin_id_col=self.conf['waterbalance']['basin_id_col'],
+            confidence_acceptance_level=self.config['waterbalance']['confidence_acceptance_level'],
+            time_series_analysis_option=self.config['waterbalance']['time_series_analysis_option'],
+            basin_id_col=self.config['waterbalance']['basin_id_col'],
         )
         
         #we map the mean_balance information on the geodataframes
-        if self.conf['time']['compute_each_decade']:
+        if self.config['time']['compute_each_decade']:
             #we update the meta_data with the decadal average balance
             balance_mean = self.sections_meta.groupby(['downstream_point','decade']).mean(numeric_only=True).loc[:,'balance']
             self.gauge_meta_decadal = pd.concat([self.gauge_meta_decadal,balance_mean],axis=1)
@@ -534,7 +538,7 @@ class Model:
                                                                 )
             
         
-        elif not self.conf['time']['compute_each_decade']:
+        elif not self.config['time']['compute_each_decade']:
             #Update the metadata by balance
             balance_mean = self.sections_meta.groupby('downstream_point').mean().loc[:,'balance']
             self.gauge_meta = pd.concat([self.gauge_meta,balance_mean],axis=1)
@@ -555,7 +559,7 @@ class Model:
 
 
 def main(config_file=None, output=True):
-    configuration = Model.config(Path(Path(__file__).parents[1], "sbat.yml"))
+    configuration = Model.read_config(Path(Path(__file__).parents[1], "sbat.yml"))
     sbat = Model(configuration)
     # get discharge data
 
