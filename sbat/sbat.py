@@ -500,8 +500,7 @@ class Model:
         )
         
         #we map the mean_balance information on the geodataframes
-        if self.conf['time']['compute_each_decade'] == True:
-            
+        if self.conf['time']['compute_each_decade']:
             #we update the meta_data with the decadal average balance
             balance_mean = self.sections_meta.groupby(['downstream_point','decade']).mean(numeric_only=True).loc[:,'balance']
             self.gauge_meta_decadal = pd.concat([self.gauge_meta_decadal,balance_mean],axis=1)
@@ -523,8 +522,7 @@ class Model:
                                                                 )
             
         
-        elif self.conf['time']['compute_each_decade'] == False:
-            
+        elif not self.conf['time']['compute_each_decade']:
             #Update the metadata by balance
             balance_mean = self.sections_meta.groupby('downstream_point').mean().loc[:,'balance']
             self.gauge_meta = pd.concat([self.gauge_meta,balance_mean],axis=1)
