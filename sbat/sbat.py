@@ -56,20 +56,27 @@ class Model:
         the input data."""
 
 
+
         if 'logger' not in globals():
             global logger
             logger = logging.getLogger('sbat')
             logger.setLevel(logging.INFO)
 
         self.conf = conf
+        self.paths = {"root": Path(__file__).parents[1]}
+
         self.gauge_ts = None
         self.gauge_meta = None
 
+        # todo: Sort these attributes into groups they logically belong to
         self.bf_output = None
         self.gauge_meta_decadal = None
         self.recession_limbs_ts = None
+        self.section_basins = None
+        self.sections_meta = None
+        self.q_diff = None
+        self.gdf_network_map = None
 
-        self.paths = {"root": Path(__file__).parents[1]}
 
         self._build_wd()
         self._read_data()
@@ -172,7 +179,8 @@ class Model:
                     ['index', 'gauge']) for gauge, subset in self.bf_output[key].groupby('gauge')]) for key in
                     monthly_keys]
                     , axis=1)
-
+            # todo: If monthly_keys is False, gauge_meta_updated will not exist. Does it makes sense to move the next
+            #  statement into the prior if-block?
             # drop duplicate columns
             gauge_meta_updated = gauge_meta_updated.loc[:, ~gauge_meta_updated.columns.duplicated()].reset_index().drop(columns='index')
 
@@ -244,6 +252,10 @@ class Model:
                                          decadal_stats=False)
                 gauge_meta_updated = pd.concat([gauge_meta_updated, output])
             # the first column is the updated gauge_meta
+            # todo: Here self.gauge_meta gets overwritten. Is this intended/required? In total I find 12 references for
+            #  this attribute, it gets changed a lot. This could have negative side effects. I think it would be more
+            #  straightforward to change it at a more central location and maybe create temporary variables instead.
+            #  We may need to check how this object change during the whole runtime.
             self.gauge_meta = gauge_meta_updated.groupby('gauge').first()
 
     # %%the function to call the resession curves
