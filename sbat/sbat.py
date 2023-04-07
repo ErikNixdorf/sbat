@@ -18,7 +18,7 @@ from recession.aquifer_parameter import get_hydrogeo_properties
 from waterbalance.waterbalance import get_section_water_balance, map_time_dependent_cols_to_gdf
 
 class Model:
-    def __init__(self, conf: dict = None):
+    def __init__(self, conf: dict):
         """Initialization method for a new Model instance. Reads configuration, builds the working directory and reads
         the input data.
 
