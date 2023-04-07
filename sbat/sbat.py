@@ -125,17 +125,17 @@ class Model:
             logging.info('Remove time steps which contain a nan entry')
             self.gauge_ts.dropna(axis=0, how='any').dropna(axis=1, how='any')
 
-        if len(self.gauge_ts) == 0:
-            # todo: Log this eror
-            raise ValueError('No data left after drop NA Values, consider to define dropna_axis as None or changing '
+        try:
+            self.gauge_ts.iloc[0]
+        except IndexError:
+            logger.exception('No data left after drop NA Values, consider to define dropna_axis as None or changing '
                              'start date and end_date')
 
         self.gauge_meta = pd.read_csv(self.paths["gauge_meta_path"], index_col=0)
 
         if self.conf['data_cleaning']['valid_datapairs_only']:
             # reduce the metadata to the gauges for which we have actual time data
-            # todo: simplify to self.gauge_meta.loc[self.gauge_ts.columns]
-            self.gauge_meta = self.gauge_meta.iloc[self.gauge_meta.index.isin(self.gauge_ts.columns), :]
+            self.gauge_meta = self.gauge_meta.loc[self.gauge_ts.columns]
             # reduce the datasets to all which have metadata
             self.gauge_ts = self.gauge_ts[self.gauge_meta.index.to_list()]
             logger.info(f'{self.gauge_ts.shape[1]} gauges with valid meta data')
