@@ -2,11 +2,11 @@
 This is the central Module which is a class from which the different functions are called
 """
 
-from datetime import datetime
 import logging
 from pathlib import Path
 import sys
 import yaml
+
 import numpy as np
 import geopandas as gpd
 import pandas as pd
@@ -23,7 +23,7 @@ class Model:
         the input data.
 
         Args:
-
+            conf: Dictionary that contains the configurations from sbat.yaml
         """
 
 
@@ -47,7 +47,7 @@ class Model:
         self.sections_meta = None
         self.q_diff = None
         self.gdf_network_map = None
-
+        self.master_recession_curves = None
 
         self._build_wd()
         self._read_data()
@@ -522,7 +522,11 @@ class Model:
 
 
 def main(config_file=None, output=True):
-    configuration = Model.read_config(Path(Path(__file__).parents[1], "sbat.yml"))
+    if config_file:
+        configuration = Model.read_config(config_file)
+    else:
+        configuration = Model.read_config(Path(Path(__file__).parents[1], "sbat.yml"))
+
     sbat = Model(configuration)
     # get discharge data
 
