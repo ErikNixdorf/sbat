@@ -17,39 +17,6 @@ from recession.recession import analyse_recession_curves, plot_recession_results
 from recession.aquifer_parameter import get_hydrogeo_properties
 from waterbalance.waterbalance import get_section_water_balance, map_time_dependent_cols_to_gdf
 
-
-def iterdict(d):
-    """
-    Recursively iterates over a dictionary and converts any strings
-    that can be converted to floats to float, and any lists that can
-    be converted to floats to lists of floats.
-
-    Args:
-        d (dict): A dictionary to be iterated over.
-
-    Returns:
-        dict: The input dictionary with any applicable conversions made.
-    """
-    for k, v in d.items():
-        if isinstance(v, dict):
-            iterdict(v)
-        elif isinstance(v, list):
-            try:
-                d[k] = list(map(float, v))
-            except ValueError:
-                pass
-        elif isinstance(v, str):
-            try:
-                d[k] = float(v)
-            except ValueError:
-                pass
-    return d
-
-
-# small function to convert to datetime
-dateparse = lambda x: datetime.strptime(x, '%Y-%m-%d')
-
-
 class Model:
     def __init__(self, conf: dict = None):
         """Initialization method for a new Model instance. Reads configuration, builds the working directory and reads
@@ -264,11 +231,7 @@ class Model:
 
     # %%the function to call the resession curves
     def get_recession_curve(self):
-        """Compute the recession curve for each gauge and decade.
-        """
-
-        def add_series_id(df, series_id):
-            return df.assign(series_id=series_id)
+        """Compute the recession curve for each gauge and decade."""
 
         logger.info('Started Recession Curve Analysis')
 
