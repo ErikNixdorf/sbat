@@ -18,7 +18,7 @@ from recession.aquifer_parameter import get_hydrogeo_properties
 from waterbalance.waterbalance import get_section_water_balance, map_time_dependent_cols_to_gdf
 
 class Model:
-    def __init__(self, conf: dict):
+    def __init__(self, conf: dict, output: bool = True):
         """Initialization method for a new Model instance. Reads configuration, builds the working directory and reads
         the input data.
 
@@ -35,6 +35,7 @@ class Model:
 
         self.config = conf
         self.paths: dict = {"root": Path(__file__).parents[1]}
+        self.output = output
 
         self.gauge_ts = None
         self.gauge_meta = None
@@ -65,9 +66,11 @@ class Model:
 
         self.paths["input_dir"] = Path(self.paths["root"],
                                        self.config['file_io']['input']['data_dir'])
-        self.paths["output_dir"] = Path(self.paths["root"],
-                                        self.config['file_io']['output']['output_directory'])
-        self.paths["output_dir"].mkdir(parents=True, exist_ok=True)
+        if self.output:
+            self.paths["output_dir"] = Path(self.paths["root"],
+                                            self.config['file_io']['output']['output_directory'])
+            self.paths["output_dir"].mkdir(parents=True, exist_ok=True)
+            Path(self.paths["output_dir"], 'data').mkdir(parents=True, exist_ok=True)
 
         self.paths["gauge_ts_path"] = Path(self.paths["input_dir"],
                                            self.config['file_io']['input']['gauges']['gauge_time_series'])
@@ -517,8 +520,12 @@ class Model:
                                              self.gauge_meta.reset_index().drop(columns='basin_area')
                                              ],
                                             axis=1)
-
-
+        if self.output:
+            self.sections_meta.to_csv(Path(self.paths["output_dir"], 'data', 'section_meta.csv'))
+            self.q_diff.to_csv(Path(self.paths["output_dir"], 'data', 'q_diff.csv'))
+            self.gdf_network_map.to_file(Path(self.paths["output_dir"], 'data', 'section_streamlines.gpkg'),
+                                         driver='GPKG')
+            self.section_basins.to_file(Path(self.paths["output_dir"], 'data', 'section_subbasins.gpkg'), driver='GPKG')
 
 
 def main(config_file=None, output=True):
@@ -527,7 +534,7 @@ def main(config_file=None, output=True):
     else:
         configuration = Model.read_config(Path(Path(__file__).parents[1], "sbat.yml"))
 
-    sbat = Model(configuration)
+    sbat = Model(configuration, output)
     # get discharge data
 
     sbat.get_discharge_stats()
@@ -540,14 +547,7 @@ def main(config_file=None, output=True):
     # water balance
     if not hasattr(sbat, 'section_meta'):
         sbat.get_water_balance()
-    # write the output
-    if output:
-        Path(sbat.paths["output_dir"], 'data').mkdir(parents=True, exist_ok=True)
-        sbat.sections_meta.to_csv(Path(sbat.paths["output_dir"], 'data', 'section_meta.csv'))
-        sbat.q_diff.to_csv(Path(sbat.paths["output_dir"], 'data', 'q_diff.csv'))
-        sbat.gdf_network_map.to_file(Path(sbat.paths["output_dir"], 'data', 'section_streamlines.gpkg'), driver='GPKG')
-        sbat.section_basins.to_file(Path(sbat.paths["output_dir"], 'data', 'section_subbasins.gpkg'), driver='GPKG')
-    
+
     logging.shutdown()
     return sbat
 
