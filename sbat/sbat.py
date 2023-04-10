@@ -361,7 +361,6 @@ class Model:
                                       )
                 metric['decade'] = decade
                 metric['gauge'] = gauge
-                metric['recession_algorithm'] = self.config['recession']['fitting']['recession_algorithm']
                 metric = metric.reset_index(drop=True).set_index(['gauge', 'decade'])
                 metrics.append(metric)
                 
