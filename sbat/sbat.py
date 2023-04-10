@@ -361,6 +361,7 @@ class Model:
                                       )
                 metric['decade'] = decade
                 metric['gauge'] = gauge
+                metric['recession_algorithm'] = self.config['recession']['fitting']['recession_algorithm']
                 metric = metric.reset_index(drop=True).set_index(['gauge', 'decade'])
                 metrics.append(metric)
                 
@@ -414,7 +415,11 @@ class Model:
         logger.info('Recession Curve Analysis Finished')
 
         # %%we infer the hydrogeological parameters if needed
-        if self.config['recession']['fitting']['infer_hydrogeological_parameters']:
+        if self.config['recession']['hydrogeo_parameter_estimation']['infer_hydrogeological_parameters']:
+            
+
+            
+            
             # decide which kind of basins we need
             if self.config['recession']['curve_data']['curve_type'] == 'waterbalance':
                 basins = self.section_basins
@@ -427,10 +432,33 @@ class Model:
             else:
                 raise ValueError('curve type can either be waterbalance or hydrograph')
             # load the rasterio data
-            gw_surface = rasterio.open(Path(self.data_path,
-                                            self.config['file_io']['input']['hydrogeology']['gw_levels']
-                                            )
-                                       )
+            try:
+                gw_surface = rasterio.open(Path(self.data_path,
+                                                self.config['file_io']['input']['hydrogeology']['gw_levels']
+                                                )
+                                           )
+            except Exception as e:
+                logger.warning(e)
+                logger.warning('As no gw data is provided, we try to enforce the simplify rorabaugh parameter estimation method')
+                gw_surface = None
+                
+                self.config['recession']['hydrogeo_parameter_estimation']['rorabaugh_simplification'] = True
+                    
+            
+            #define the conceptual model
+            if self.config['recession']['hydrogeo_parameter_estimation']['rorabaugh_simplification']:
+                if self.config['recession']['fitting']['recession_algorithm'].lower() != 'maillet':
+                    raise ValueError('Rorabaugh method requires maillet based recession (exponential model), please change set up')
+                else:
+                    conceptual_model = 'rorabaugh'
+            else:                    
+                conceptual_model=self.config['recession']['fitting'][
+                'recession_algorithm']
+            
+            logger.info(f'Hydrogeo Parameters will be infered based on the model of {conceptual_model}')
+                
+                    
+                    
 
             network_geometry = gpd.read_file(Path(self.data_path,
                                                   self.config['file_io']['input']['geospatial'][
@@ -445,16 +473,14 @@ class Model:
                                                                       'basin_id_col'],
                                                                   gw_surface=gw_surface,
                                                                   network=network_geometry,
-                                                                  conceptual_model=self.config['recession']['fitting'][
-                                                                      'recession_algorithm'])
+                                                                  conceptual_model=conceptual_model)
             else:
                 self.gauge_meta = get_hydrogeo_properties(gauge_data=self.gauge_meta,
                                                           basins=basins,
                                                           basin_id_col=self.config['waterbalance']['basin_id_col'],
                                                           gw_surface=gw_surface,
                                                           network=network_geometry,
-                                                          conceptual_model=self.config['recession']['fitting'][
-                                                              'recession_algorithm'])
+                                                          conceptual_model=conceptual_model)
 
     def get_water_balance(self, **kwargs):
         """Calculate water balance per section"""

@@ -67,7 +67,10 @@ def get_drainage_topographic_parameters(basin: gpd.GeoDataFrame,
 
     # get the height of the boundary points from the gw map
     coords = list(boundary.coords)
-    heights = [float(x) if x != gw_surface.nodata else None for x in gw_surface.sample(coords)]
+    if gw_surface is None:
+        heights = np.nan
+    else:
+        heights = [float(x) if x != gw_surface.nodata else None for x in gw_surface.sample(coords)]
 
     # generating a GeoDataFrame consisting of shapely points
     # create a GeoDataFrame of the boundary points
@@ -178,7 +181,7 @@ def infer_hydrogeo_parameters(basin_data: pd.DataFrame,
     basin_data : pandas.DataFrame
         A DataFrame containing the basin data. It must contain the columns specified in the kwargs.
     conceptual_model : str
-        The name of the conceptual model to use. Currently supported models are 'maillet' and 'boussinesq'.
+        The name of the conceptual model to use. Currently supported models are 'maillet' and 'boussinesq' and 'rorabaugh'.
     **kwargs : dict
         Additional keyword arguments required by the specified conceptual model. The required arguments
         depend on the model used. For the 'maillet' model, the following arguments are required:
@@ -246,6 +249,12 @@ def infer_hydrogeo_parameters(basin_data: pd.DataFrame,
         # porosity
         basin_data[porosity_col] = (1.115 * basin_data[kf_value_col] * basin_data[kwargs['h_m']]) / (
                 basin_data[kwargs['alpha']] * basin_data[kwargs['dist_m']] ** 2)
+    
+    elif conceptual_model == 'rorabaugh':
+        #based on https://pubs.er.usgs.gov/publication/ofr66117
+        #requires Maillet based 
+        print('ok')
+    
     else:
         raise ValueError(f"Invalid conceptual model '{conceptual_model}'")
 
