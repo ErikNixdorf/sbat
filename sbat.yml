@@ -10,7 +10,7 @@ file_io:
             gauge_time_series: gauges/gauges_q_ts.csv
 
         hydrogeology:
-            gw_levels: hydrogeology/gw_heads.tif
+            gw_levels: 
         geospatial:
             river_network: geospatial/river_network_z.gpkg
             gauge_basins: geospatial/pegeleinzugsgebiete.gpkg
@@ -52,11 +52,14 @@ recession:
         moving_average_filter_steps: 5
     fitting:
         mastercurve_algorithm: demuth
-        recession_algorithm: boussinesq
+        recession_algorithm: maillet
         minimum_limbs: 20
         maximum_reservoirs: 1
         minimum_recession_curve_length: 10
+        
+    hydrogeo_parameter_estimation:
         infer_hydrogeological_parameters: true
+        rorabaugh_simplification : true
 #water balance
 waterbalance:
     flow_type: baseflow
