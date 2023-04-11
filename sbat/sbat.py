@@ -26,16 +26,23 @@ class Model:
             conf: Dictionary that contains the configurations from sbat.yaml
         """
 
-
+        self.config = conf
+        self.paths: dict = {"root": Path(__file__).parents[1]}
+        self.output = output
 
         if 'logger' not in globals():
             global logger
             logger = logging.getLogger('sbat')
             logger.setLevel(logging.INFO)
 
-        self.config = conf
-        self.paths: dict = {"root": Path(__file__).parents[1]}
-        self.output = output
+            # define the logging output
+            fh = logging.FileHandler(Path(self.paths["root"],
+                                          self.config['file_io']['output']['output_directory'],
+                                          'sbat_log'), mode='w')
+            formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(name)s - %(message)s')
+            fh.setFormatter(formatter)
+
+            logger.addHandler(fh)
 
         self.gauge_ts = None
         self.gauge_meta = None
