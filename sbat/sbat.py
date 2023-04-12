@@ -30,20 +30,6 @@ class Model:
         self.paths: dict = {"root": Path(__file__).parents[1]}
         self.output = output
 
-        if 'logger' not in globals():
-            global logger
-            logger = logging.getLogger('sbat')
-            logger.setLevel(logging.INFO)
-
-            # define the logging output
-            fh = logging.FileHandler(Path(self.paths["root"],
-                                          self.config['file_io']['output']['output_directory'],
-                                          'sbat_log'), mode='w')
-            formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(name)s - %(message)s')
-            fh.setFormatter(formatter)
-
-            logger.addHandler(fh)
-
         self.gauge_ts = None
         self.gauge_meta = None
 
@@ -561,6 +547,14 @@ def main(config_file=None, output=True):
 
 
 if __name__ == "__main__":
+    logger = logging.getLogger('sbat')
+    logger.setLevel(logging.INFO)
+
+    # define the logging output
+    fh = logging.FileHandler(f'{Path(__file__).parents[1]}/output/sbat.log', mode='w')
+    formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(name)s - %(message)s')
+    fh.setFormatter(formatter)
+    logger.addHandler(fh)
 
     if sys.argv == 1:
         cfg_file = sys.argv.pop(1)
