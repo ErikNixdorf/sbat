@@ -17,6 +17,15 @@ from recession.recession import analyse_recession_curves, plot_recession_results
 from recession.aquifer_parameter import get_hydrogeo_properties
 from waterbalance.waterbalance import get_section_water_balance, map_time_dependent_cols_to_gdf
 
+logger = logging.getLogger('sbat')
+logger.setLevel(logging.INFO)
+
+# define the logging output
+fh = logging.FileHandler(f'{Path(__file__).parents[1]}/output/sbat.log', mode='w')
+formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(name)s - %(message)s')
+fh.setFormatter(formatter)
+logger.addHandler(fh)
+
 class Model:
     def __init__(self, conf: dict, output: bool = True):
         """Initialization method for a new Model instance. Reads configuration, builds the working directory and reads
@@ -547,14 +556,7 @@ def main(config_file=None, output=True):
 
 
 if __name__ == "__main__":
-    logger = logging.getLogger('sbat')
-    logger.setLevel(logging.INFO)
 
-    # define the logging output
-    fh = logging.FileHandler(f'{Path(__file__).parents[1]}/output/sbat.log', mode='w')
-    formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(name)s - %(message)s')
-    fh.setFormatter(formatter)
-    logger.addHandler(fh)
 
     if sys.argv == 1:
         cfg_file = sys.argv.pop(1)
