@@ -122,6 +122,9 @@ class Model:
                                     index_col=0,
                                     parse_dates=['date'],
                                     date_parser=dateparse)
+        
+        # all columns to lower case
+        self.gauge_ts.columns = list(map(lambda x:x.lower(),self.gauge_ts.columns))
 
         if self.config['data_cleaning']['test_mode']:
             logger.info('test case, focus on three gauges only')
@@ -154,6 +157,9 @@ class Model:
                                self.config['file_io']['input']['gauges']['gauge_meta'],
                                )
         self.gauge_meta = pd.read_csv(gauge_meta_path, index_col=0)
+        
+        #meta data also to lower case
+        self.gauge_meta.index = list(map(lambda x:x.lower(),self.gauge_meta.index))
 
         if self.config['data_cleaning']['valid_datapairs_only']:
             # reduce the metadata to the gauges for which we have actual time data
@@ -491,11 +497,18 @@ class Model:
         network_geometry = gpd.read_file(Path(self.data_path,
                                               self.config['file_io']['input']['geospatial']['river_network'])
                                          )
-
-        network_connections = pd.read_csv(Path(self.data_path,
-                                               self.config['file_io']['input']['geospatial'][
-                                                   'branches_topology'])
-                                          )
+        if self.config['file_io']['input']['geospatial']['branches_topology'] == None:
+            network_connections = pd.DataFrame(columns=['index',
+                                                        'stream',
+                                                        'main_stream',
+                                                        'type',
+                                                        'distance_junction_from_receiving_water_mouth'
+                                                        ])
+        else:
+            network_connections = pd.read_csv(Path(self.data_path,
+                                                   self.config['file_io']['input']['geospatial'][
+                                                       'branches_topology'])
+                                              )
 
         gauge_basins = gpd.read_file(Path(self.data_path,
                                           self.config['file_io']['input']['geospatial']['gauge_basins'])

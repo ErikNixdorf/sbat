@@ -51,14 +51,13 @@ def get_drainage_topographic_parameters(basin: gpd.GeoDataFrame,
                             The parameters include: 
                             - basin_id: the ID of the drainage basin
                             - area: the area of the drainage basin
-                            - L_represent: the representative length of the drainage basin
                             - h_m: the mean height above the river network for the boundary points of the drainage basin
                             - dist_m: the mean distance of the boundary points to the river network
                             - network_length: the total length of the river network within the drainage basin
     """
     basin = gpd.GeoDataFrame(data={'basin_id': basin.T[basin_id_col],
-                                   'area': basin.T.area,
-                                   'L_represent': basin.T['L_represent']}, index=[int(basin.T.value)],
+                                   'area': basin.T.area
+                                   }, index=[int(basin.name)],
                              geometry=[basin.T.geometry], crs=river_network.crs)
     basin_name = basin['basin_id'].iloc[0]
     aquifer_logger.info(f'Check basin {basin_name}')

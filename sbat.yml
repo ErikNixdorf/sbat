@@ -4,17 +4,17 @@
 #file_io describes the location of all input datasets as well as parameter specifications
 file_io:
     input:
-        data_dir: data/ # all data is located relativ to this path
+        data_dir: data/examples # all data is located relativ to this path
         gauges:
-            gauge_meta: gauges/gauges_metadata.csv
-            gauge_time_series: gauges/gauges_q_ts.csv
+            gauge_meta: ex1_gauge_meta.csv
+            gauge_time_series: ex1_gauge_ts.csv
 
         hydrogeology:
             gw_levels: 
         geospatial:
-            river_network: geospatial/river_network_z.gpkg
-            gauge_basins: geospatial/pegeleinzugsgebiete.gpkg
-            branches_topology: gauges/branches_topology.csv
+            river_network: ex1_network.gpkg
+            gauge_basins: ex1_basin.gpkg
+            branches_topology: 
     output:
         output_directory: output/
         plot_results: false
