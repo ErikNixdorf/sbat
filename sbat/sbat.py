@@ -497,6 +497,9 @@ class Model:
         network_geometry = gpd.read_file(Path(self.data_path,
                                               self.config['file_io']['input']['geospatial']['river_network'])
                                          )
+        
+        network_geometry['reach_name'] = network_geometry['reach_name'].apply(lambda x: x.lower())
+        
         if self.config['file_io']['input']['geospatial']['branches_topology'] == None:
             network_connections = pd.DataFrame(columns=['index',
                                                         'stream',
@@ -509,10 +512,16 @@ class Model:
                                                    self.config['file_io']['input']['geospatial'][
                                                        'branches_topology'])
                                               )
+            
+        #also write to lower case
+        for col in ['stream','main_stream']:
+            network_connections[col] = network_connections[col].apply(lambda x: x.lower())
 
         gauge_basins = gpd.read_file(Path(self.data_path,
                                           self.config['file_io']['input']['geospatial']['gauge_basins'])
                                      )
+        #rewrite to lower case
+        gauge_basins[self.config['waterbalance']['basin_id_col']] = gauge_basins[self.config['waterbalance']['basin_id_col']].apply(lambda x: x.lower())
         # check whether flow type is given explicitely
 
         if 'flow_type' in kwargs:
