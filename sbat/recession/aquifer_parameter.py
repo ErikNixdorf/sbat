@@ -56,7 +56,7 @@ def get_drainage_topographic_parameters(basin: gpd.GeoDataFrame,
                             - network_length: the total length of the river network within the drainage basin
     """
     basin = gpd.GeoDataFrame(data={'basin_id': basin.T[basin_id_col],
-                                   'area': basin.T.area
+                                   'area': basin.geometry.area
                                    }, index=[int(basin.name)],
                              geometry=[basin.T.geometry], crs=river_network.crs)
     basin_name = basin['basin_id'].iloc[0]
@@ -230,6 +230,10 @@ def infer_hydrogeo_parameters(basin_data: pd.DataFrame,
     transmissivity_col = f'transmissivity_{conceptual_model}'    
     kf_value_col = f'kf_value_{conceptual_model}'
     diffusivity_col = f'diffusivity_{conceptual_model}'
+    
+    #compute n0 from daily to values per SI Unit
+    aquifer_logger.info(f'We assume that the recession constant in column {kwargs["alpha"]} is per day and compute to seconds')
+    basin_data[kwargs['alpha']] = basin_data[kwargs['alpha']]/(24*3600)
 
     if conceptual_model == 'maillet':
         # based on doi:10.1016/S0022-1694(02)00418-3
@@ -256,8 +260,8 @@ def infer_hydrogeo_parameters(basin_data: pd.DataFrame,
         #based on https://pubs.er.usgs.gov/publication/ofr66117
         aquifer_logger.warning('The rorabaugh method assumes an unconfined aquifer fully penetrating the river')
         aquifer_logger.warning('The Rorabaugh method is purely empirical based on findings in US catchments')
-        
-        basin_data[diffusivity_col] = basin_data['dist_m']**2 * 0.933 / basin_data['n0_rec']
+        # see here https://ponce.sdsu.edu/regional_aquifer_parameters.html
+        basin_data[diffusivity_col] = (4/np.pi**2)*basin_data[kwargs['alpha']]*basin_data[kwargs['dist_m']]**2
     
     else:
         raise ValueError(f"Invalid conceptual model '{conceptual_model}'")
@@ -295,6 +299,7 @@ def get_hydrogeo_properties(
                                                         river_network=network), axis=1)
     # map to gauge data
     gauge_data = gauge_data.apply(lambda x: map_topo_parameters(x, basins_out), axis=1)
+    
     # get hydrogeological parameters
     gauge_data = infer_hydrogeo_parameters(basin_data=gauge_data,
                                            conceptual_model=conceptual_model,

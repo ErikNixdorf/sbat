@@ -469,7 +469,8 @@ class Model:
                                                   self.config['file_io']['input']['geospatial'][
                                                       'river_network'])
                                              )
-
+            #write lower case
+            network_geometry['reach_name'] = network_geometry['reach_name'].apply(lambda x: x.lower())
             # get the properties
             if self.config['time']['compute_each_decade']:
                 self.gauge_meta_decadal = get_hydrogeo_properties(gauge_data=self.gauge_meta_decadal,

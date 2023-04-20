@@ -774,7 +774,7 @@ def get_section_basins(basins: gpd.GeoDataFrame,
     # overwrite some layers
     # assuming a representative Circle, we assume the radius of this circle is the mean length towards the stream
     section_basins['basin_area'] = section_basins.geometry.area
-    section_basins['L_represent'] = np.sqrt(section_basins['area'] / np.pi)
+    section_basins['L_represent'] = np.sqrt(section_basins['basin_area'] / np.pi)
 
     return section_basins
 
