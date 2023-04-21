@@ -31,6 +31,7 @@ time:
 
 #now we provide the parameters for each module
 baseflow:
+    activate: true
     methods:
         - UKIH
     compute_baseflow_index: true
@@ -39,16 +40,19 @@ baseflow:
 
 #the discharge
 discharge:
+    activate: true
     col_name: q_daily
     compute_monthly: true
 
 #the recession
 recession:
+    activate: true
     curve_data:
         flow_type: baseflow # flow type can be discharge or baseflow
         #curve type can be either hydrograph or waterbalance
         curve_type: hydrograph
         minimum_limbs: 20
+        split_at_inflection: true # decides whether the inflection points will be used to split recession limbs
         moving_average_filter_steps: 5
     fitting:
         mastercurve_algorithm: demuth
@@ -58,10 +62,11 @@ recession:
         minimum_recession_curve_length: 10
         
     hydrogeo_parameter_estimation:
-        infer_hydrogeological_parameters: true
+        activate: false
         rorabaugh_simplification : true
 #water balance
 waterbalance:
+    activate: true
     flow_type: baseflow
     confidence_acceptance_level: 0.05
     time_series_analysis_option: daily
