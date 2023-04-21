@@ -171,6 +171,7 @@ class Model:
         # if we want to compute for each decade we do this here
         if self.config['time']['compute_each_decade']:
             logger.info('Statistics for each gauge will be computed for each decade')
+            
             self.gauge_meta_decadal = pd.DataFrame()
 
     # function which controls the baseflow module
@@ -299,15 +300,15 @@ class Model:
                     # wide to long
                     Q = Q.pivot(index='date', columns='gauge', values='value').copy()
 
-            elif self.config['recession']['curve_data']['curve_type'] == 'discharge':
+            elif self.config['recession']['curve_data']['flow_type'] == 'discharge':
                 Q = self.gauge_ts
 
 
         elif self.config['recession']['curve_data']['curve_type'] == 'waterbalance':
 
-            logger.info('Recession Analysis is conducted using the waterbalance data')
+            logger.warning('Recession Analysis is conducted using the waterbalance data, which is experimental')
             # in the case of waterbalance we can not compute a master recession curve due to possibly negative values
-            logger.info('mrc_curve not defined for curve_type is waterbalance')
+            logger.warning('mrc_curve not defined for curve_type is waterbalance')
             self.config['recession']['fitting']['mastercurve_algorithm'] = None
             # checking whether the water_balance exist and if the same flow type has been used
             if not hasattr(self, 'sections_meta') or not self.config['recession']['curve_data']['flow_type'] == \
@@ -432,6 +433,9 @@ class Model:
                 basins = gpd.read_file(Path(self.data_path,
                                             self.config['file_io']['input']['geospatial']['gauge_basins'])
                                        )
+                
+                basins[self.config['waterbalance']['basin_id_col']] = basins[self.config['waterbalance']['basin_id_col']].apply(lambda x: x.lower())
+                
                 # we reduce the basins to the gauges for which we have meta information
                 basins = basins.loc[basins[self.config['waterbalance']['basin_id_col']].isin(self.gauge_meta.index)]
             else:
@@ -521,6 +525,7 @@ class Model:
         gauge_basins = gpd.read_file(Path(self.data_path,
                                           self.config['file_io']['input']['geospatial']['gauge_basins'])
                                      )
+        gauge_basins[self.config['waterbalance']['basin_id_col']] = gauge_basins[self.config['waterbalance']['basin_id_col']].apply(lambda x: x.lower())
         #rewrite to lower case
         gauge_basins[self.config['waterbalance']['basin_id_col']] = gauge_basins[self.config['waterbalance']['basin_id_col']].apply(lambda x: x.lower())
         # check whether flow type is given explicitely
