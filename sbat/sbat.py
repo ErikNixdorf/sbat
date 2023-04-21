@@ -358,7 +358,11 @@ class Model:
                                     'maximum_reservoirs'],
                                 minimum_limbs=
                                 self.config['recession']['fitting'][
-                                    'minimum_limbs']
+                                    'minimum_limbs'],
+                                inflection_split=
+                                self.config['recession'][
+                                    'curve_data'][
+                                    'split_at_inflection'],
                                 )
                 # if data is None we just continue
                 if Q_rc is None:

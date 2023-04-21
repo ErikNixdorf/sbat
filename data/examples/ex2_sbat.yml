@@ -52,6 +52,7 @@ recession:
         #curve type can be either hydrograph or waterbalance
         curve_type: hydrograph
         minimum_limbs: 20
+        split_at_inflection: true # decides whether the inflection points will be used to split recession limbs
         moving_average_filter_steps: 5
     fitting:
         mastercurve_algorithm: demuth
