@@ -53,22 +53,36 @@ def map_time_dependent_cols_to_gdf(
         The expanded geodataframe with time-dependent columns mapped onto it.
     """
     
-    #check which row of geodataframe has to be expanded how often
-    copy_dict=time_dep_df.groupby(time_dep_df_index_col).size().to_dict()
+    #check which row of geodataframe has to be expanded how often and for which decades
+    copy_dict=dict()
+    for gauge,df_gauge in time_dep_df.groupby(time_dep_df_index_col):
+        copy_dict.update({gauge:list(df_gauge.reset_index()[time_dep_df_time_col].unique())})
+        
+    #copy_dict=time_dep_df.groupby(time_dep_df_index_col).size().to_dict()
     #set_index of the geodataframe
     geodf=geodf.set_index(geodf_index_col)
+    
 
     # create expanded gdf 
-    expanded_df=pd.DataFrame()
+    list_expanded_df=list()
     #loop trough original gdf in order to expand the rows
     for _,row in geodf.iterrows():
-        row_extended = [row]*copy_dict[row.name]
-        expanded_df = pd.concat([expanded_df,
-                                 pd.DataFrame(row_extended)
-                                 ]
-                                )
+        #extend the row to a dataframe
+        df_row_extend = pd.DataFrame([row]*len(copy_dict[row.name]))
+        #add the decaded
+        df_row_extend[time_dep_df_time_col] = copy_dict[row.name]
+        
+        list_expanded_df.extend([df_row_extend])
+        
+    
+    #merge the expanded geometrical data
+    expanded_df = pd.concat(list_expanded_df)
+    haha
+        
     #merge with the decadal dataset
     expanded_df.index.name=geodf_index_col
+    
+    
     df_merged = pd.concat([expanded_df.reset_index(),
                            time_dep_df.reset_index()
                            ],
@@ -493,7 +507,7 @@ def calculate_network_balance(
     # remove all balances below confidence interval
     low_confidence_mask = abs(sections_meta['balance_confidence']) < confidence_acceptance_level
     sections_meta.loc[low_confidence_mask, 'balance'] = np.nan
-    q_diff = sections_meta.pivot(index='Date', columns='downstream_point', values='balance')
+    q_diff = sections_meta.drop_duplicates().pivot(index='Date', columns='downstream_point', values='balance')
 
     if get_decadal_stats:
         sections_meta['decade']=sections_meta['Date'].apply(lambda x: x[:3]+'5')
@@ -754,7 +768,7 @@ def get_section_basins(basins: gpd.GeoDataFrame,
             # if Multipolygon is result of clipping we reduce to largest polygon
 
             if not section_basin.empty and isinstance(section_basin.geometry.iloc[0], MultiPolygon):
-                section_basin.geometry = [max(section_basin.iloc[0].geometry, key=lambda a: a.area)]
+                section_basin.geometry = [max(section_basin.iloc[0].geometry.geoms, key=lambda a: a.area)]
 
             # get the next distributary gauge and add their basin
             if not distributaries_up.empty:
