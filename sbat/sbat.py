@@ -103,6 +103,10 @@ class Model:
         # get the output_directory
         self.output_dir = Path(self.model_path, self.config['file_io']['output']['output_directory'])
         Path(self.output_dir).mkdir(parents=True, exist_ok=True)
+        #data dir
+        Path(self.output_dir, 'data').mkdir(parents=True, exist_ok=True)
+        #figur dir
+        Path(self.output_dir, 'figures').mkdir(parents=True, exist_ok=True)
         
         #define the logging output
         fh = logging.FileHandler(Path(self.output_dir,'sbat.log'), mode='w')
@@ -122,6 +126,9 @@ class Model:
                                     index_col=0,
                                     parse_dates=['date'],
                                     date_parser=dateparse)
+        
+        # all columns to lower case
+        self.gauge_ts.columns = list(map(lambda x:x.lower(),self.gauge_ts.columns))
 
         if self.config['data_cleaning']['test_mode']:
             logger.info('test case, focus on three gauges only')
@@ -154,6 +161,9 @@ class Model:
                                self.config['file_io']['input']['gauges']['gauge_meta'],
                                )
         self.gauge_meta = pd.read_csv(gauge_meta_path, index_col=0)
+        
+        #meta data also to lower case
+        self.gauge_meta.index = list(map(lambda x:x.lower(),self.gauge_meta.index))
 
         if self.config['data_cleaning']['valid_datapairs_only']:
             # reduce the metadata to the gauges for which we have actual time data
@@ -165,6 +175,7 @@ class Model:
         # if we want to compute for each decade we do this here
         if self.config['time']['compute_each_decade']:
             logger.info('Statistics for each gauge will be computed for each decade')
+            
             self.gauge_meta_decadal = pd.DataFrame()
 
     # function which controls the baseflow module
@@ -293,15 +304,15 @@ class Model:
                     # wide to long
                     Q = Q.pivot(index='date', columns='gauge', values='value').copy()
 
-            elif self.config['recession']['curve_data']['curve_type'] == 'discharge':
+            elif self.config['recession']['curve_data']['flow_type'] == 'discharge':
                 Q = self.gauge_ts
 
 
         elif self.config['recession']['curve_data']['curve_type'] == 'waterbalance':
 
-            logger.info('Recession Analysis is conducted using the waterbalance data')
+            logger.warning('Recession Analysis is conducted using the waterbalance data, which is experimental')
             # in the case of waterbalance we can not compute a master recession curve due to possibly negative values
-            logger.info('mrc_curve not defined for curve_type is waterbalance')
+            logger.warning('mrc_curve not defined for curve_type is waterbalance')
             self.config['recession']['fitting']['mastercurve_algorithm'] = None
             # checking whether the water_balance exist and if the same flow type has been used
             if not hasattr(self, 'sections_meta') or not self.config['recession']['curve_data']['flow_type'] == \
@@ -347,7 +358,11 @@ class Model:
                                     'maximum_reservoirs'],
                                 minimum_limbs=
                                 self.config['recession']['fitting'][
-                                    'minimum_limbs']
+                                    'minimum_limbs'],
+                                inflection_split=
+                                self.config['recession'][
+                                    'curve_data'][
+                                    'split_at_inflection'],
                                 )
                 # if data is None we just continue
                 if Q_rc is None:
@@ -414,7 +429,7 @@ class Model:
         logger.info('Recession Curve Analysis Finished')
 
         # %%we infer the hydrogeological parameters if needed
-        if self.config['recession']['hydrogeo_parameter_estimation']['infer_hydrogeological_parameters']:
+        if self.config['recession']['hydrogeo_parameter_estimation']['activate']:
             
 
             
@@ -426,6 +441,9 @@ class Model:
                 basins = gpd.read_file(Path(self.data_path,
                                             self.config['file_io']['input']['geospatial']['gauge_basins'])
                                        )
+                
+                basins[self.config['waterbalance']['basin_id_col']] = basins[self.config['waterbalance']['basin_id_col']].apply(lambda x: x.lower())
+                
                 # we reduce the basins to the gauges for which we have meta information
                 basins = basins.loc[basins[self.config['waterbalance']['basin_id_col']].isin(self.gauge_meta.index)]
             else:
@@ -463,7 +481,8 @@ class Model:
                                                   self.config['file_io']['input']['geospatial'][
                                                       'river_network'])
                                              )
-
+            #write lower case
+            network_geometry['reach_name'] = network_geometry['reach_name'].apply(lambda x: x.lower())
             # get the properties
             if self.config['time']['compute_each_decade']:
                 self.gauge_meta_decadal = get_hydrogeo_properties(gauge_data=self.gauge_meta_decadal,
@@ -491,15 +510,32 @@ class Model:
         network_geometry = gpd.read_file(Path(self.data_path,
                                               self.config['file_io']['input']['geospatial']['river_network'])
                                          )
-
-        network_connections = pd.read_csv(Path(self.data_path,
-                                               self.config['file_io']['input']['geospatial'][
-                                                   'branches_topology'])
-                                          )
+        
+        network_geometry['reach_name'] = network_geometry['reach_name'].apply(lambda x: x.lower())
+        
+        if self.config['file_io']['input']['geospatial']['branches_topology'] == None:
+            network_connections = pd.DataFrame(columns=['index',
+                                                        'stream',
+                                                        'main_stream',
+                                                        'type',
+                                                        'distance_junction_from_receiving_water_mouth'
+                                                        ])
+        else:
+            network_connections = pd.read_csv(Path(self.data_path,
+                                                   self.config['file_io']['input']['geospatial'][
+                                                       'branches_topology'])
+                                              )
+            
+        #also write to lower case
+        for col in ['stream','main_stream']:
+            network_connections[col] = network_connections[col].apply(lambda x: x.lower())
 
         gauge_basins = gpd.read_file(Path(self.data_path,
                                           self.config['file_io']['input']['geospatial']['gauge_basins'])
                                      )
+        gauge_basins[self.config['waterbalance']['basin_id_col']] = gauge_basins[self.config['waterbalance']['basin_id_col']].apply(lambda x: x.lower())
+        #rewrite to lower case
+        gauge_basins[self.config['waterbalance']['basin_id_col']] = gauge_basins[self.config['waterbalance']['basin_id_col']].apply(lambda x: x.lower())
         # check whether flow type is given explicitely
 
         if 'flow_type' in kwargs:
@@ -555,13 +591,14 @@ class Model:
             self.gauge_meta_decadal.index.names=('gauge','decade')
 
             # map the data from the recession analysis
+            logger.info('Map statistics on stream network geodata')
             self.gdf_network_map=map_time_dependent_cols_to_gdf(self.gdf_network_map,
                                                                 self.gauge_meta_decadal,
                                                                 geodf_index_col='downstream_point',
                                                                 time_dep_df_index_col ='gauge',
                                                                 time_dep_df_time_col = 'decade',
                                                                 )
-            
+            logger.info('Map statistics on subbasin geodata')
             self.section_basins=map_time_dependent_cols_to_gdf(self.section_basins, 
                                                                self.gauge_meta_decadal.drop(columns='basin_area'),
                                                                geodf_index_col='basin',
@@ -593,25 +630,41 @@ class Model:
 
 def main(config_file=None, output=True):
     sbat = Model(config_file_path=config_file)
+    
+    
     # get discharge data
-
-    sbat.get_discharge_stats()
-
-    # get baseflow
-    sbat.get_baseflow()
-    # compute the master recession curve
-
-    sbat.get_recession_curve()
+    logger.info(f'discharge statistics activation is set to {sbat.config["discharge"]["activate"]}')
+    if sbat.config['discharge']['activate']:
+        sbat.get_discharge_stats()
+        
+    
+    # get baseflow        
+    logger.info(f'baseflow computation activation is set to {sbat.config["baseflow"]["activate"]}')
+    if sbat.config['baseflow']['activate']:
+        sbat.get_baseflow()
+        
+    # do the recession analysis
+    logger.info(f'recession computation activation is set to {sbat.config["recession"]["activate"]}')
+    if sbat.config['recession']['activate']:
+        sbat.get_recession_curve()
+        
+    
     # water balance
-    if not hasattr(sbat, 'section_meta'):
+    logger.info(f'water balance computation activation is set to {sbat.config["recession"]["activate"]}')
+    if not hasattr(sbat, 'section_meta') and sbat.config['waterbalance']['activate'] :
         sbat.get_water_balance()
-    # write the output
-    if output:
-        Path(sbat.output_dir, 'data').mkdir(parents=True, exist_ok=True)
-        sbat.sections_meta.to_csv(Path(sbat.output_dir, 'data', 'section_meta.csv'))
-        sbat.q_diff.to_csv(Path(sbat.output_dir, 'data', 'q_diff.csv'))
-        sbat.gdf_network_map.to_file(Path(sbat.output_dir, 'data', 'section_streamlines.gpkg'), driver='GPKG')
-        sbat.section_basins.to_file(Path(sbat.output_dir, 'data', 'section_subbasins.gpkg'), driver='GPKG')
+        if output:            
+            sbat.sections_meta.to_csv(Path(sbat.output_dir, 'data', 'section_meta.csv'))
+            sbat.gdf_network_map.to_file(Path(sbat.output_dir, 'data', 'section_streamlines.gpkg'), driver='GPKG')
+            sbat.section_basins.to_file(Path(sbat.output_dir, 'data', 'section_subbasins.gpkg'), driver='GPKG')
+            sbat.q_diff.to_csv(Path(sbat.output_dir, 'data', 'q_diff.csv'))
+    else:
+        if output:
+            sbat.gauge_meta.to_csv(Path(sbat.output_dir, 'data', 'section_meta.csv'))
+        
+        
+        
+       
     
     logging.shutdown()
     return sbat

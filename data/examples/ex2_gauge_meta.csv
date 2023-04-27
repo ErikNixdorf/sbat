@@ -1,0 +1,2 @@
+gauge,gauge_id,bundesland,stream,receiving_water,distance_to_mouth,northing,easting,pegelnullpunkt_m,height_system,timeseries_available,basin_area,drain_length,stream_length
+ahlequelle,0,by,ahle,schwuelme,0.1,5745516.61,121154.1,,,x,,,
