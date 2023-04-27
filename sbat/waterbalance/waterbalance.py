@@ -53,6 +53,16 @@ def map_time_dependent_cols_to_gdf(
         The expanded geodataframe with time-dependent columns mapped onto it.
     """
     
+    #very first we check whether there is no geometry for a gauge
+    no_geo_gauges = list(set(time_dep_df.reset_index()[time_dep_df_index_col].tolist())-set(geodf[geodf_index_col]))
+    for no_geo_gauge in no_geo_gauges:
+        waterbalance_logger.warning(f'No geometry for gauge {no_geo_gauge} provided')
+    
+    #after warning remove from dataset
+    time_dep_df=time_dep_df.loc[~time_dep_df.reset_index()[time_dep_df_index_col].isin(no_geo_gauges).values,:]
+    
+    
+    
     #check which row of geodataframe has to be expanded how often and for which decades
     copy_dict=dict()
     for gauge,df_gauge in time_dep_df.groupby(time_dep_df_index_col):
@@ -77,17 +87,20 @@ def map_time_dependent_cols_to_gdf(
     
     #merge the expanded geometrical data
     expanded_df = pd.concat(list_expanded_df)
-    haha
-        
-    #merge with the decadal dataset
-    expanded_df.index.name=geodf_index_col
+    expanded_df.index.name=time_dep_df_index_col
+    #we make a multi_index in order to merge it properly with the time series
+    expanded_df=expanded_df.reset_index().set_index([time_dep_df_index_col,time_dep_df_time_col])
     
-    
-    df_merged = pd.concat([expanded_df.reset_index(),
-                           time_dep_df.reset_index()
+    #merge with the time dependend statistics
+    df_merged = pd.concat([expanded_df,
+                           time_dep_df,
                            ],
                           axis=1
                           )
+    
+    #reset the index in order to save it as a geodataframe
+    df_merged = df_merged.reset_index()
+    
     # we clean the data
     df_merged = df_merged.loc[~df_merged[time_dep_df_time_col].isna(),:]
     
@@ -191,6 +204,7 @@ def generate_upstream_network(
         ]
 
     for i, gauge in gauge_meta.iterrows():
+        
         # first we create a hexadecimal string
         gauge_connection_dict = dict()
 
@@ -264,60 +278,66 @@ def generate_upstream_network(
                                     distributary_connections["main_stream"] == branch["stream"], :
                                     ]
 
-                # calculate the most downstream gauge of the tributary
+                #%% calculate the most downstream gauge of the tributary                
                 branch_gauges = gauge_meta[gauge_meta["stream"] == branch["stream"]]
-                if len(branch_gauges) == 0:
-                    logging.info(f'No Gauge at tributary {branch["stream"]}')
-                    continue
-                # take the one closest to the river mouth
-                if branch_type == "tributaries_up":
-                    branch_gauge = branch_gauges.loc[
-                                   branch_gauges["distance_to_mouth"].idxmin(), :
-                                   ]
-                elif branch_type == "distributaries_up":
-                    branch_gauge = branch_gauges.loc[
-                                   branch_gauges["distance_to_mouth"].idxmax(), :
-                                   ]
+                
+                # if there is a gauge at the tributary, we check its relation to the subdistributaries
+                if len(branch_gauges) > 0:
+                    logging.info(f'There is a gauge at tributary {branch["stream"]}')
 
-                # calculate whether there is an inflow inbetween:
-                if branch_type == "tributaries_up":
-                    subtributaries = subtributaries[
-                        (
-                                subtributaries[
-                                    "distance_junction_from_receiving_water_mouth"
-                                ]
-                                - branch_gauge["distance_to_mouth"]
-                        )
-                        < 0
-                        ]
-                    subdistributaries = subdistributaries[
-                        (
-                                subdistributaries[
-                                    "distance_junction_from_receiving_water_mouth"
-                                ]
-                                - branch_gauge["distance_to_mouth"]
-                        )
-                        < 0
-                        ]
-                elif branch_type == "distributaries_up":
-                    subtributaries = subtributaries[
-                        (
-                                subtributaries[
-                                    "distance_junction_from_receiving_water_mouth"
-                                ]
-                                - branch_gauge["distance_to_mouth"]
-                        )
-                        > 0
-                        ]
-                    subdistributaries = subdistributaries[
-                        (
-                                subdistributaries[
-                                    "distance_junction_from_receiving_water_mouth"
-                                ]
-                                - branch_gauge["distance_to_mouth"]
-                        )
-                        > 0
-                        ]
+                    # take the one closest to the river mouth
+                    if branch_type == "tributaries_up":
+                        branch_gauge = branch_gauges.loc[
+                                       branch_gauges["distance_to_mouth"].idxmin(), :
+                                       ]
+                    elif branch_type == "distributaries_up":
+                        branch_gauge = branch_gauges.loc[
+                                       branch_gauges["distance_to_mouth"].idxmax(), :
+                                       ]
+    
+                    # calculate whether there is an inflow inbetween:
+                    if branch_type == "tributaries_up":
+                        subtributaries = subtributaries[
+                            (
+                                    subtributaries[
+                                        "distance_junction_from_receiving_water_mouth"
+                                    ]
+                                    - branch_gauge["distance_to_mouth"]
+                            )
+                            < 0
+                            ]
+                        subdistributaries = subdistributaries[
+                            (
+                                    subdistributaries[
+                                        "distance_junction_from_receiving_water_mouth"
+                                    ]
+                                    - branch_gauge["distance_to_mouth"]
+                            )
+                            < 0
+                            ]
+                    elif branch_type == "distributaries_up":
+                        subtributaries = subtributaries[
+                            (
+                                    subtributaries[
+                                        "distance_junction_from_receiving_water_mouth"
+                                    ]
+                                    - branch_gauge["distance_to_mouth"]
+                            )
+                            > 0
+                            ]
+                        subdistributaries = subdistributaries[
+                            (
+                                    subdistributaries[
+                                        "distance_junction_from_receiving_water_mouth"
+                                    ]
+                                    - branch_gauge["distance_to_mouth"]
+                            )
+                            > 0
+                            ]
+                elif branch_gauges.empty:
+                    logging.info(f'No Gauge at tributary {branch["stream"]}, check for subbranches with gauges')
+                    continue
+
 
                 # append to data
                 gauge_connection_dict[branch_type] = pd.concat(
@@ -385,8 +405,8 @@ def generate_upstream_network(
                                                              ][~gauge_connection_dict[trib_type + '_up']['stream'
                 ].isin(gauge_meta_reset['stream'])]
                 if len(tribs_without_gauges) > 0:
-                    tribs_without_gauges['upstream_point'] = 'river_spring'
-                    tribs_without_gauges['downstream_point'] = 'river_mouth'
+                    tribs_without_gauges.loc[:,'upstream_point'] = 'river_spring'
+                    tribs_without_gauges.loc[:,'downstream_point'] = 'river_mouth'
 
                 # merge
 

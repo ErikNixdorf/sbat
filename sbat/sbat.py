@@ -591,13 +591,14 @@ class Model:
             self.gauge_meta_decadal.index.names=('gauge','decade')
 
             # map the data from the recession analysis
+            logger.info('Map statistics on stream network geodata')
             self.gdf_network_map=map_time_dependent_cols_to_gdf(self.gdf_network_map,
                                                                 self.gauge_meta_decadal,
                                                                 geodf_index_col='downstream_point',
                                                                 time_dep_df_index_col ='gauge',
                                                                 time_dep_df_time_col = 'decade',
                                                                 )
-            
+            logger.info('Map statistics on subbasin geodata')
             self.section_basins=map_time_dependent_cols_to_gdf(self.section_basins, 
                                                                self.gauge_meta_decadal.drop(columns='basin_area'),
                                                                geodf_index_col='basin',
