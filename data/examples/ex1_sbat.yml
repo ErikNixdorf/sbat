@@ -10,7 +10,7 @@ file_io:
             gauge_time_series: ex1_gauge_ts.csv
 
         hydrogeology:
-            gw_levels: 
+            gw_levels: ex1_hydraulic_heads.tif
         geospatial:
             river_network: ex1_network.gpkg
             gauge_basins: ex1_basin.gpkg
@@ -62,8 +62,8 @@ recession:
         minimum_recession_curve_length: 10
         
     hydrogeo_parameter_estimation:
-        activate: false
-        rorabaugh_simplification : true
+        activate: true
+        rorabaugh_simplification : false
 #water balance
 waterbalance:
     activate: true

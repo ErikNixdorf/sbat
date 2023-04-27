@@ -461,6 +461,7 @@ def calculate_network_balance(
     # loop over gauges
     for gauge in gauge_keys:
 
+
         # we write some empty dataframes for the tributaries
         ts_distributaries = pd.Series(np.zeros(nr_ts), index=ts_data.index)
         ts_tributaries = ts_distributaries.copy()
@@ -484,7 +485,6 @@ def calculate_network_balance(
 
         # first case is easy if upstream is a distributary, we cant give any balance, it is actually covered in another scenario
         if upstream_point == 'river_junction':
-
             # in this case balance is nan            
             df_section['balance'] = np.nan
         else:
