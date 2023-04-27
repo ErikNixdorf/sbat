@@ -430,10 +430,6 @@ class Model:
 
         # %%we infer the hydrogeological parameters if needed
         if self.config['recession']['hydrogeo_parameter_estimation']['activate']:
-            
-
-            
-            
             # decide which kind of basins we need
             if self.config['recession']['curve_data']['curve_type'] == 'waterbalance':
                 basins = self.section_basins
