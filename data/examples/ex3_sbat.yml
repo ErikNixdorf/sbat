@@ -31,7 +31,7 @@ time:
 
 #now we provide the parameters for each module
 baseflow:
-    activate: false
+    activate: true
     methods:
         - UKIH
     compute_baseflow_index: true
@@ -67,7 +67,7 @@ recession:
 #water balance
 waterbalance:
     activate: true
-    flow_type: discharge
+    flow_type: baseflow
     confidence_acceptance_level: 0.05
     time_series_analysis_option: daily
     basin_id_col: basin
