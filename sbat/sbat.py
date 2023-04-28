@@ -11,6 +11,7 @@ import numpy as np
 import geopandas as gpd
 import pandas as pd
 import rasterio
+from shapely import Point
 
 from bflow.bflow import compute_baseflow, add_gauge_stats, plot_bf_results
 from recession.recession import analyse_recession_curves, plot_recession_results
@@ -430,10 +431,6 @@ class Model:
 
         # %%we infer the hydrogeological parameters if needed
         if self.config['recession']['hydrogeo_parameter_estimation']['activate']:
-            
-
-            
-            
             # decide which kind of basins we need
             if self.config['recession']['curve_data']['curve_type'] == 'waterbalance':
                 basins = self.section_basins
@@ -571,7 +568,7 @@ class Model:
 
         # start the calculation
 
-        self.sections_meta, self.q_diff, self.gdf_network_map, self.section_basins = get_section_water_balance(
+        self.sections_meta, self.q_diff, self.gdf_network_map, self.section_basins,ts_stats = get_section_water_balance(
             gauge_data=self.gauge_meta,
             data_ts=data_ts,
             network=network_geometry,
@@ -580,6 +577,7 @@ class Model:
             confidence_acceptance_level=self.config['waterbalance']['confidence_acceptance_level'],
             time_series_analysis_option=self.config['waterbalance']['time_series_analysis_option'],
             basin_id_col=self.config['waterbalance']['basin_id_col'],
+            decadal_stats = self.config['time']['compute_each_decade'],
         )
         
         #we map the mean_balance information on the geodataframes
@@ -608,20 +606,22 @@ class Model:
             
         
         elif self.config['time']['compute_each_decade'] == False:
-            
+            #for overall_we map mean discharge
+            if self.config['waterbalance']['time_series_analysis_option'] == 'overall_mean':
+                self.gauge_meta=pd.concat([self.gauge_meta,ts_stats.T],axis=1)
             #Update the metadata by balance
             balance_mean = self.sections_meta.groupby('downstream_point').mean().loc[:,'balance']
             self.gauge_meta = pd.concat([self.gauge_meta,balance_mean],axis=1)
             
             # metadata added to geodataframes
-            self.gdf_network_map = pd.concat([self.gdf_network_map,
-                                              self.gauge_meta.reset_index()],
+            self.gdf_network_map = pd.concat([self.gdf_network_map.set_index('downstream_point'),
+                                              self.gauge_meta],
                                              axis=1
                                              )
             #add the information for the basin_area
 
-            self.section_basins = pd.concat([self.section_basins.reset_index(),
-                                             self.gauge_meta.reset_index().drop(columns='basin_area')
+            self.section_basins = pd.concat([self.section_basins.set_index('basin'),
+                                             self.gauge_meta.drop(columns='basin_area')
                                              ],
                                             axis=1)
 
@@ -658,6 +658,13 @@ def main(config_file=None, output=True):
             sbat.gdf_network_map.to_file(Path(sbat.output_dir, 'data', 'section_streamlines.gpkg'), driver='GPKG')
             sbat.section_basins.to_file(Path(sbat.output_dir, 'data', 'section_subbasins.gpkg'), driver='GPKG')
             sbat.q_diff.to_csv(Path(sbat.output_dir, 'data', 'q_diff.csv'))
+            #the gauge meta data
+            gdf_gauge_meta = gpd.GeoDataFrame(data=sbat.gauge_meta,
+                                            geometry=[Point(xy) for xy in zip(sbat.gauge_meta.easting, sbat.gauge_meta.northing)],
+                                            crs=sbat.gdf_network_map.crs,
+                            )
+            gdf_gauge_meta.to_file(Path(sbat.output_dir, 'data', 'gauge_meta.gpkg'), driver='GPKG')
+            
     else:
         if output:
             sbat.gauge_meta.to_csv(Path(sbat.output_dir, 'data', 'section_meta.csv'))
