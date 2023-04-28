@@ -106,14 +106,12 @@ def generate_upstream_networks(
         ls_subbranches_network = extract_subbranches_network(branch_network,gauge_meta,network_connections)
         
 
-        #label the upstream
-        if isinstance(section.loc[:,'upstream_gauge'].values[0],str):
-            section['upstream_gauge'] = 'river_spring'
-        else:
-            if branch_network.empty:
-                section['upstream_gauge'] = 'river_spring'
-            elif 'distributary' in branch_network['type'].tolist():
+        #label the upstream gauge 
+        if not isinstance(section.loc[:,'upstream_gauge'].values[0],str):
+            if 'distributary' in branch_network['type'].tolist():
                 section['upstream_gauge'] ='river_junction'
+            else:
+                section['upstream_gauge'] = 'river_spring'
         
         # we finally label the missing information of the dictionary
         gauge_connection_dict["upstream_point"] = section['upstream_gauge'].iloc[0]
@@ -794,6 +792,7 @@ def map_network_sections(
         A DataFrame containing the metadata for the gauges.
     network : gpd.GeoDataFrame
         A GeoDataFrame containing the river network.
+        The order of vertex is assumed that it is counted with lowest numbers being downstream
 
     Returns
     -------
@@ -866,24 +865,31 @@ def map_network_sections(
                     # get all river points as geodataframe        
                     river_pnts = gpd.GeoDataFrame(geometry=[Point(pt) for pt in
                                                             river_line.coords])
-
-                    # next we will find upstream and downstream
-                    # downstream is always the points        
+                    
+                    #%% identify the point_ids of the branches
                     if branch_name == 'tributaries_up':
-                        pnt_id_downstream = 0
-
-                        if branch.upstream_point == 'river_spring':
+                        #downstream is always 0, because it is the river_mouth
+                        pnt_id_downstream = 0                        
+                        #upstream depends whether there is a gauge or not
+                        if branch.upstream_point != 'river_spring':
+                            pnt_branch_gauge = \
+                                gauge_meta.loc[gauge_meta.index == branch['upstream_point'], 'geometry'].iloc[0]
+                            pnt_id_upstream = river_pnts.distance(pnt_branch_gauge).idxmin()
+                        else:
                             pnt_id_upstream = len(river_pnts) - 1
-
+                    
                     elif branch_name == 'distributaries_up':
-                        pnt_id_downstream = len(river_pnts) - 1
-                        if branch.upstream_point == 'river_spring':
-                            pnt_id_upstream = 0
-                    # upstream depends whether there is a gauge or not
-                    if branch.upstream_point != 'river_spring':
-                        pnt_branch_gauge = \
-                            gauge_meta.loc[gauge_meta.index == branch['upstream_point'], 'geometry'].iloc[0]
-                        pnt_id_upstream = river_pnts.distance(pnt_branch_gauge).idxmin()
+                        #upstream is always the last point in the branch
+                        pnt_id_upstream = len(river_pnts) - 1
+                        
+                        #the downstream point depends whether there is a gauge or not
+                        if branch.downstream_point != 'river_mouth':
+                            pnt_branch_gauge = \
+                                gauge_meta.loc[gauge_meta.index == branch['downstream_point'], 'geometry'].iloc[0]
+                            pnt_id_downstream = river_pnts.distance(pnt_branch_gauge).idxmin()
+                        else:
+                            #the first point
+                            pnt_id_downstream = 0
 
                     # we rearrange if it does make sense with the flow direction
                     if pnt_id_upstream > pnt_id_downstream:
@@ -1035,8 +1041,8 @@ def get_section_basins(basins: gpd.GeoDataFrame,
 
             # get the next distributary gauge and add their basin
             if not distributaries_up.empty:
-                distri_gauges = distributaries_up[distributaries_up.upstream_point != 'river_spring']
-                for distri_gauge in distri_gauges.upstream_point:
+                distri_gauges = distributaries_up[distributaries_up.downstream_point != 'river_mouth']
+                for distri_gauge in distri_gauges.downstream_point:
                     section_basin.iloc[0].geometry = unary_union(
                         [section_basin.iloc[0].geometry, basins.loc[basins['basin'] == distri_gauge].iloc[0].geometry])
 
