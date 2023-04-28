@@ -268,6 +268,7 @@ def map_time_dependent_cols_to_gdf(
         time_dep_df_index_col: str = 'gauge',
         time_dep_df_time_col: str = 'decade',
         nan_value: Union[int, float] = -99999,
+        remove_nan_rows: bool = True,
         ) -> gpd.GeoDataFrame:
     """
     Map time-dependent columns from a dataframe to a geodataframe based on shared index columns.
@@ -352,7 +353,10 @@ def map_time_dependent_cols_to_gdf(
     geodf_out = gpd.GeoDataFrame(data=df_merged,
                                geometry=df_merged['geometry'],
                                crs=geodf.crs)
-    
+    if remove_nan_rows:
+        #remove geodata with no proper water balance
+        waterbalance_logger.info(f'remove values where balance is{nan_value}')
+        geodf_out = geodf_out[geodf_out.balance!=nan_value]
     return geodf_out
 
 def multilinestring_to_singlelinestring(
@@ -702,7 +706,6 @@ def calculate_network_balance(
     # loop over gauges
     for gauge in gauge_keys:
 
-
         # we write some empty dataframes for the tributaries
         ts_distributaries = pd.Series(np.zeros(nr_ts), index=ts_data.index)
         ts_tributaries = ts_distributaries.copy()
@@ -766,8 +769,8 @@ def calculate_network_balance(
 
     sections_meta = pd.concat(sections_meta)
     # remove all balances below confidence interval
-    low_confidence_mask = abs(sections_meta['balance_confidence']) < confidence_acceptance_level
-    sections_meta.loc[low_confidence_mask, 'balance'] = np.nan
+    #low_confidence_mask = abs(sections_meta['balance_confidence']) < confidence_acceptance_level
+    #sections_meta.loc[low_confidence_mask, 'balance'] = np.nan
     q_diff = sections_meta.drop_duplicates().pivot(index='Date', columns='downstream_point', values='balance')
 
     if get_decadal_stats:
@@ -970,8 +973,9 @@ def aggregate_time_series(data_ts: pd.DataFrame,
     else:
         logging.info('Invalid aggregation option selected, continuing with original time series')
         return data_ts
-
-    ts_stats.index = ts_stats.index.strftime("%Y-%m-%d")
+    
+    if analyse_option != 'overall_mean':
+        ts_stats.index = ts_stats.index.strftime("%Y-%m-%d")
     
 
 
@@ -1071,6 +1075,7 @@ def get_section_water_balance(gauge_data: pd.DataFrame = pd.DataFrame(),
                               confidence_acceptance_level: float = 0.05,
                               time_series_analysis_option: str = 'overall_mean',
                               basin_id_col: str = 'basin',
+                              decadal_stats: bool =True,
                               ) -> Tuple:
     """
     Calculates the water balance for a network of stream gauges and their upstream
@@ -1145,7 +1150,8 @@ def get_section_water_balance(gauge_data: pd.DataFrame = pd.DataFrame(),
 
     sections_meta, q_diff = calculate_network_balance(ts_data=ts_stats,
                                                       network_dict=gauges_connection_dict,
-                                                      confidence_acceptance_level=confidence_acceptance_level)
+                                                      confidence_acceptance_level=confidence_acceptance_level,
+                                                      get_decadal_stats = decadal_stats)
 
     gdf_network_map = map_network_sections(network_dict=gauges_connection_dict,
                                            gauge_meta=gauge_data,
@@ -1160,4 +1166,4 @@ def get_section_water_balance(gauge_data: pd.DataFrame = pd.DataFrame(),
     #we map the balance 
 
     # return the results
-    return sections_meta, q_diff, gdf_network_map, section_basins
+    return sections_meta, q_diff, gdf_network_map, section_basins,ts_stats
