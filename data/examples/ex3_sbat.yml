@@ -1,6 +1,9 @@
 # This File allows to define which parameter and ranges should be included in the setup of sbat
 #the structure is a tree similar to xml
-
+#info provides some general information of the dataset 
+info:
+    model_name: example3
+    contact: Max Mustermann
 #file_io describes the location of all input datasets as well as parameter specifications
 file_io:
     input:

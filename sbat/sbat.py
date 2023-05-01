@@ -102,7 +102,9 @@ class Model:
                               self.config['file_io']['input']['data_dir']
                               )
         # get the output_directory
-        self.output_dir = Path(self.model_path, self.config['file_io']['output']['output_directory'])
+        self.output_dir = Path(self.model_path, 
+                               self.config['file_io']['output']['output_directory'],
+                               self.config['info']['model_name'].replace(' ','_'))
         Path(self.output_dir).mkdir(parents=True, exist_ok=True)
         #data dir
         Path(self.output_dir, 'data').mkdir(parents=True, exist_ok=True)
