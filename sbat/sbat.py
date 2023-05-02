@@ -196,7 +196,10 @@ class Model:
                 #extend the lines
                 gauge_extend=pd.concat([self.gauges_meta.loc[i].to_frame().T] * decades_per_gauge[i])
                 #add information on decades
-                gauge_extend=pd.concat([gauge_extend,gauge_stats_decade.loc[i]],axis=1)
+                gauge_stat_decade = gauge_stats_decade.loc[i,:]                
+                if isinstance(gauge_stat_decade,pd.Series):
+                    gauge_stat_decade = gauge_stat_decade.to_frame().T
+                gauge_extend=pd.concat([gauge_extend,gauge_stat_decade],axis=1)
                 gauge_meta_extend_list.append(gauge_extend)
             
             #overwrite 
@@ -494,11 +497,11 @@ class Model:
 
     def get_water_balance(self, **kwargs):
         """Calculate water balance per section"""
-
+        
         logger.info('We analyse the Water Balance per Section')
 
         # %% First we load the data
-
+        self.gauges_meta.index.name = 'gauge'
         network_geometry = gpd.read_file(Path(self.data_path,
                                               self.config['file_io']['input']['geospatial']['river_network'])
                                          )
@@ -639,7 +642,7 @@ def main(config_file=None, output=True):
             
     else:
         if output:
-            sbat.gauges_meta.to_csv(Path(sbat.output_dir, 'data', 'section_meta.csv'))
+            sbat.gauges_meta.to_csv(Path(sbat.output_dir, 'data', 'gauge_meta.csv'))
         
         
         

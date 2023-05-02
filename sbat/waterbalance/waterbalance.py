@@ -46,7 +46,8 @@ def generate_upstream_networks(
     #get the functions within this function
     def generate_gauge_up_network(
         gauge: pd.Series, gauge_meta: pd.DataFrame, 
-        network_connections: pd.DataFrame
+        network_connections: pd.DataFrame,
+        gauge_column: str = 'index',
         ) -> dict:
         """
         Generate the upstream network of a gauge.
@@ -87,8 +88,8 @@ def generate_upstream_networks(
         if not stream_gauges.empty:
             upstream_gauge = pd.DataFrame(stream_gauges.loc[
                 [stream_gauges.upstream_distance.idxmin()]
-            ]).set_index('gauge')
-            section['upstream_gauge'] = stream_gauges.loc[stream_gauges.upstream_distance.idxmin(),'gauge']
+            ]).set_index(gauge_column)
+            section['upstream_gauge'] = stream_gauges.loc[stream_gauges.upstream_distance.idxmin(),gauge_column]
             section['distance_to_mouth_up']=stream_gauges.loc[stream_gauges.upstream_distance.idxmin(),'distance_to_mouth']
         else:
             section['distance_to_mouth_up']=np.inf
@@ -250,10 +251,10 @@ def generate_upstream_networks(
     
     
     #%% start main function
-    
     gauges_connection_dict = dict()
     for i, gauge in gauge_meta.iterrows():
-        gauge_connection_dict = generate_gauge_up_network(gauge,gauge_meta.reset_index(),network_connections)
+        gauge_connection_dict = generate_gauge_up_network(gauge,gauge_meta.reset_index(),network_connections,
+                                                          gauge_column = gauge_meta.index.name)
         gauges_connection_dict.update({gauge.name: gauge_connection_dict})
         
     return gauges_connection_dict
