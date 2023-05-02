@@ -51,14 +51,13 @@ def get_drainage_topographic_parameters(basin: gpd.GeoDataFrame,
                             The parameters include: 
                             - basin_id: the ID of the drainage basin
                             - area: the area of the drainage basin
-                            - L_represent: the representative length of the drainage basin
                             - h_m: the mean height above the river network for the boundary points of the drainage basin
                             - dist_m: the mean distance of the boundary points to the river network
                             - network_length: the total length of the river network within the drainage basin
     """
     basin = gpd.GeoDataFrame(data={'basin_id': basin.T[basin_id_col],
-                                   'area': basin.T.area,
-                                   'L_represent': basin.T['L_represent']}, index=[int(basin.T.value)],
+                                   'area': basin.geometry.area
+                                   }, index=[int(basin.name)],
                              geometry=[basin.T.geometry], crs=river_network.crs)
     basin_name = basin['basin_id'].iloc[0]
     aquifer_logger.info(f'Check basin {basin_name}')
@@ -67,7 +66,10 @@ def get_drainage_topographic_parameters(basin: gpd.GeoDataFrame,
 
     # get the height of the boundary points from the gw map
     coords = list(boundary.coords)
-    heights = [float(x) if x != gw_surface.nodata else None for x in gw_surface.sample(coords)]
+    if gw_surface is None:
+        heights = np.nan
+    else:
+        heights = [float(x) if x != gw_surface.nodata else None for x in gw_surface.sample(coords)]
 
     # generating a GeoDataFrame consisting of shapely points
     # create a GeoDataFrame of the boundary points
@@ -178,7 +180,7 @@ def infer_hydrogeo_parameters(basin_data: pd.DataFrame,
     basin_data : pandas.DataFrame
         A DataFrame containing the basin data. It must contain the columns specified in the kwargs.
     conceptual_model : str
-        The name of the conceptual model to use. Currently supported models are 'maillet' and 'boussinesq'.
+        The name of the conceptual model to use. Currently supported models are 'maillet' and 'boussinesq' and 'rorabaugh'.
     **kwargs : dict
         Additional keyword arguments required by the specified conceptual model. The required arguments
         depend on the model used. For the 'maillet' model, the following arguments are required:
@@ -222,11 +224,19 @@ def infer_hydrogeo_parameters(basin_data: pd.DataFrame,
     for col in required_columns:
         if col not in basin_data.columns:
             raise KeyError(f"Required column '{col}' not found in basin_data")
+            
+    #define the column names:
+    porosity_col = f'porosity_{conceptual_model}'
+    transmissivity_col = f'transmissivity_{conceptual_model}'    
+    kf_value_col = f'kf_value_{conceptual_model}'
+    diffusivity_col = f'diffusivity_{conceptual_model}'
+    
+    #compute n0 from daily to values per SI Unit
+    aquifer_logger.info(f'We assume that the recession constant in column {kwargs["alpha"]} is per day and compute to seconds')
+    basin_data[kwargs['alpha']] = basin_data[kwargs['alpha']]/(24*3600)
 
     if conceptual_model == 'maillet':
         # based on doi:10.1016/S0022-1694(02)00418-3
-        porosity_col = f'porosity_{conceptual_model}'
-        transmissivity_col = f'transmissivity_{conceptual_model}'
         # first calculate the porosity, merged both equations from the source
         basin_data[porosity_col] = (basin_data[kwargs['Q0']] * np.pi) / (
                 2 * basin_data[kwargs['alpha']] * basin_data[kwargs['network_length']] *
@@ -238,14 +248,21 @@ def infer_hydrogeo_parameters(basin_data: pd.DataFrame,
 
     elif conceptual_model == 'boussinesq':
         # based on doi:10.1016/S0022-1694(02)00418-3
-        kf_value_col = f'kf_value_{conceptual_model}'
-        porosity_col = f'porosity_{conceptual_model}'
         # kf value
         basin_data[kf_value_col] = (basin_data[kwargs['Q0']] * basin_data[kwargs['dist_m']]) / (
                 1.724 * basin_data[kwargs['h_m']] ** 2 * basin_data[kwargs['network_length']])
         # porosity
         basin_data[porosity_col] = (1.115 * basin_data[kf_value_col] * basin_data[kwargs['h_m']]) / (
                 basin_data[kwargs['alpha']] * basin_data[kwargs['dist_m']] ** 2)
+    
+    elif conceptual_model == 'rorabaugh':
+        
+        #based on https://pubs.er.usgs.gov/publication/ofr66117
+        aquifer_logger.warning('The rorabaugh method assumes an unconfined aquifer fully penetrating the river')
+        aquifer_logger.warning('The Rorabaugh method is purely empirical based on findings in US catchments')
+        # see here https://ponce.sdsu.edu/regional_aquifer_parameters.html
+        basin_data[diffusivity_col] = (4/np.pi**2)*basin_data[kwargs['alpha']]*basin_data[kwargs['dist_m']]**2
+    
     else:
         raise ValueError(f"Invalid conceptual model '{conceptual_model}'")
 
@@ -282,6 +299,7 @@ def get_hydrogeo_properties(
                                                         river_network=network), axis=1)
     # map to gauge data
     gauge_data = gauge_data.apply(lambda x: map_topo_parameters(x, basins_out), axis=1)
+    
     # get hydrogeological parameters
     gauge_data = infer_hydrogeo_parameters(basin_data=gauge_data,
                                            conceptual_model=conceptual_model,

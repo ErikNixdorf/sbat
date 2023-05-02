@@ -11,7 +11,7 @@ hash_
 from copy import deepcopy
 import logging
 import secrets
-from typing import Dict, Any, Union, Tuple, Optional
+from typing import Dict, Any, Union, Tuple, Optional, List
 
 import geopandas as gpd
 import numpy as np
@@ -20,6 +20,247 @@ from shapely.geometry import Point, LineString, MultiLineString, MultiPolygon
 from shapely.ops import nearest_points, unary_union
 
 waterbalance_logger = logging.getLogger('sbat.waterbalance')
+
+
+def generate_upstream_networks(
+    gauge_meta: pd.DataFrame, 
+    network_connections: pd.DataFrame
+    ) -> dict:
+    """
+    Generate the upstream network of gauges, tributaries, and distributaries.
+
+    Args:
+        gauge_meta (pd.DataFrame): A DataFrame containing metadata for each gauge
+            including the stream name, distance to mouth, etc.
+        network_connections (pd.DataFrame): A DataFrame containing the network
+            connections between streams, including the type of connection (tributary
+            or distributary), the distance from the junction to the receiving water mouth,
+            and the main stream name.
+
+    Returns:
+        dict: A dictionary containing gauge metadata and a list of tributaries and
+            distributaries for each gauge, where the key is the gauge id (a hexadecimal
+            string).
+    """
+    
+    #get the functions within this function
+    def generate_gauge_up_network(
+        gauge: pd.Series, gauge_meta: pd.DataFrame, 
+        network_connections: pd.DataFrame
+        ) -> dict:
+        """
+        Generate the upstream network of a gauge.
+
+        Args:
+            gauge_meta (pd.DataFrame): A DataFrame containing metadata for each gauge
+                including the stream name, distance to mouth, etc.
+            network_connections (pd.DataFrame): A DataFrame containing the network
+                connections between streams, including the type of connection (tributary
+                or distributary), the distance from the junction to the receiving water mouth,
+                and the main stream name.
+
+        Returns:
+            dict: A dictionary containing gauge metadata and a list of tributaries and
+                distributaries for each gauge, where the key is the gauge id (a hexadecimal
+                string).
+        """
+
+        section=pd.DataFrame(index=[0])
+        #we define our dictionary
+        gauge_connection_dict = dict()
+        gauge_connection_dict["id"] = secrets.token_hex(4)
+        gauge_connection_dict["reach_name"] = gauge["stream"]
+        
+        #first we try to find the correct stream section of the stream where the gauge is
+        section.loc[0,'stream']=gauge.stream
+        section.loc[0,'distance_to_mouth_dp']=gauge['distance_to_mouth']
+        #default 
+        section.loc[0,'upstream_gauge'] = np.nan
+        #analyse each section
+        #while ~section.empty:
+            #check for upstream part        
+        stream_gauges = gauge_meta[gauge_meta["stream"] == gauge["stream"]].copy()
+        stream_gauges["upstream_distance"] = (
+                stream_gauges["distance_to_mouth"] - gauge["distance_to_mouth"]
+        )
+        stream_gauges = stream_gauges[stream_gauges["upstream_distance"] > 0]
+        if not stream_gauges.empty:
+            upstream_gauge = pd.DataFrame(stream_gauges.loc[
+                [stream_gauges.upstream_distance.idxmin()]
+            ]).set_index('gauge')
+            section['upstream_gauge'] = stream_gauges.loc[stream_gauges.upstream_distance.idxmin(),'gauge']
+            section['distance_to_mouth_up']=stream_gauges.loc[stream_gauges.upstream_distance.idxmin(),'distance_to_mouth']
+        else:
+            section['distance_to_mouth_up']=np.inf
+            upstream_gauge = pd.DataFrame()
+        
+        #get all branches within the range
+        branch_network=get_branches(network_connections,
+                                      section,
+                                      dist_col_network = 'distance_junction_from_receiving_water_mouth',
+                                      dist_col_gauge_up = 'distance_to_mouth_up',
+                                      dist_col_gauge_dp = 'distance_to_mouth_dp',
+                                      )
+        #we go trough the entire branch network and check for gauges    
+
+        ls_subbranches_network = extract_subbranches_network(branch_network,gauge_meta,network_connections)
+        
+
+        #label the upstream gauge 
+        if not isinstance(section.loc[:,'upstream_gauge'].values[0],str):
+            if 'distributary' in branch_network['type'].tolist():
+                section['upstream_gauge'] ='river_junction'
+            else:
+                section['upstream_gauge'] = 'river_spring'
+        
+        # we finally label the missing information of the dictionary
+        gauge_connection_dict["upstream_point"] = section['upstream_gauge'].iloc[0]
+        gauge_connection_dict['downstream_point'] = gauge.name
+        gauge_connection_dict["gauge_up"] = upstream_gauge
+        
+        #the network
+        if len(ls_subbranches_network)> 0:
+            df_subbranches_network=pd.concat(ls_subbranches_network,axis=0)
+            df_subbranches_network=df_subbranches_network[['stream','main_stream', 'type',
+                   'distance_junction_from_receiving_water_mouth', 'upstream_point',
+                   'downstream_point']]
+            
+            gauge_connection_dict["tributaries_up"] = df_subbranches_network[df_subbranches_network['type']=='tributary']
+            gauge_connection_dict["distributaries_up"] = df_subbranches_network[df_subbranches_network['type']=='distributary']
+        else:
+            gauge_connection_dict["tributaries_up"] = pd.DataFrame()
+            gauge_connection_dict["distributaries_up"] = pd.DataFrame()
+        
+        return gauge_connection_dict
+    
+    
+    def get_branches(network_connections: pd.DataFrame, gauge_meta: pd.DataFrame,
+                       dist_col_network: str = 'distance_junction_from_receiving_water_mouth',
+                       dist_col_gauge_up: str = 'distance_to_mouth_up',
+                       dist_col_gauge_dp: str = 'distance_to_mouth_dp') -> pd.DataFrame:
+        """
+        Extracts sub-branches from a river network based on connections and gauge information.
+        
+        Args:
+            network_connections (pd.DataFrame): A dataframe containing information about the connections between branches in the network.
+            gauge_meta (pd.DataFrame): A dataframe containing information about gauges located in the network.
+            dist_col_network (str): The name of the column in `network_connections` that specifies the distance of a branch from the receiving water mouth.
+            dist_col_gauge_up (str): The name of the column in `gauge_meta` that specifies the distance of a gauge from the mouth of the upstream branch.
+            dist_col_gauge_dp (str): The name of the column in `gauge_meta` that specifies the distance of a gauge from the mouth of the downstream branch.
+        
+        Returns:
+            pd.DataFrame: A dataframe containing information about the sub-branches of the network that meet the distance criteria, based on the provided gauge information.
+        """
+        branch_network = network_connections[network_connections['main_stream'].isin(gauge_meta['stream'].tolist())]
+        branch_network = branch_network[branch_network[dist_col_network]<gauge_meta[dist_col_gauge_up].values[0]]
+        branch_network = branch_network[branch_network[dist_col_network]>gauge_meta[dist_col_gauge_dp].values[0]]
+
+        return branch_network
+    
+
+    def extract_subbranches_network(branch_network: pd.DataFrame,
+        gauge_meta: pd.DataFrame,
+        network_connections: Dict,
+        ) -> List[pd.DataFrame]:
+        
+        """
+        Extracts subbranches from a river network and attaches gauge information to each branch.
+
+        Args:
+            branch_network (pd.DataFrame): A pandas dataframe containing information about the branches in the network. The dataframe should have the following columns:
+                - 'name': Name of the branch (str)
+                - 'stream': ID of the stream that the branch belongs to (str)
+                - 'type': Type of the branch, either 'tributary' or 'distributary' (str)
+                - 'upstream_junction': ID of the upstream junction (str)
+                - 'downstream_junction': ID of the downstream junction (str)
+                - 'distance_junction_from_receiving_water_mouth': Distance between the downstream junction and the receiving water mouth (float)
+            gauge_meta (pd.DataFrame): A pandas dataframe containing information about gauges located in the network. The dataframe should have the following columns:
+                - 'gauge': ID of the gauge (str)
+                - 'stream': ID of the stream that the gauge is located on (str)
+                - 'distance_to_mouth': Distance from the gauge to the receiving water mouth (float)
+            network_connections (Dict): A dictionary containing information about the connections between branches in the network. The dictionary should have the following keys:
+                - 'upstream': A pandas dataframe containing information about the upstream connections of each branch. The dataframe should have the following columns:
+                    - 'name': Name of the branch (str)
+                    - 'stream': ID of the stream that the branch belongs to (str)
+                    - 'downstream_junction': ID of the downstream junction (str)
+                - 'downstream': A pandas dataframe containing information about the downstream connections of each branch. The dataframe should have the following columns:
+                    - 'name': Name of the branch (str)
+                    - 'stream': ID of the stream that the branch belongs to (str)
+                    - 'upstream_junction': ID of the upstream junction (str)
+
+        Returns:
+            List[pd.DataFrame]: A list of dataframes containing information about the subbranches of the network, with gauge information attached. Each dataframe in the list should have the following columns:
+                - 'name': Name of the subbranch (str)
+                - 'stream': ID of the stream that the subbranch belongs to (str)
+                - 'type': Type of the subbranch, either 'tributary' or 'distributary' (str)
+                - 'upstream_point': ID of the upstream point (either a gauge ID or a junction ID) (str)
+                - 'downstream_point': ID of the downstream point (either a gauge ID or a junction ID) (str)
+                - 'distance_to_mouth_up': Distance from the upstream point to the receiving water mouth (float)
+                - 'distance_to_mouth_dp': Distance from the downstream point to the receiving water mouth (float)
+        """
+        #definitions
+        gauge_branch_list=list()
+        sorting_order={'tributary':True,
+                     'distributary':False}
+        
+        branch_type_info = {'tributary': ('river_spring', 'river_junction', np.inf, 0),
+                            'distributary': ('river_junction', 'river_mouth', 0, np.inf)}
+            
+        while not branch_network.empty:
+            
+            branches =branch_network.copy()
+            for i,branch in branches.iterrows():
+                #check whether there is a gauge
+                branch_gauges = gauge_meta[gauge_meta["stream"] == branch["stream"]]
+                branch_gauges= branch_gauges.sort_values('distance_to_mouth',
+                                                        ascending = sorting_order[branch['type']
+                                                                                  ])            
+                # set upstream and downstream point labels and distances based on branch type
+                upstream_point, downstream_point, distance_to_mouth_up, distance_to_mouth_dp = branch_type_info[branch['type']]
+                
+                if not branch_gauges.empty:
+                    gauge_info = branch_gauges.iloc[0]
+                    if branch['type'] == 'tributary':
+                        upstream_point, distance_to_mouth_up = gauge_info['gauge'], gauge_info['distance_to_mouth']
+                    else:
+                        downstream_point, distance_to_mouth_dp = gauge_info['gauge'], gauge_info['distance_to_mouth']
+                
+                # set values in branch dataframe
+                branch.at['upstream_point'] = upstream_point
+                branch.at['downstream_point'] = downstream_point
+                branch.at['distance_to_mouth_up'] = distance_to_mouth_up
+                branch.at['distance_to_mouth_dp'] = distance_to_mouth_dp
+                #append branch to list
+                gauge_branch_list.append(branch.to_frame().T)        
+                #we remove the branch from the iterations
+                branch_network=branch_network.drop(index=branch.name)
+                #get new subbranches and add them to the network
+
+                subbranches=get_branches(network_connections,
+                                              branch.to_frame().T,
+                                              dist_col_network = 'distance_junction_from_receiving_water_mouth',
+                                              dist_col_gauge_up = 'distance_to_mouth_up',
+                                              dist_col_gauge_dp = 'distance_to_mouth_dp',
+                                              )
+                if not subbranches.empty:
+                    #we add them to the network_data
+                    branch_network=branch_network.append(subbranches)
+                        
+        return gauge_branch_list
+    
+    
+    #%% start main function
+    
+    gauges_connection_dict = dict()
+    for i, gauge in gauge_meta.iterrows():
+        gauge_connection_dict = generate_gauge_up_network(gauge,gauge_meta.reset_index(),network_connections)
+        gauges_connection_dict.update({gauge.name: gauge_connection_dict})
+        
+    return gauges_connection_dict
+    
+    
+
+
 def map_time_dependent_cols_to_gdf(
         geodf: gpd.GeoDataFrame,
         time_dep_df: pd.DataFrame,
@@ -27,6 +268,7 @@ def map_time_dependent_cols_to_gdf(
         time_dep_df_index_col: str = 'gauge',
         time_dep_df_time_col: str = 'decade',
         nan_value: Union[int, float] = -99999,
+        remove_nan_rows: bool = True,
         ) -> gpd.GeoDataFrame:
     """
     Map time-dependent columns from a dataframe to a geodataframe based on shared index columns.
@@ -53,27 +295,54 @@ def map_time_dependent_cols_to_gdf(
         The expanded geodataframe with time-dependent columns mapped onto it.
     """
     
-    #check which row of geodataframe has to be expanded how often
-    copy_dict=time_dep_df.groupby(time_dep_df_index_col).size().to_dict()
+    #very first we check whether there is no geometry for a gauge
+    no_geo_gauges = list(set(time_dep_df.reset_index()[time_dep_df_index_col].tolist())-set(geodf[geodf_index_col]))
+    for no_geo_gauge in no_geo_gauges:
+        waterbalance_logger.warning(f'No geometry for gauge {no_geo_gauge} provided')
+    
+    #after warning remove from dataset
+    time_dep_df=time_dep_df.loc[~time_dep_df.reset_index()[time_dep_df_index_col].isin(no_geo_gauges).values,:]
+    
+    
+    
+    #check which row of geodataframe has to be expanded how often and for which decades
+    copy_dict=dict()
+    for gauge,df_gauge in time_dep_df.groupby(time_dep_df_index_col):
+        copy_dict.update({gauge:list(df_gauge.reset_index()[time_dep_df_time_col].unique())})
+        
+    #copy_dict=time_dep_df.groupby(time_dep_df_index_col).size().to_dict()
     #set_index of the geodataframe
     geodf=geodf.set_index(geodf_index_col)
+    
 
     # create expanded gdf 
-    expanded_df=pd.DataFrame()
+    list_expanded_df=list()
     #loop trough original gdf in order to expand the rows
     for _,row in geodf.iterrows():
-        row_extended = [row]*copy_dict[row.name]
-        expanded_df = pd.concat([expanded_df,
-                                 pd.DataFrame(row_extended)
-                                 ]
-                                )
-    #merge with the decadal dataset
-    expanded_df.index.name=geodf_index_col
-    df_merged = pd.concat([expanded_df.reset_index(),
-                           time_dep_df.reset_index()
+        #extend the row to a dataframe
+        df_row_extend = pd.DataFrame([row]*len(copy_dict[row.name]))
+        #add the decaded
+        df_row_extend[time_dep_df_time_col] = copy_dict[row.name]
+        
+        list_expanded_df.extend([df_row_extend])
+        
+    
+    #merge the expanded geometrical data
+    expanded_df = pd.concat(list_expanded_df)
+    expanded_df.index.name=time_dep_df_index_col
+    #we make a multi_index in order to merge it properly with the time series
+    expanded_df=expanded_df.reset_index().set_index([time_dep_df_index_col,time_dep_df_time_col])
+    
+    #merge with the time dependend statistics
+    df_merged = pd.concat([expanded_df,
+                           time_dep_df,
                            ],
                           axis=1
                           )
+    
+    #reset the index in order to save it as a geodataframe
+    df_merged = df_merged.reset_index()
+    
     # we clean the data
     df_merged = df_merged.loc[~df_merged[time_dep_df_time_col].isna(),:]
     
@@ -84,7 +353,10 @@ def map_time_dependent_cols_to_gdf(
     geodf_out = gpd.GeoDataFrame(data=df_merged,
                                geometry=df_merged['geometry'],
                                crs=geodf.crs)
-    
+    if remove_nan_rows:
+        #remove geodata with no proper water balance
+        waterbalance_logger.info(f'remove values where balance is{nan_value}')
+        geodf_out = geodf_out[geodf_out.balance!=nan_value]
     return geodf_out
 
 def multilinestring_to_singlelinestring(
@@ -142,248 +414,6 @@ def multilinestring_to_singlelinestring(
             waterbalance_logger.debug(f"Loop stopped at iteration {iteration}, try to increase resolution to avoid")
             break
     return sorted_point_bag
-
-
-# %% We loop trough the gauges in order to define the geometry
-def generate_upstream_network(
-    gauge_meta: pd.DataFrame, 
-    network_connections: pd.DataFrame
-    ) -> dict:
-    """
-    Generate the upstream network of gauges, tributaries, and distributaries.
-
-    Args:
-        gauge_meta (pd.DataFrame): A DataFrame containing metadata for each gauge
-            including the stream name, distance to mouth, etc.
-        network_connections (pd.DataFrame): A DataFrame containing the network
-            connections between streams, including the type of connection (tributary
-            or distributary), the distance from the junction to the receiving water mouth,
-            and the main stream name.
-
-    Returns:
-        dict: A dictionary containing gauge metadata and a list of tributaries and
-            distributaries for each gauge, where the key is the gauge id (a hexadecimal
-            string).
-    """
-    gauges_connection_dict = dict()
-
-    # %% The Idea is we loop trough the gauges, find the upstream stream and calculate the section water balance
-    # first we split the network_connections to tributaries and distributarys because they need to be treated differently
-    tributary_connections = network_connections[
-        network_connections["type"] == "tributary"
-        ]
-    distributary_connections = network_connections[
-        network_connections["type"] == "distributary"
-        ]
-
-    for i, gauge in gauge_meta.iterrows():
-        # first we create a hexadecimal string
-        gauge_connection_dict = dict()
-
-        # first we create a hex string which helps us
-        gauge_connection_dict["id"] = secrets.token_hex(4)
-
-        gauge_connection_dict["reach_name"] = gauge["stream"]
-
-        # check whether there is an upstream gauge in the system
-        stream_gauges = gauge_meta[gauge_meta["stream"] == gauge["stream"]].copy()
-        stream_gauges["upstream_distance"] = (
-                stream_gauges["distance_to_mouth"] - gauge["distance_to_mouth"]
-        )
-        stream_gauges = stream_gauges[stream_gauges["upstream_distance"] > 0]
-        upstream_gauge = stream_gauges.copy()
-        # tributaries upstream
-        tributaries = tributary_connections.loc[
-                      tributary_connections["main_stream"] == gauge["stream"], :
-                      ].copy()
-        tributaries["upstream_distance"] = (
-                tributaries["distance_junction_from_receiving_water_mouth"]
-                - gauge["distance_to_mouth"]
-        )
-        tributaries = tributaries[tributaries["upstream_distance"] > 0]
-
-        # similar we look for distributaries upstream
-        distributaries = distributary_connections.loc[
-                         distributary_connections["main_stream"] == gauge["stream"], :
-                         ].copy()
-        distributaries["upstream_distance"] = (
-                distributaries["distance_junction_from_receiving_water_mouth"]
-                - gauge["distance_to_mouth"]
-        )
-        distributaries = distributaries[distributaries["upstream_distance"] > 0]
-
-        # if we have a stream gauge upstream we will reduce the tributaries and distributaries to the ones between both gauges
-        if len(stream_gauges) > 0:
-            upstream_gauge = stream_gauges.loc[
-                [stream_gauges.upstream_distance.idxmin()]
-            ]
-            tributaries = tributaries.loc[
-                          (
-                                  tributaries["upstream_distance"]
-                                  - upstream_gauge["upstream_distance"].values
-                          )
-                          < 0,
-                          :,
-                          ]
-            distributaries = distributaries.loc[
-                             (
-                                     distributaries["upstream_distance"]
-                                     - upstream_gauge["upstream_distance"].values
-                             )
-                             < 0,
-                             :,
-                             ]
-
-        # connect
-        gauge_connection_dict["gauge_up"] = pd.DataFrame(upstream_gauge)
-        gauge_connection_dict["tributaries_up"] = tributaries.copy()
-        gauge_connection_dict["distributaries_up"] = distributaries.copy()
-
-        # we check for subdistributaries/subtributaries with gauges on a second level
-        for branch_type in ["tributaries_up", "distributaries_up"]:
-            for _, branch in gauge_connection_dict[branch_type].iterrows():
-                # first we check whether there is a subtributary between closest gauge and the river mouth
-                subtributaries = tributary_connections.loc[
-                                 tributary_connections["main_stream"] == branch["stream"], :
-                                 ]
-                subdistributaries = distributary_connections.loc[
-                                    distributary_connections["main_stream"] == branch["stream"], :
-                                    ]
-
-                # calculate the most downstream gauge of the tributary
-                branch_gauges = gauge_meta[gauge_meta["stream"] == branch["stream"]]
-                if len(branch_gauges) == 0:
-                    logging.info(f'No Gauge at tributary {branch["stream"]}')
-                    continue
-                # take the one closest to the river mouth
-                if branch_type == "tributaries_up":
-                    branch_gauge = branch_gauges.loc[
-                                   branch_gauges["distance_to_mouth"].idxmin(), :
-                                   ]
-                elif branch_type == "distributaries_up":
-                    branch_gauge = branch_gauges.loc[
-                                   branch_gauges["distance_to_mouth"].idxmax(), :
-                                   ]
-
-                # calculate whether there is an inflow inbetween:
-                if branch_type == "tributaries_up":
-                    subtributaries = subtributaries[
-                        (
-                                subtributaries[
-                                    "distance_junction_from_receiving_water_mouth"
-                                ]
-                                - branch_gauge["distance_to_mouth"]
-                        )
-                        < 0
-                        ]
-                    subdistributaries = subdistributaries[
-                        (
-                                subdistributaries[
-                                    "distance_junction_from_receiving_water_mouth"
-                                ]
-                                - branch_gauge["distance_to_mouth"]
-                        )
-                        < 0
-                        ]
-                elif branch_type == "distributaries_up":
-                    subtributaries = subtributaries[
-                        (
-                                subtributaries[
-                                    "distance_junction_from_receiving_water_mouth"
-                                ]
-                                - branch_gauge["distance_to_mouth"]
-                        )
-                        > 0
-                        ]
-                    subdistributaries = subdistributaries[
-                        (
-                                subdistributaries[
-                                    "distance_junction_from_receiving_water_mouth"
-                                ]
-                                - branch_gauge["distance_to_mouth"]
-                        )
-                        > 0
-                        ]
-
-                # append to data
-                gauge_connection_dict[branch_type] = pd.concat(
-                    [gauge_connection_dict[branch_type], subtributaries]
-                )
-                gauge_connection_dict[branch_type] = pd.concat(
-                    [gauge_connection_dict[branch_type], subdistributaries]
-                )
-
-        # define the name of the upstream points
-        if len(gauge_connection_dict["gauge_up"]) == 0:
-            # we first define upstream and downstream_points
-            if (
-                    len(gauge_connection_dict["tributaries_up"]) == 0
-                    and len(gauge_connection_dict["distributaries_up"]) == 0
-                    and gauge["stream"] in distributary_connections["stream"].to_list()
-            ):
-                gauge_connection_dict["upstream_point"] = "river_junction"
-            else:
-                gauge_connection_dict['upstream_point'] = 'river_spring'
-        else:
-            gauge_connection_dict['upstream_point'] = gauge_connection_dict['gauge_up'].index.values[0]
-
-        # downstream is always the same
-        gauge_connection_dict['downstream_point'] = gauge.name
-
-        # check for tributary or distributary gauges between the spring and the gauge
-        # generate a copy of gauge_meta
-        gauge_meta_reset = gauge_meta.copy().reset_index()
-        for trib_type in ['tributaries', 'distributaries']:
-
-            # if there are tributary_gauges
-            if len(gauge_connection_dict[trib_type + '_up']) > 0:
-
-                # first we check whether the tributaries have gauges
-
-                tribs_with_gauges = gauge_connection_dict[trib_type + '_up'
-                                                          ][gauge_connection_dict[trib_type + '_up']['stream'
-                ].isin(gauge_meta['stream'])].set_index('stream')
-
-                if not tribs_with_gauges.empty:
-
-                    # get_the_tributary_gauges which is the most downstream_gauge
-
-                    trib_gauges = gauge_meta_reset.loc[gauge_meta_reset['stream'
-                                                       ].isin(tribs_with_gauges.index), :]
-
-                    # we only select the ones which are most downstream
-
-                    if trib_type == 'tributaries':
-                        trib_gauges = trib_gauges.loc[trib_gauges.groupby('stream'
-                                                                          )['distance_to_mouth'].idxmin()].set_index(
-                            'stream')
-                    elif 'distributaries':
-                        trib_gauges = trib_gauges.loc[trib_gauges.groupby('stream'
-                                                                          )['distance_to_mouth'].idxmax()].set_index(
-                            'stream')
-                    tribs_with_gauges['upstream_point'] = trib_gauges.gauge
-                    tribs_with_gauges['downstream_point'] = 'river_mouth'
-                    tribs_with_gauges = tribs_with_gauges.reset_index()
-
-                # we also add the tribs with no gauges
-
-                tribs_without_gauges = gauge_connection_dict[trib_type + '_up'
-                                                             ][~gauge_connection_dict[trib_type + '_up']['stream'
-                ].isin(gauge_meta_reset['stream'])]
-                if len(tribs_without_gauges) > 0:
-                    tribs_without_gauges['upstream_point'] = 'river_spring'
-                    tribs_without_gauges['downstream_point'] = 'river_mouth'
-
-                # merge
-
-                tribs_merged = pd.concat([tribs_with_gauges, tribs_without_gauges],
-                                         ignore_index=True)
-
-                gauge_connection_dict[trib_type + '_up'] = tribs_merged
-
-            gauges_connection_dict.update({gauge.name: gauge_connection_dict})
-
-    return gauges_connection_dict
 
 
 # %% Next function how to calculate the balance
@@ -450,7 +480,6 @@ def calculate_network_balance(
 
         # first case is easy if upstream is a distributary, we cant give any balance, it is actually covered in another scenario
         if upstream_point == 'river_junction':
-
             # in this case balance is nan            
             df_section['balance'] = np.nan
         else:
@@ -460,9 +489,9 @@ def calculate_network_balance(
 
                 # get discharge of all distributary gauges
             if not distributaries_up.empty:
-                distri_gauges = distributaries_up[distributaries_up.upstream_point != 'river_spring']
+                distri_gauges = distributaries_up[distributaries_up.downstream_point != 'river_mouth']
                 if not distri_gauges.empty:
-                    ts_distributaries = ts_data[distri_gauges.upstream_point.tolist()].sum(axis=1)
+                    ts_distributaries = ts_data[distri_gauges.downstream_point.tolist()].sum(axis=1)
                 else:
                     ts_distributaries = 0
 
@@ -491,9 +520,9 @@ def calculate_network_balance(
 
     sections_meta = pd.concat(sections_meta)
     # remove all balances below confidence interval
-    low_confidence_mask = abs(sections_meta['balance_confidence']) < confidence_acceptance_level
-    sections_meta.loc[low_confidence_mask, 'balance'] = np.nan
-    q_diff = sections_meta.pivot(index='Date', columns='downstream_point', values='balance')
+    #low_confidence_mask = abs(sections_meta['balance_confidence']) < confidence_acceptance_level
+    #sections_meta.loc[low_confidence_mask, 'balance'] = np.nan
+    q_diff = sections_meta.drop_duplicates().pivot(index='Date', columns='downstream_point', values='balance')
 
     if get_decadal_stats:
         sections_meta['decade']=sections_meta['Date'].apply(lambda x: x[:3]+'5')
@@ -517,6 +546,7 @@ def map_network_sections(
         A DataFrame containing the metadata for the gauges.
     network : gpd.GeoDataFrame
         A GeoDataFrame containing the river network.
+        The order of vertex is assumed that it is counted with lowest numbers being downstream
 
     Returns
     -------
@@ -589,24 +619,31 @@ def map_network_sections(
                     # get all river points as geodataframe        
                     river_pnts = gpd.GeoDataFrame(geometry=[Point(pt) for pt in
                                                             river_line.coords])
-
-                    # next we will find upstream and downstream
-                    # downstream is always the points        
+                    
+                    #%% identify the point_ids of the branches
                     if branch_name == 'tributaries_up':
-                        pnt_id_downstream = 0
-
-                        if branch.upstream_point == 'river_spring':
+                        #downstream is always 0, because it is the river_mouth
+                        pnt_id_downstream = 0                        
+                        #upstream depends whether there is a gauge or not
+                        if branch.upstream_point != 'river_spring':
+                            pnt_branch_gauge = \
+                                gauge_meta.loc[gauge_meta.index == branch['upstream_point'], 'geometry'].iloc[0]
+                            pnt_id_upstream = river_pnts.distance(pnt_branch_gauge).idxmin()
+                        else:
                             pnt_id_upstream = len(river_pnts) - 1
-
+                    
                     elif branch_name == 'distributaries_up':
-                        pnt_id_downstream = len(river_pnts) - 1
-                        if branch.upstream_point == 'river_spring':
-                            pnt_id_upstream = 0
-                    # upstream depends whether there is a gauge or not
-                    if branch.upstream_point != 'river_spring':
-                        pnt_branch_gauge = \
-                            gauge_meta.loc[gauge_meta.index == branch['upstream_point'], 'geometry'].iloc[0]
-                        pnt_id_upstream = river_pnts.distance(pnt_branch_gauge).idxmin()
+                        #upstream is always the last point in the branch
+                        pnt_id_upstream = len(river_pnts) - 1
+                        
+                        #the downstream point depends whether there is a gauge or not
+                        if branch.downstream_point != 'river_mouth':
+                            pnt_branch_gauge = \
+                                gauge_meta.loc[gauge_meta.index == branch['downstream_point'], 'geometry'].iloc[0]
+                            pnt_id_downstream = river_pnts.distance(pnt_branch_gauge).idxmin()
+                        else:
+                            #the first point
+                            pnt_id_downstream = 0
 
                     # we rearrange if it does make sense with the flow direction
                     if pnt_id_upstream > pnt_id_downstream:
@@ -687,8 +724,9 @@ def aggregate_time_series(data_ts: pd.DataFrame,
     else:
         logging.info('Invalid aggregation option selected, continuing with original time series')
         return data_ts
-
-    ts_stats.index = ts_stats.index.strftime("%Y-%m-%d")
+    
+    if analyse_option != 'overall_mean':
+        ts_stats.index = ts_stats.index.strftime("%Y-%m-%d")
     
 
 
@@ -754,12 +792,12 @@ def get_section_basins(basins: gpd.GeoDataFrame,
             # if Multipolygon is result of clipping we reduce to largest polygon
 
             if not section_basin.empty and isinstance(section_basin.geometry.iloc[0], MultiPolygon):
-                section_basin.geometry = [max(section_basin.iloc[0].geometry, key=lambda a: a.area)]
+                section_basin.geometry = [max(section_basin.iloc[0].geometry.geoms, key=lambda a: a.area)]
 
             # get the next distributary gauge and add their basin
             if not distributaries_up.empty:
-                distri_gauges = distributaries_up[distributaries_up.upstream_point != 'river_spring']
-                for distri_gauge in distri_gauges.upstream_point:
+                distri_gauges = distributaries_up[distributaries_up.downstream_point != 'river_mouth']
+                for distri_gauge in distri_gauges.downstream_point:
                     section_basin.iloc[0].geometry = unary_union(
                         [section_basin.iloc[0].geometry, basins.loc[basins['basin'] == distri_gauge].iloc[0].geometry])
 
@@ -774,7 +812,7 @@ def get_section_basins(basins: gpd.GeoDataFrame,
     # overwrite some layers
     # assuming a representative Circle, we assume the radius of this circle is the mean length towards the stream
     section_basins['basin_area'] = section_basins.geometry.area
-    section_basins['L_represent'] = np.sqrt(section_basins['area'] / np.pi)
+    section_basins['L_represent'] = np.sqrt(section_basins['basin_area'] / np.pi)
 
     return section_basins
 
@@ -788,6 +826,7 @@ def get_section_water_balance(gauge_data: pd.DataFrame = pd.DataFrame(),
                               confidence_acceptance_level: float = 0.05,
                               time_series_analysis_option: str = 'overall_mean',
                               basin_id_col: str = 'basin',
+                              decadal_stats: bool =True,
                               ) -> Tuple:
     """
     Calculates the water balance for a network of stream gauges and their upstream
@@ -857,12 +896,13 @@ def get_section_water_balance(gauge_data: pd.DataFrame = pd.DataFrame(),
 
     # %% run the main functions
 
-    gauges_connection_dict = generate_upstream_network(gauge_meta=gauge_data,
+    gauges_connection_dict = generate_upstream_networks(gauge_meta=gauge_data,
                                                        network_connections=network_connections)
 
     sections_meta, q_diff = calculate_network_balance(ts_data=ts_stats,
                                                       network_dict=gauges_connection_dict,
-                                                      confidence_acceptance_level=confidence_acceptance_level)
+                                                      confidence_acceptance_level=confidence_acceptance_level,
+                                                      get_decadal_stats = decadal_stats)
 
     gdf_network_map = map_network_sections(network_dict=gauges_connection_dict,
                                            gauge_meta=gauge_data,
@@ -877,4 +917,4 @@ def get_section_water_balance(gauge_data: pd.DataFrame = pd.DataFrame(),
     #we map the balance 
 
     # return the results
-    return sections_meta, q_diff, gdf_network_map, section_basins
+    return sections_meta, q_diff, gdf_network_map, section_basins,ts_stats

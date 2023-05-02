@@ -1,20 +1,23 @@
 # This File allows to define which parameter and ranges should be included in the setup of sbat
 #the structure is a tree similar to xml
-
+#info provides some general information of the dataset 
+info:
+    model_name: example3
+    contact: Max Mustermann
 #file_io describes the location of all input datasets as well as parameter specifications
 file_io:
     input:
-        data_dir: data/ # all data is located relativ to this path
+        data_dir: data/examples # all data is located relativ to this path
         gauges:
-            gauge_meta: gauges/gauges_metadata.csv
-            gauge_time_series: gauges/gauges_q_ts.csv
+            gauge_meta: ex3_gauge_meta.csv
+            gauge_time_series: ex3_gauge_ts.csv
 
         hydrogeology:
-            gw_levels: hydrogeology/gw_heads.tif
+            gw_levels: 
         geospatial:
-            river_network: geospatial/river_network_z.gpkg
-            gauge_basins: geospatial/pegeleinzugsgebiete.gpkg
-            branches_topology: gauges/branches_topology.csv
+            river_network: ex3_network.gpkg
+            gauge_basins: ex3_basins.gpkg
+            branches_topology: ex3_topology.csv
     output:
         output_directory: output/
         plot_results: false
@@ -22,7 +25,7 @@ file_io:
 data_cleaning:
     drop_na_axis: 0
     valid_datapairs_only: true
-    test_mode: true
+    test_mode: false
 #infomation on time processing
 time:
     compute_each_decade: true
@@ -31,6 +34,7 @@ time:
 
 #now we provide the parameters for each module
 baseflow:
+    activate: true
     methods:
         - UKIH
     compute_baseflow_index: true
@@ -39,26 +43,33 @@ baseflow:
 
 #the discharge
 discharge:
+    activate: true
     col_name: q_daily
     compute_monthly: true
 
 #the recession
 recession:
+    activate: false
     curve_data:
         flow_type: baseflow # flow type can be discharge or baseflow
         #curve type can be either hydrograph or waterbalance
         curve_type: hydrograph
         minimum_limbs: 20
+        split_at_inflection: false # decides whether the inflection points will be used to split recession limbs
         moving_average_filter_steps: 5
     fitting:
         mastercurve_algorithm: demuth
-        recession_algorithm: boussinesq
+        recession_algorithm: maillet
         minimum_limbs: 20
         maximum_reservoirs: 1
         minimum_recession_curve_length: 10
-        infer_hydrogeological_parameters: true
+        
+    hydrogeo_parameter_estimation:
+        activate: true
+        rorabaugh_simplification : true
 #water balance
 waterbalance:
+    activate: true
     flow_type: baseflow
     confidence_acceptance_level: 0.05
     time_series_analysis_option: daily

@@ -11,6 +11,7 @@ import numpy as np
 import geopandas as gpd
 import pandas as pd
 import rasterio
+from shapely import Point
 
 from bflow.bflow import compute_baseflow, add_gauge_stats, plot_bf_results
 from recession.recession import analyse_recession_curves, plot_recession_results
@@ -81,7 +82,8 @@ class Model:
 
     def _read_data(self):
         self.gauge_ts = pd.read_csv(self.paths["gauge_ts_path"], index_col=0, parse_dates=True)
-
+        # all columns to lower case
+        self.gauge_ts.columns = list(map(lambda x:x.lower(),self.gauge_ts.columns))
         # todo: Is this test only for debugging? If yes it should be removed for release. For a public test case better
         #  reduce the input data itself
         if self.config['data_cleaning']['test_mode']:
@@ -115,6 +117,8 @@ class Model:
                              'start date and end_date')
 
         self.gauge_meta = pd.read_csv(self.paths["gauge_meta_path"], index_col=0)
+        #meta data also to lower case
+        self.gauge_meta.index = list(map(lambda x:x.lower(),self.gauge_meta.index))
 
         if self.config['data_cleaning']['valid_datapairs_only']:
             # reduce the metadata to the gauges for which we have actual time data
@@ -255,15 +259,15 @@ class Model:
                     # wide to long
                     Q = Q.pivot(index='date', columns='gauge', values='value').copy()
 
-            elif self.config['recession']['curve_data']['curve_type'] == 'discharge':
+            elif self.config['recession']['curve_data']['flow_type'] == 'discharge':
                 Q = self.gauge_ts
 
 
         elif self.config['recession']['curve_data']['curve_type'] == 'waterbalance':
 
-            logger.info('Recession Analysis is conducted using the waterbalance data')
+            logger.warning('Recession Analysis is conducted using the waterbalance data, which is experimental')
             # in the case of waterbalance we can not compute a master recession curve due to possibly negative values
-            logger.info('mrc_curve not defined for curve_type is waterbalance')
+            logger.warning('mrc_curve not defined for curve_type is waterbalance')
             self.config['recession']['fitting']['mastercurve_algorithm'] = None
             # checking whether the water_balance exist and if the same flow type has been used
             if not hasattr(self, 'sections_meta') or not self.config['recession']['curve_data']['flow_type'] == \
@@ -309,7 +313,11 @@ class Model:
                                     'maximum_reservoirs'],
                                 minimum_limbs=
                                 self.config['recession']['fitting'][
-                                    'minimum_limbs']
+                                    'minimum_limbs'],
+                                inflection_split=
+                                self.config['recession'][
+                                    'curve_data'][
+                                    'split_at_inflection'],
                                 )
                 # if data is None we just continue
                 if Q_rc is None:
@@ -376,7 +384,7 @@ class Model:
         logger.info('Recession Curve Analysis Finished')
 
         # %%we infer the hydrogeological parameters if needed
-        if self.config['recession']['fitting']['infer_hydrogeological_parameters']:
+        if self.config['recession']['hydrogeo_parameter_estimation']['activate']:
             # decide which kind of basins we need
             if self.config['recession']['curve_data']['curve_type'] == 'waterbalance':
                 basins = self.section_basins
@@ -384,21 +392,49 @@ class Model:
                 basins = gpd.read_file(Path(self.paths["input_dir"],
                                             self.config['file_io']['input']['geospatial']['gauge_basins'])
                                        )
+                
+                basins[self.config['waterbalance']['basin_id_col']] = basins[self.config['waterbalance']['basin_id_col']].apply(lambda x: x.lower())
+                
                 # we reduce the basins to the gauges for which we have meta information
                 basins = basins.loc[basins[self.config['waterbalance']['basin_id_col']].isin(self.gauge_meta.index)]
             else:
                 raise ValueError('curve type can either be waterbalance or hydrograph')
             # load the rasterio data
-            gw_surface = rasterio.open(Path(self.paths["input_dir"],
-                                            self.config['file_io']['input']['hydrogeology']['gw_levels']
-                                            )
-                                       )
+            try:
+                gw_surface = rasterio.open(Path(self.paths["input_dir"],
+                                                self.config['file_io']['input']['hydrogeology']['gw_levels']
+                                                )
+                                           )
+            except Exception as e:
+                logger.warning(e)
+                logger.warning('As no gw data is provided, we try to enforce the simplify rorabaugh parameter estimation method')
+                gw_surface = None
+                
+                self.config['recession']['hydrogeo_parameter_estimation']['rorabaugh_simplification'] = True
+                    
+            
+            #define the conceptual model
+            if self.config['recession']['hydrogeo_parameter_estimation']['rorabaugh_simplification']:
+                if self.config['recession']['fitting']['recession_algorithm'].lower() != 'maillet':
+                    raise ValueError('Rorabaugh method requires maillet based recession (exponential model), please change set up')
+                else:
+                    conceptual_model = 'rorabaugh'
+            else:                    
+                conceptual_model=self.config['recession']['fitting'][
+                'recession_algorithm']
+            
+            logger.info(f'Hydrogeo Parameters will be infered based on the model of {conceptual_model}')
+                
+                    
+                    
+
 
             network_geometry = gpd.read_file(Path(self.paths["input_dir"],
                                                   self.config['file_io']['input']['geospatial'][
                                                       'river_network'])
                                              )
-
+            #write lower case
+            network_geometry['reach_name'] = network_geometry['reach_name'].apply(lambda x: x.lower())
             # get the properties
             if self.config['time']['compute_each_decade']:
                 self.gauge_meta_decadal = get_hydrogeo_properties(gauge_data=self.gauge_meta_decadal,
@@ -407,16 +443,14 @@ class Model:
                                                                       'basin_id_col'],
                                                                   gw_surface=gw_surface,
                                                                   network=network_geometry,
-                                                                  conceptual_model=self.config['recession']['fitting'][
-                                                                      'recession_algorithm'])
+                                                                  conceptual_model=conceptual_model)
             else:
                 self.gauge_meta = get_hydrogeo_properties(gauge_data=self.gauge_meta,
                                                           basins=basins,
                                                           basin_id_col=self.config['waterbalance']['basin_id_col'],
                                                           gw_surface=gw_surface,
                                                           network=network_geometry,
-                                                          conceptual_model=self.config['recession']['fitting'][
-                                                              'recession_algorithm'])
+                                                          conceptual_model=conceptual_model)
 
     def get_water_balance(self, **kwargs):
         """Calculate water balance per section"""
@@ -429,14 +463,31 @@ class Model:
                                               self.config['file_io']['input']['geospatial']['river_network'])
                                          )
 
-        network_connections = pd.read_csv(Path(self.paths["input_dir"],
-                                               self.config['file_io']['input']['geospatial'][
-                                                   'branches_topology'])
-                                          )
+        network_geometry['reach_name'] = network_geometry['reach_name'].apply(lambda x: x.lower())
+        
+        if self.config['file_io']['input']['geospatial']['branches_topology'] == None:
+            network_connections = pd.DataFrame(columns=['index',
+                                                        'stream',
+                                                        'main_stream',
+                                                        'type',
+                                                        'distance_junction_from_receiving_water_mouth'
+                                                        ])
+        else:
+            network_connections = pd.read_csv(Path(self.paths["input_dir"],
+                                                   self.config['file_io']['input']['geospatial'][
+                                                       'branches_topology'])
+                                              )
+            
+        #also write to lower case
+        for col in ['stream','main_stream']:
+            network_connections[col] = network_connections[col].apply(lambda x: x.lower())
 
         gauge_basins = gpd.read_file(Path(self.paths["input_dir"],
                                           self.config['file_io']['input']['geospatial']['gauge_basins'])
                                      )
+        gauge_basins[self.config['waterbalance']['basin_id_col']] = gauge_basins[self.config['waterbalance']['basin_id_col']].apply(lambda x: x.lower())
+        #rewrite to lower case
+        gauge_basins[self.config['waterbalance']['basin_id_col']] = gauge_basins[self.config['waterbalance']['basin_id_col']].apply(lambda x: x.lower())
         # check whether flow type is given explicitely
 
         if 'flow_type' in kwargs:
@@ -472,7 +523,7 @@ class Model:
 
         # start the calculation
 
-        self.sections_meta, self.q_diff, self.gdf_network_map, self.section_basins = get_section_water_balance(
+        self.sections_meta, self.q_diff, self.gdf_network_map, self.section_basins,ts_stats = get_section_water_balance(
             gauge_data=self.gauge_meta,
             data_ts=data_ts,
             network=network_geometry,
@@ -481,6 +532,7 @@ class Model:
             confidence_acceptance_level=self.config['waterbalance']['confidence_acceptance_level'],
             time_series_analysis_option=self.config['waterbalance']['time_series_analysis_option'],
             basin_id_col=self.config['waterbalance']['basin_id_col'],
+            decadal_stats = self.config['time']['compute_each_decade'],
         )
         
         #we map the mean_balance information on the geodataframes
@@ -491,13 +543,14 @@ class Model:
             self.gauge_meta_decadal.index.names=('gauge','decade')
 
             # map the data from the recession analysis
+            logger.info('Map statistics on stream network geodata')
             self.gdf_network_map=map_time_dependent_cols_to_gdf(self.gdf_network_map,
                                                                 self.gauge_meta_decadal,
                                                                 geodf_index_col='downstream_point',
                                                                 time_dep_df_index_col ='gauge',
                                                                 time_dep_df_time_col = 'decade',
                                                                 )
-            
+            logger.info('Map statistics on subbasin geodata')
             self.section_basins=map_time_dependent_cols_to_gdf(self.section_basins, 
                                                                self.gauge_meta_decadal.drop(columns='basin_area'),
                                                                geodf_index_col='basin',
@@ -505,21 +558,24 @@ class Model:
                                                                 time_dep_df_time_col = 'decade',
                                                                 )
             
-        
+
         elif not self.config['time']['compute_each_decade']:
+            #for overall_we map mean discharge
+            if self.config['waterbalance']['time_series_analysis_option'] == 'overall_mean':
+                self.gauge_meta=pd.concat([self.gauge_meta,ts_stats.T],axis=1)
             #Update the metadata by balance
             balance_mean = self.sections_meta.groupby('downstream_point').mean().loc[:,'balance']
             self.gauge_meta = pd.concat([self.gauge_meta,balance_mean],axis=1)
             
             # metadata added to geodataframes
-            self.gdf_network_map = pd.concat([self.gdf_network_map,
-                                              self.gauge_meta.reset_index()],
+            self.gdf_network_map = pd.concat([self.gdf_network_map.set_index('downstream_point'),
+                                              self.gauge_meta],
                                              axis=1
                                              )
             #add the information for the basin_area
 
-            self.section_basins = pd.concat([self.section_basins.reset_index(),
-                                             self.gauge_meta.reset_index().drop(columns='basin_area')
+            self.section_basins = pd.concat([self.section_basins.set_index('basin'),
+                                             self.gauge_meta.drop(columns='basin_area')
                                              ],
                                             axis=1)
         if self.output:
@@ -528,7 +584,12 @@ class Model:
             self.gdf_network_map.to_file(Path(self.paths["output_dir"], 'data', 'section_streamlines.gpkg'),
                                          driver='GPKG')
             self.section_basins.to_file(Path(self.paths["output_dir"], 'data', 'section_subbasins.gpkg'), driver='GPKG')
-
+            #the gauge meta data
+            gdf_gauge_meta = gpd.GeoDataFrame(data=self.gauge_meta,
+                                            geometry=[Point(xy) for xy in zip(self.gauge_meta.easting, self.gauge_meta.northing)],
+                                            crs=self.gdf_network_map.crs,
+                            )
+            gdf_gauge_meta.to_file(Path(self.paths["output_dir"], 'data', 'gauge_meta.gpkg'), driver='GPKG')
 
 def main(config_file=None, output=True):
     if config_file:
@@ -538,16 +599,25 @@ def main(config_file=None, output=True):
 
     sbat = Model(configuration, output)
     # get discharge data
-
-    sbat.get_discharge_stats()
-
-    # get baseflow
-    sbat.get_baseflow()
-    # compute the master recession curve
-
-    sbat.get_recession_curve()
+    logger.info(f'discharge statistics activation is set to {sbat.config["discharge"]["activate"]}')
+    if sbat.config['discharge']['activate']:
+        sbat.get_discharge_stats()
+        
+    
+    # get baseflow        
+    logger.info(f'baseflow computation activation is set to {sbat.config["baseflow"]["activate"]}')
+    if sbat.config['baseflow']['activate']:
+        sbat.get_baseflow()
+        
+    # do the recession analysis
+    logger.info(f'recession computation activation is set to {sbat.config["recession"]["activate"]}')
+    if sbat.config['recession']['activate']:
+        sbat.get_recession_curve()
+        
+    
     # water balance
-    if not hasattr(sbat, 'section_meta'):
+    logger.info(f'water balance computation activation is set to {sbat.config["recession"]["activate"]}')
+    if not hasattr(sbat, 'section_meta') and sbat.config['waterbalance']['activate'] :
         sbat.get_water_balance()
 
     logging.shutdown()

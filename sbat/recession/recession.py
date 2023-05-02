@@ -297,7 +297,7 @@ def fit_reservoir_function(t: np.ndarray, Q: np.ndarray, Q_0: float,
 def find_recession_limbs(Q: Union[pd.DataFrame, pd.Series], 
                          smooth_window_size: int = 15,
                          minimum_recession_curve_length: int = 10,
-                         split_at_inflection_points: bool = True) -> pd.DataFrame:
+                         split_at_inflection_points: bool = False) -> pd.DataFrame:
     
     """
     Identifies and extracts recession limbs from a time series of streamflow.
@@ -475,6 +475,7 @@ def analyse_recession_curves(Q, mrc_algorithm: str = 'demuth',
                              define_falling_limb_intervals: bool = True,
                              maximum_reservoirs: int = 3,
                              minimum_limbs: int = 20,
+                             inflection_split: bool = False,
                              ):
     """
     Analyze recession curves using the specified algorithm and parameters.
@@ -522,7 +523,8 @@ def analyse_recession_curves(Q, mrc_algorithm: str = 'demuth',
         # recession_logger.info('Find the recession parts of the time series prior to fitting')
 
         Q = find_recession_limbs(Q['Q'], smooth_window_size=smooth_window_size,
-                                 minimum_recession_curve_length=minimum_recession_curve_length)
+                                 minimum_recession_curve_length=minimum_recession_curve_length,
+                                 split_at_inflection_points = inflection_split)
 
     #if there are no falling limbs within the interval we just return the data
     if Q is None:
