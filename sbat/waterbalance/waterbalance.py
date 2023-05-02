@@ -883,7 +883,7 @@ def get_section_water_balance(gauge_data: pd.DataFrame = pd.DataFrame(),
     # synchrnonize our datasets
     gauge_data = gauge_data.loc[gauge_data.index.isin(ts_stats.columns), :]
     # reduce the datasets to all which have metadata
-    ts_stats = ts_stats[gauge_data.index.to_list()]
+    ts_stats = ts_stats[gauge_data.index.unique().to_list()]
     logging.info(f'{ts_stats.shape[1]} gauges with valid meta data')
 
     # our gauge data has to converted to geodataframe

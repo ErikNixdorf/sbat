@@ -169,7 +169,7 @@ class Model:
         
         #meta data also to lower case
         self.gauges_meta.index = list(map(lambda x:x.lower(),self.gauges_meta.index))
-
+        self.gauges_meta.index.name = 'gauge'
         if self.config['data_cleaning']['valid_datapairs_only']:
             # reduce the metadata to the gauges for which we have actual time data
             self.gauges_meta = self.gauges_meta.iloc[self.gauges_meta.index.isin(self.gauge_ts.columns), :]
@@ -413,14 +413,12 @@ class Model:
         self.master_recession_curves = pd.concat(Q_mrcs, axis=0).reset_index(drop = True)             
 
         # append the metrics data to the metadata
-        df_metrics = pd.concat(metrics, axis=0)
-        if self.config['time']['compute_each_decade']:
-            self.gauges_meta_decadal = pd.concat([self.gauges_meta_decadal, df_metrics], axis=1)
-        else:
-
-            self.gauges_meta = pd.concat(
-                [self.gauges_meta, df_metrics.reset_index().set_index('gauge').drop(columns=['decade'])], axis=1)
-
+        self.gauges_meta.index.name = 'gauge'
+        df_metrics = pd.concat(metrics, axis=0)        
+        self.gauges_meta = pd.concat([self.gauges_meta.reset_index().set_index(['gauge','decade']), df_metrics], axis=1)
+        #rearrange the gauge_meta
+        self.gauges_meta = self.gauges_meta.reset_index().set_index('gauge')
+        
         if self.config['file_io']['output']['plot_results']:
             logger.info('plot_results')
             plot_recession_results(meta_data=self.gauges_meta,
@@ -485,21 +483,14 @@ class Model:
             #write lower case
             network_geometry['reach_name'] = network_geometry['reach_name'].apply(lambda x: x.lower())
             # get the properties
-            if self.config['time']['compute_each_decade']:
-                self.gauges_meta_decadal = get_hydrogeo_properties(gauge_data=self.gauges_meta_decadal,
-                                                                  basins=basins,
-                                                                  basin_id_col=self.config['waterbalance'][
-                                                                      'basin_id_col'],
-                                                                  gw_surface=gw_surface,
-                                                                  network=network_geometry,
-                                                                  conceptual_model=conceptual_model)
-            else:
-                self.gauges_meta = get_hydrogeo_properties(gauge_data=self.gauges_meta,
-                                                          basins=basins,
-                                                          basin_id_col=self.config['waterbalance']['basin_id_col'],
-                                                          gw_surface=gw_surface,
-                                                          network=network_geometry,
-                                                          conceptual_model=conceptual_model)
+            self.gauges_meta = get_hydrogeo_properties(gauge_data=self.gauges_meta,
+                                                              basins=basins,
+                                                              basin_id_col=self.config['waterbalance'][
+                                                                  'basin_id_col'],
+                                                              gw_surface=gw_surface,
+                                                              network=network_geometry,
+                                                              conceptual_model=conceptual_model)
+
 
     def get_water_balance(self, **kwargs):
         """Calculate water balance per section"""
@@ -585,52 +576,29 @@ class Model:
         )
         
         #we map the mean_balance information on the geodataframes
-        if self.config['time']['compute_each_decade'] == True:
-            
-            #we update the meta_data with the decadal average balance
-            balance_mean = self.sections_meta.groupby(['downstream_point','decade']).mean().loc[:,'balance']
-            self.gauges_meta_decadal = pd.concat([self.gauges_meta_decadal,balance_mean],axis=1)
-            self.gauges_meta_decadal.index.names=('gauge','decade')
-
-            # map the data from the recession analysis
-            logger.info('Map statistics on stream network geodata')
-            self.gdf_network_map=map_time_dependent_cols_to_gdf(self.gdf_network_map,
-                                                                self.gauges_meta_decadal,
-                                                                geodf_index_col='downstream_point',
-                                                                time_dep_df_index_col ='gauge',
-                                                                time_dep_df_time_col = 'decade',
-                                                                )
-            logger.info('Map statistics on subbasin geodata')
-            self.section_basins=map_time_dependent_cols_to_gdf(self.section_basins, 
-                                                               self.gauges_meta_decadal.drop(columns='basin_area'),
-                                                               geodf_index_col='basin',
-                                                                time_dep_df_index_col ='gauge',
-                                                                time_dep_df_time_col = 'decade',
-                                                                )
-            
+        balance_mean = self.sections_meta.groupby(['downstream_point','decade']).mean().loc[:,'balance']
         
-        elif self.config['time']['compute_each_decade'] == False:
-            #for overall_we map mean discharge
-            if self.config['waterbalance']['time_series_analysis_option'] == 'overall_mean':
-                self.gauges_meta=pd.concat([self.gauges_meta,ts_stats.T],axis=1)
-            #Update the metadata by balance
-            balance_mean = self.sections_meta.groupby('downstream_point').mean().loc[:,'balance']
-            self.gauges_meta = pd.concat([self.gauges_meta,balance_mean],axis=1)
-            
-            # metadata added to geodataframes
-            self.gdf_network_map = pd.concat([self.gdf_network_map.set_index('downstream_point'),
-                                              self.gauges_meta],
-                                             axis=1
-                                             )
-            #add the information for the basin_area
-
-            self.section_basins = pd.concat([self.section_basins.set_index('basin'),
-                                             self.gauges_meta.drop(columns='basin_area')
-                                             ],
-                                            axis=1)
-
-
-
+        #reorganize self_gauges_meta and add gauges_mean
+        self.gauges_meta = self.gauges_meta.reset_index().set_index(['gauge','decade'])
+        balance_mean.index.names = self.gauges_meta.index.names        
+        self.gauges_meta = pd.concat([self.gauges_meta,balance_mean],axis=1)
+        
+        # map the data from the recession analysis
+        logger.info('Map statistics on stream network geodata')
+        self.gdf_network_map=map_time_dependent_cols_to_gdf(self.gdf_network_map,
+                                                            self.gauges_meta,
+                                                            geodf_index_col='downstream_point',
+                                                            time_dep_df_index_col ='gauge',
+                                                            time_dep_df_time_col = 'decade',
+                                                            )
+        logger.info('Map statistics on subbasin geodata')
+        self.section_basins=map_time_dependent_cols_to_gdf(self.section_basins, 
+                                                           self.gauges_meta.drop(columns='basin_area'),
+                                                           geodf_index_col='basin',
+                                                            time_dep_df_index_col ='gauge',
+                                                            time_dep_df_time_col = 'decade',
+                                                            )
+        
 
 def main(config_file=None, output=True):
     sbat = Model(config_file_path=config_file)
@@ -663,15 +631,15 @@ def main(config_file=None, output=True):
             sbat.section_basins.to_file(Path(sbat.output_dir, 'data', 'section_subbasins.gpkg'), driver='GPKG')
             sbat.q_diff.to_csv(Path(sbat.output_dir, 'data', 'q_diff.csv'))
             #the gauge meta data
-            gdf_gauge_meta = gpd.GeoDataFrame(data=sbat.gauge_meta,
-                                            geometry=[Point(xy) for xy in zip(sbat.gauge_meta.easting, sbat.gauge_meta.northing)],
+            gdf_gauge_meta = gpd.GeoDataFrame(data=sbat.gauges_meta,
+                                            geometry=[Point(xy) for xy in zip(sbat.gauges_meta.easting, sbat.gauges_meta.northing)],
                                             crs=sbat.gdf_network_map.crs,
                             )
             gdf_gauge_meta.to_file(Path(sbat.output_dir, 'data', 'gauge_meta.gpkg'), driver='GPKG')
             
     else:
         if output:
-            sbat.gauge_meta.to_csv(Path(sbat.output_dir, 'data', 'section_meta.csv'))
+            sbat.gauges_meta.to_csv(Path(sbat.output_dir, 'data', 'section_meta.csv'))
         
         
         
