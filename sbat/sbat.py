@@ -465,7 +465,7 @@ class Model:
 
         network_geometry['reach_name'] = network_geometry['reach_name'].apply(lambda x: x.lower())
         
-        if self.config['file_io']['input']['geospatial']['branches_topology'] == None:
+        if self.config['file_io']['input']['geospatial']['branches_topology'] is None:
             network_connections = pd.DataFrame(columns=['index',
                                                         'stream',
                                                         'main_stream',
