@@ -124,7 +124,7 @@ class Model:
             # reduce the metadata to the gauges for which we have actual time data
             self.gauge_meta = self.gauge_meta.loc[self.gauge_ts.columns]
             # reduce the datasets to all which have metadata
-            self.gauge_ts = self.gauge_ts[self.gauge_meta.index.to_list()]
+            self.gauge_ts = self.gauge_ts[self.gauge_meta.index]
             logger.info(f'{self.gauge_ts.shape[1]} gauges with valid meta data')
 
         # if we want to compute for each decade we do this here
