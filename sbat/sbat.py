@@ -163,31 +163,74 @@ class Model:
                                self.config['file_io']['input']['data_dir'],
                                self.config['file_io']['input']['gauges']['gauge_meta'],
                                )
-        self.gauge_meta = pd.read_csv(gauge_meta_path, index_col=0)
+        self.gauges_meta = pd.read_csv(gauge_meta_path, index_col=0)
+        
+
         
         #meta data also to lower case
-        self.gauge_meta.index = list(map(lambda x:x.lower(),self.gauge_meta.index))
-
+        self.gauges_meta.index = list(map(lambda x:x.lower(),self.gauges_meta.index))
+        self.gauges_meta.index.name = 'gauge'
         if self.config['data_cleaning']['valid_datapairs_only']:
             # reduce the metadata to the gauges for which we have actual time data
-            self.gauge_meta = self.gauge_meta.iloc[self.gauge_meta.index.isin(self.gauge_ts.columns), :]
+            self.gauges_meta = self.gauges_meta.iloc[self.gauges_meta.index.isin(self.gauge_ts.columns), :]
             # reduce the datasets to all which have metadata
-            self.gauge_ts = self.gauge_ts[self.gauge_meta.index.to_list()]
+            self.gauge_ts = self.gauge_ts[self.gauges_meta.index.to_list()]
             logger.info(f'{self.gauge_ts.shape[1]} gauges with valid meta data')
-
+            
+        #we add a new column called decade
+        
         # if we want to compute for each decade we do this here
         if self.config['time']['compute_each_decade']:
             logger.info('Statistics for each gauge will be computed for each decade')
+            #get information how many decades with data we have per gauge
+            gauge_stats_decade = self.gauge_ts.copy()
+            gauge_stats_decade['decade'] = [x[0:3] + '5' for x in gauge_stats_decade.index.strftime('%Y')]
+            gauge_stats_decade = gauge_stats_decade.groupby('decade').mean().unstack().dropna()
+            # we reorganize the data so that we get all decades with measurements per gauge
+            gauge_stats_decade=gauge_stats_decade.reset_index().drop(columns=0)
+            decades_per_gauge=gauge_stats_decade.groupby('level_0').size()
+            gauge_stats_decade=gauge_stats_decade.set_index('level_0')
+            #we extend gauge_meta in order to
+            gauge_meta_extend_list=list()
+            for i in decades_per_gauge.keys():
+                #extend the lines
+                gauge_extend=pd.concat([self.gauges_meta.loc[i].to_frame().T] * decades_per_gauge[i])
+                #add information on decades
+                gauge_stat_decade = gauge_stats_decade.loc[i,:]                
+                if isinstance(gauge_stat_decade,pd.Series):
+                    gauge_stat_decade = gauge_stat_decade.to_frame().T
+                gauge_extend=pd.concat([gauge_extend,gauge_stat_decade],axis=1)
+                gauge_meta_extend_list.append(gauge_extend)
             
-            self.gauge_meta_decadal = pd.DataFrame()
+            #overwrite 
+            self.gauges_meta=pd.concat(gauge_meta_extend_list)
+            
+            self.gauges_meta_decadal = pd.DataFrame()
+        else:
+            logger.info('Statistics for each gauge will be computed over the entire time series')
+            self.gauges_meta.loc[:,'decade']=-9999
+
+        
+
+            
+        
 
     # function which controls the baseflow module
 
     def get_baseflow(self):
-
+        """
+        Computes the baseflow for the gauge and updates metadata if required.
+        
+        Returns:
+            None
+        
+        Example:
+            >>> gauge = Gauge(...)
+            >>> gauge.get_baseflow()
+        """
         # first we compute the baseflow
         self.bf_output = compute_baseflow(self.gauge_ts,
-                                          self.gauge_meta,
+                                          self.gauges_meta,
                                           methods=self.config['baseflow']['methods'],
                                           compute_bfi=self.config['baseflow']['compute_baseflow_index'],
                                           calculate_monthly=self.config['baseflow']['calculate_monthly'])
@@ -198,37 +241,24 @@ class Model:
             monthly_keys = [key for key in self.bf_output.keys() if len(self.bf_output[key]) > 0 and 'monthly' in key]
 
             if monthly_keys:
-                logger.info('Updating metadata with the mean of monthly data')
-                gauge_meta_updated = pd.concat([pd.concat([add_gauge_stats(subset.drop(columns=['gauge', 'variable']),
-                                                                           self.gauge_meta.loc[gauge, :].to_frame().T,
-                                                                           col_name=key,
-                                                                           decadal_stats=self.config['time'][
-                                                                               'compute_each_decade'],
-                                                                           ).reset_index().reset_index().set_index(
-                    ['index', 'gauge']) for gauge, subset in self.bf_output[key].groupby('gauge')]) for key in
-                    monthly_keys]
-                    , axis=1)
+                logger.info('Updating metadata with the mean (across all selected bf methods) for monthly data')
+                for bf_key in monthly_keys:
+                    #organizing the data that calculating the mean per method
+                    bf_subset = self.bf_output[bf_key].groupby(['gauge','date']).mean().reset_index()
+                    #pivot the data
+                    bf_subset = bf_subset.pivot(index='date',values='value',columns='gauge')
+                    #update the metadata
+                    self.gauges_meta = self.gauges_meta.apply(lambda x:add_gauge_stats(x,bf_subset,
+                                                                        col_name=bf_key,
+                                                                        ),
+                                                              axis=1)
 
-            # drop duplicate columns
-            gauge_meta_updated = gauge_meta_updated.loc[:, ~gauge_meta_updated.columns.duplicated()].reset_index().drop(columns='index')
 
-            self.gauge_meta = gauge_meta_updated.groupby('gauge').first()
-
-            if self.config['time']['compute_each_decade']:
-                gauge_meta_decadal = gauge_meta_updated.set_index(['gauge', 'decade'])
-                if hasattr(self, 'gauge_meta_decadal'):
-                    new_cols = list(set(gauge_meta_decadal.columns) - set(self.gauge_meta_decadal.columns))
-                    self.gauge_meta_decadal = pd.concat([self.gauge_meta_decadal, gauge_meta_decadal[new_cols]], axis=1)
-                else:
-                    self.gauge_meta_decadal = gauge_meta_decadal.copy()
-                # clean the gauge_meta with no decades
-                self.gauge_meta = self.gauge_meta.drop(
-                    columns=[col for col in gauge_meta_updated.columns if '_dec' in col] + ['decade'])
 
         if self.config['file_io']['output']['plot_results']:
             logger.info('plot_results of baseflow computation')
-            plot_bf_results(data=self.bf_output, meta_data=self.gauge_meta,
-                            meta_data_decadal=self.gauge_meta_decadal,
+            plot_bf_results(data=self.bf_output, meta_data=self.gauges_meta,
+                            meta_data_decadal=self.gauges_meta_decadal,
                             parameters_to_plot=['bf_daily', 'bf_monthly', 'bfi_monthly'],
                             streams_to_plot=['spree', 'lausitzer_neisse', 'schwarze_elster'],
                             output_dir=Path(self.output_dir, 'bf_analysis', 'figures'),
@@ -238,49 +268,24 @@ class Model:
     # %%function that adds discharge statistics
 
     def get_discharge_stats(self):
-        # call the gauge stats function
-        data = self.gauge_ts.copy(deep=True)
+        """
+        Calculates the daily and monthly discharge statistics for each gauge in the dataset.
+        """
 
-        gauge_meta_updated = pd.DataFrame()
-        for gauge, subset in data.melt(var_name='gauge', ignore_index=False).groupby('gauge'):
-            output = add_gauge_stats(subset.drop(columns=['gauge']),
-                                     self.gauge_meta.loc[gauge, :].to_frame().T,
-                                     col_name=self.config['discharge']['col_name'],
-                                     decadal_stats=self.config['time']['compute_each_decade'])
-            gauge_meta_updated = pd.concat([gauge_meta_updated, output])
-
-        # the first                  column is the updated gauge_meta
-        self.gauge_meta = gauge_meta_updated.groupby('gauge').first()
-
-        # if decadal stats exist we save them
-
-        if self.config['time']['compute_each_decade']:
-            # we we have decadal data we append
-            if hasattr(self, 'gauge_meta_decadal'):
-                gauge_meta_updated = gauge_meta_updated.reset_index().set_index(['gauge', 'decade'])
-                new_cols = list(set(gauge_meta_updated.columns) - set(self.gauge_meta_decadal.columns))
-                self.gauge_meta_decadal = pd.concat(
-                    [self.gauge_meta_decadal, gauge_meta_updated[new_cols].copy(deep=True)], axis=1)
-            else:
-                self.gauge_meta_decadal = gauge_meta_updated.set_index(['gauge', 'decade']).copy(deep=True)
-
-            # remove decadal columns
-            dec_cols = [col for col in output.columns if '_dec' in col]
-            dec_cols.append('decade')
-            self.gauge_meta = self.gauge_meta.drop(columns=dec_cols)
-
+        #the daily discharge statistics
+        self.gauges_meta = self.gauges_meta.apply(lambda x:add_gauge_stats(x,self.gauge_ts,
+                                                            col_name=self.config['discharge']['col_name'],
+                                                            ),axis=1)
+        
+        
         # if we want the monthly stats as well
         if self.config['discharge']['compute_monthly']:
             col_name = 'q_monthly'
-            data = self.gauge_ts.copy(deep=True).resample('M').mean()
-            gauge_meta_updated = pd.DataFrame()
-            for gauge, subset in data.melt(var_name='gauge', ignore_index=False).groupby('gauge'):
-                output = add_gauge_stats(subset.drop(columns=['gauge']),
-                                         self.gauge_meta.loc[gauge, :].to_frame().T, col_name=col_name,
-                                         decadal_stats=False)
-                gauge_meta_updated = pd.concat([gauge_meta_updated, output])
-            # the first column is the updated gauge_meta
-            self.gauge_meta = gauge_meta_updated.groupby('gauge').first()
+            data = self.gauge_ts.copy(deep=True).resample('M').mean()        
+            self.gauges_meta = self.gauges_meta.apply(lambda x:add_gauge_stats(x,data,
+                                                                        col_name=col_name,
+                                                                        ),axis=1)
+
 
     # %%the function to call the resession curves
     def get_recession_curve(self):
@@ -411,18 +416,16 @@ class Model:
         self.master_recession_curves = pd.concat(Q_mrcs, axis=0).reset_index(drop = True)             
 
         # append the metrics data to the metadata
-        df_metrics = pd.concat(metrics, axis=0)
-        if self.config['time']['compute_each_decade']:
-            self.gauge_meta_decadal = pd.concat([self.gauge_meta_decadal, df_metrics], axis=1)
-        else:
-
-            self.gauge_meta = pd.concat(
-                [self.gauge_meta, df_metrics.reset_index().set_index('gauge').drop(columns=['decade'])], axis=1)
-
+        self.gauges_meta.index.name = 'gauge'
+        df_metrics = pd.concat(metrics, axis=0)        
+        self.gauges_meta = pd.concat([self.gauges_meta.reset_index().set_index(['gauge','decade']), df_metrics], axis=1)
+        #rearrange the gauge_meta
+        self.gauges_meta = self.gauges_meta.reset_index().set_index('gauge')
+        
         if self.config['file_io']['output']['plot_results']:
             logger.info('plot_results')
-            plot_recession_results(meta_data=self.gauge_meta,
-                                   meta_data_decadal=self.gauge_meta_decadal,
+            plot_recession_results(meta_data=self.gauges_meta,
+                                   meta_data_decadal=self.gauges_meta_decadal,
                                    parameters_to_plot=['Q0_rec', 'pearson_r', 'n0_rec'],
                                    streams_to_plot=['spree', 'lausitzer_neisse', 'schwarze_elster'],
                                    output_dir=Path(self.output_dir, 'recession_analysis', 'figures'),
@@ -444,7 +447,7 @@ class Model:
                 basins[self.config['waterbalance']['basin_id_col']] = basins[self.config['waterbalance']['basin_id_col']].apply(lambda x: x.lower())
                 
                 # we reduce the basins to the gauges for which we have meta information
-                basins = basins.loc[basins[self.config['waterbalance']['basin_id_col']].isin(self.gauge_meta.index)]
+                basins = basins.loc[basins[self.config['waterbalance']['basin_id_col']].isin(self.gauges_meta.index)]
             else:
                 raise ValueError('curve type can either be waterbalance or hydrograph')
             # load the rasterio data
@@ -483,29 +486,22 @@ class Model:
             #write lower case
             network_geometry['reach_name'] = network_geometry['reach_name'].apply(lambda x: x.lower())
             # get the properties
-            if self.config['time']['compute_each_decade']:
-                self.gauge_meta_decadal = get_hydrogeo_properties(gauge_data=self.gauge_meta_decadal,
-                                                                  basins=basins,
-                                                                  basin_id_col=self.config['waterbalance'][
-                                                                      'basin_id_col'],
-                                                                  gw_surface=gw_surface,
-                                                                  network=network_geometry,
-                                                                  conceptual_model=conceptual_model)
-            else:
-                self.gauge_meta = get_hydrogeo_properties(gauge_data=self.gauge_meta,
-                                                          basins=basins,
-                                                          basin_id_col=self.config['waterbalance']['basin_id_col'],
-                                                          gw_surface=gw_surface,
-                                                          network=network_geometry,
-                                                          conceptual_model=conceptual_model)
+            self.gauges_meta = get_hydrogeo_properties(gauge_data=self.gauges_meta,
+                                                              basins=basins,
+                                                              basin_id_col=self.config['waterbalance'][
+                                                                  'basin_id_col'],
+                                                              gw_surface=gw_surface,
+                                                              network=network_geometry,
+                                                              conceptual_model=conceptual_model)
+
 
     def get_water_balance(self, **kwargs):
         """Calculate water balance per section"""
-
+        
         logger.info('We analyse the Water Balance per Section')
 
         # %% First we load the data
-
+        self.gauges_meta.index.name = 'gauge'
         network_geometry = gpd.read_file(Path(self.data_path,
                                               self.config['file_io']['input']['geospatial']['river_network'])
                                          )
@@ -571,7 +567,7 @@ class Model:
         # start the calculation
 
         self.sections_meta, self.q_diff, self.gdf_network_map, self.section_basins,ts_stats = get_section_water_balance(
-            gauge_data=self.gauge_meta,
+            gauge_data=self.gauges_meta,
             data_ts=data_ts,
             network=network_geometry,
             basins=gauge_basins,
@@ -583,52 +579,29 @@ class Model:
         )
         
         #we map the mean_balance information on the geodataframes
-        if self.config['time']['compute_each_decade'] == True:
-            
-            #we update the meta_data with the decadal average balance
-            balance_mean = self.sections_meta.groupby(['downstream_point','decade']).mean().loc[:,'balance']
-            self.gauge_meta_decadal = pd.concat([self.gauge_meta_decadal,balance_mean],axis=1)
-            self.gauge_meta_decadal.index.names=('gauge','decade')
-
-            # map the data from the recession analysis
-            logger.info('Map statistics on stream network geodata')
-            self.gdf_network_map=map_time_dependent_cols_to_gdf(self.gdf_network_map,
-                                                                self.gauge_meta_decadal,
-                                                                geodf_index_col='downstream_point',
-                                                                time_dep_df_index_col ='gauge',
-                                                                time_dep_df_time_col = 'decade',
-                                                                )
-            logger.info('Map statistics on subbasin geodata')
-            self.section_basins=map_time_dependent_cols_to_gdf(self.section_basins, 
-                                                               self.gauge_meta_decadal.drop(columns='basin_area'),
-                                                               geodf_index_col='basin',
-                                                                time_dep_df_index_col ='gauge',
-                                                                time_dep_df_time_col = 'decade',
-                                                                )
-            
+        balance_mean = self.sections_meta.groupby(['downstream_point','decade']).mean().loc[:,'balance']
         
-        elif self.config['time']['compute_each_decade'] == False:
-            #for overall_we map mean discharge
-            if self.config['waterbalance']['time_series_analysis_option'] == 'overall_mean':
-                self.gauge_meta=pd.concat([self.gauge_meta,ts_stats.T],axis=1)
-            #Update the metadata by balance
-            balance_mean = self.sections_meta.groupby('downstream_point').mean().loc[:,'balance']
-            self.gauge_meta = pd.concat([self.gauge_meta,balance_mean],axis=1)
-            
-            # metadata added to geodataframes
-            self.gdf_network_map = pd.concat([self.gdf_network_map.set_index('downstream_point'),
-                                              self.gauge_meta],
-                                             axis=1
-                                             )
-            #add the information for the basin_area
-
-            self.section_basins = pd.concat([self.section_basins.set_index('basin'),
-                                             self.gauge_meta.drop(columns='basin_area')
-                                             ],
-                                            axis=1)
-
-
-
+        #reorganize self_gauges_meta and add gauges_mean
+        self.gauges_meta = self.gauges_meta.reset_index().set_index(['gauge','decade'])
+        balance_mean.index.names = self.gauges_meta.index.names        
+        self.gauges_meta = pd.concat([self.gauges_meta,balance_mean],axis=1)
+        
+        # map the data from the recession analysis
+        logger.info('Map statistics on stream network geodata')
+        self.gdf_network_map=map_time_dependent_cols_to_gdf(self.gdf_network_map,
+                                                            self.gauges_meta,
+                                                            geodf_index_col='downstream_point',
+                                                            time_dep_df_index_col ='gauge',
+                                                            time_dep_df_time_col = 'decade',
+                                                            )
+        logger.info('Map statistics on subbasin geodata')
+        self.section_basins=map_time_dependent_cols_to_gdf(self.section_basins, 
+                                                           self.gauges_meta.drop(columns='basin_area'),
+                                                           geodf_index_col='basin',
+                                                            time_dep_df_index_col ='gauge',
+                                                            time_dep_df_time_col = 'decade',
+                                                            )
+        
 
 def main(config_file=None, output=True):
     sbat = Model(config_file_path=config_file)
@@ -661,15 +634,15 @@ def main(config_file=None, output=True):
             sbat.section_basins.to_file(Path(sbat.output_dir, 'data', 'section_subbasins.gpkg'), driver='GPKG')
             sbat.q_diff.to_csv(Path(sbat.output_dir, 'data', 'q_diff.csv'))
             #the gauge meta data
-            gdf_gauge_meta = gpd.GeoDataFrame(data=sbat.gauge_meta,
-                                            geometry=[Point(xy) for xy in zip(sbat.gauge_meta.easting, sbat.gauge_meta.northing)],
+            gdf_gauge_meta = gpd.GeoDataFrame(data=sbat.gauges_meta,
+                                            geometry=[Point(xy) for xy in zip(sbat.gauges_meta.easting, sbat.gauges_meta.northing)],
                                             crs=sbat.gdf_network_map.crs,
                             )
             gdf_gauge_meta.to_file(Path(sbat.output_dir, 'data', 'gauge_meta.gpkg'), driver='GPKG')
             
     else:
         if output:
-            sbat.gauge_meta.to_csv(Path(sbat.output_dir, 'data', 'section_meta.csv'))
+            sbat.gauges_meta.to_csv(Path(sbat.output_dir, 'data', 'gauge_meta.csv'))
         
         
         
