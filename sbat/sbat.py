@@ -215,7 +215,16 @@ class Model:
     # function which controls the baseflow module
 
     def get_baseflow(self):
-
+        """
+        Computes the baseflow for the gauge and updates metadata if required.
+        
+        Returns:
+            None
+        
+        Example:
+            >>> gauge = Gauge(...)
+            >>> gauge.get_baseflow()
+        """
         # first we compute the baseflow
         self.bf_output = compute_baseflow(self.gauge_ts,
                                           self.gauges_meta,
@@ -229,32 +238,19 @@ class Model:
             monthly_keys = [key for key in self.bf_output.keys() if len(self.bf_output[key]) > 0 and 'monthly' in key]
 
             if monthly_keys:
-                logger.info('Updating metadata with the mean of monthly data')
-                gauge_meta_updated = pd.concat([pd.concat([add_gauge_stats(subset.drop(columns=['gauge', 'variable']),
-                                                                           self.gauges_meta.loc[gauge, :].to_frame().T,
-                                                                           col_name=key,
-                                                                           decadal_stats=self.config['time'][
-                                                                               'compute_each_decade'],
-                                                                           ).reset_index().reset_index().set_index(
-                    ['index', 'gauge']) for gauge, subset in self.bf_output[key].groupby('gauge')]) for key in
-                    monthly_keys]
-                    , axis=1)
+                logger.info('Updating metadata with the mean (across all selected bf methods) for monthly data')
+                for bf_key in monthly_keys:
+                    #organizing the data that calculating the mean per method
+                    bf_subset = self.bf_output[bf_key].groupby(['gauge','date']).mean().reset_index()
+                    #pivot the data
+                    bf_subset = bf_subset.pivot(index='date',values='value',columns='gauge')
+                    #update the metadata
+                    self.gauges_meta = self.gauges_meta.apply(lambda x:add_gauge_stats(x,bf_subset,
+                                                                        col_name=bf_key,
+                                                                        ),
+                                                              axis=1)
 
-            # drop duplicate columns
-            gauge_meta_updated = gauge_meta_updated.loc[:, ~gauge_meta_updated.columns.duplicated()].reset_index().drop(columns='index')
 
-            self.gauges_meta = gauge_meta_updated.groupby('gauge').first()
-
-            if self.config['time']['compute_each_decade']:
-                gauge_meta_decadal = gauge_meta_updated.set_index(['gauge', 'decade'])
-                if hasattr(self, 'gauge_meta_decadal'):
-                    new_cols = list(set(gauge_meta_decadal.columns) - set(self.gauges_meta_decadal.columns))
-                    self.gauges_meta_decadal = pd.concat([self.gauges_meta_decadal, gauge_meta_decadal[new_cols]], axis=1)
-                else:
-                    self.gauges_meta_decadal = gauge_meta_decadal.copy()
-                # clean the gauge_meta with no decades
-                self.gauges_meta = self.gauges_meta.drop(
-                    columns=[col for col in gauge_meta_updated.columns if '_dec' in col] + ['decade'])
 
         if self.config['file_io']['output']['plot_results']:
             logger.info('plot_results of baseflow computation')
@@ -269,6 +265,9 @@ class Model:
     # %%function that adds discharge statistics
 
     def get_discharge_stats(self):
+        """
+        Calculates the daily and monthly discharge statistics for each gauge in the dataset.
+        """
 
         #the daily discharge statistics
         self.gauges_meta = self.gauges_meta.apply(lambda x:add_gauge_stats(x,self.gauge_ts,
