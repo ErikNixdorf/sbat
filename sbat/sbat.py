@@ -165,6 +165,8 @@ class Model:
                                )
         self.gauge_meta = pd.read_csv(gauge_meta_path, index_col=0)
         
+
+        
         #meta data also to lower case
         self.gauge_meta.index = list(map(lambda x:x.lower(),self.gauge_meta.index))
 
@@ -174,12 +176,41 @@ class Model:
             # reduce the datasets to all which have metadata
             self.gauge_ts = self.gauge_ts[self.gauge_meta.index.to_list()]
             logger.info(f'{self.gauge_ts.shape[1]} gauges with valid meta data')
-
+            
+        #we add a new column called decade
+        
         # if we want to compute for each decade we do this here
         if self.config['time']['compute_each_decade']:
             logger.info('Statistics for each gauge will be computed for each decade')
+            #get information how many decades with data we have per gauge
+            gauge_stats_decade = self.gauge_ts.copy()
+            gauge_stats_decade['decade'] = [x[0:3] + '5' for x in gauge_stats_decade.index.strftime('%Y')]
+            gauge_stats_decade = gauge_stats_decade.groupby('decade').mean().unstack().dropna()
+            # we reorganize the data so that we get all decades with measurements per gauge
+            gauge_stats_decade=gauge_stats_decade.reset_index().drop(columns=0)
+            decades_per_gauge=gauge_stats_decade.groupby('level_0').size()
+            gauge_stats_decade=gauge_stats_decade.set_index('level_0')
+            #we extend gauge_meta in order to
+            gauge_meta_extend_list=list()
+            for i in decades_per_gauge.keys():
+                #extend the lines
+                gauge_extend=pd.concat([self.gauge_meta.loc[i].to_frame().T] * decades_per_gauge[i])
+                #add information on decades
+                gauge_extend=pd.concat([gauge_extend,gauge_stats_decade.loc[i]],axis=1)
+                gauge_meta_extend_list.append(gauge_extend)
+            
+            #overwrite 
+            self.gauge_meta=pd.concat(gauge_meta_extend_list)
             
             self.gauge_meta_decadal = pd.DataFrame()
+        else:
+            logger.info('Statistics for each gauge will be computed over the entire time series')
+            self.gauge_meta.loc[:,'decade']=-9999
+
+        
+
+            
+        
 
     # function which controls the baseflow module
 
