@@ -274,28 +274,33 @@ def add_gauge_stats(gauge_meta: pd.DataFrame, ts_data: pd.DataFrame, col_name: s
     return modified_gauge_meta
 
 
-def plot_bf_results(ts_data=dict(), meta_data=pd.DataFrame(),
-                    parameter_name ='bf_monthly',
-                    plot_along_streams=True,
-                    output_dir=Path(Path.cwd(), 'bf_analysis', 'figures'),
-                    ):
+def plot_bf_results(ts_data: pd.DataFrame = pd.DataFrame(),
+                     meta_data: pd.DataFrame = pd.DataFrame(),
+                     parameter_name: str = 'bf_monthly',
+                     plot_along_streams: bool = True,
+                     output_dir: Union[str, Path] = Path.cwd() / 'bf_analysis' / 'figures',
+                     ) -> None:
     """
-    Plot the results of the baseflow calculation
+    Plot the results of the baseflow calculation.
 
     Parameters
     ----------
-    data : TYPE, optional
-        DESCRIPTION. The default is dict().
-    meta_data : TYPE, optional
-        DESCRIPTION. The default is pd.DataFrame().
-    streams_to_plot : TYPE, optional
-        DESCRIPTION. The default is ['spree','lausitzer_neisse','schwarze_elster'].
+    ts_data : pandas.DataFrame, optional
+        A pandas DataFrame containing the timeseries data. The default is an empty DataFrame.
+    meta_data : pandas.DataFrame, optional
+        A pandas DataFrame containing metadata for the timeseries data. The default is an empty DataFrame.
+    parameter_name : str, optional
+        The name of the parameter to plot. The default is 'bf_monthly'.
+    plot_along_streams : bool, optional
+        Whether to plot the results along each stream in separate subplots. The default is True.
+    output_dir : str or Path, optional
+        The directory in which to save the output plots. The default is './bf_analysis/figures'.
 
     Returns
     -------
-    None.
-
+    None
     """
+
     # first we generate the output dir
     output_dir.mkdir(parents=True, exist_ok=True)
     #default seaborn setting
