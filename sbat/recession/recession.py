@@ -617,6 +617,7 @@ def plot_recession_results(meta_data=pd.DataFrame(), meta_data_decadal=pd.DataFr
     None.
 
     """
+    return None
     coef_log_scale = {'Q0': True,
                       'pearson_r': False,
                       'n': True}

@@ -274,11 +274,10 @@ def add_gauge_stats(gauge_meta: pd.DataFrame, ts_data: pd.DataFrame, col_name: s
     return modified_gauge_meta
 
 
-def plot_bf_results(data=dict(), meta_data=pd.DataFrame(), meta_data_decadal=pd.DataFrame(),
-                    parameters_to_plot=['bf_daily', 'bf_monthly', 'bfi_monthly'],
-                    streams_to_plot=['spree', 'lausitzer_neisse', 'schwarze_elster'],
+def plot_bf_results(ts_data=dict(), meta_data=pd.DataFrame(),
+                    parameter_name ='bf_monthly',
+                    plot_along_streams=True,
                     output_dir=Path(Path.cwd(), 'bf_analysis', 'figures'),
-                    decadal_plots=True
                     ):
     """
     Plot the results of the baseflow calculation
@@ -299,91 +298,78 @@ def plot_bf_results(data=dict(), meta_data=pd.DataFrame(), meta_data_decadal=pd.
     """
     # first we generate the output dir
     output_dir.mkdir(parents=True, exist_ok=True)
-    # first we plot some histogram and boxplots
-    for parameter in parameters_to_plot:
-        if parameter in data.keys():
-            if parameter == 'bf_attributes':
-                continue
-            # reset index
-            subset = data[parameter].reset_index()
-            # histogram over all data
-            fig = plt.figure()
-            s1 = sns.histplot(data=subset.reset_index(), x='value', kde=True)
-            plt.title('Distribution of ' + parameter)
-            plt.tight_layout()
-            fig.savefig(Path(output_dir, 'distribution_of_' + parameter + '.png'), dpi=300)
-            plt.close()
+    #default seaborn setting
+    sns.set_context('paper')
+    
+    #%% first we plot some histogram and boxplots for each station
+    for gauge_name,subset in ts_data.groupby('gauge'):
+        # histogram over all data
+        fig = plt.figure()
+        sns.histplot(data=subset.reset_index(), x='value', kde=True)
+        plt.title(f'{parameter_name} histogram at {gauge_name}')
+        plt.tight_layout()
+        fig.savefig(Path(output_dir,f'{gauge_name}_histplot_{parameter_name}.png'), dpi=300)
+        plt.close()
+        # for each method
+        fig = plt.figure()
+        sns.histplot(data=subset.reset_index(), x='value', hue='variable', kde=True)
+        plt.legend(title='bf_method', loc='upper left', labels=subset.variable.unique())
+        plt.title(f'{parameter_name} method histogram at {gauge_name}')
+        plt.tight_layout()
+        fig.savefig(Path(output_dir, f'{gauge_name}_method_histplot_{parameter_name}.png'), dpi=300)
+        plt.close()
+        
+        # we further make some boxplots
+        fig, ax = plt.subplots()
+        sns.boxplot(data=subset.reset_index(), x='variable', y='value')
+        plt.xticks(rotation=90)
+        plt.xlabel('parameter_name')
+        plt.ylabel(parameter_name)
+        plt.title(f'{parameter_name} method boxplot at {gauge_name}')
+        plt.tight_layout()
+        fig.savefig(Path(output_dir, f'{gauge_name}_method_boxplot_{parameter_name}.png'), dpi=300)
+        plt.close()
+        #across all decades
+        fig, ax = plt.subplots()
+        subset['decade'] = [x[0:3] + '5' for x in subset.index.strftime('%Y')]
+        sns.boxplot(data=subset.reset_index(), x='value',y='decade')
+        plt.title(f'{parameter_name} boxplot at {gauge_name}')
+        plt.tight_layout()
+        fig.savefig(Path(output_dir, f'{gauge_name}_decade_boxplot_{parameter_name}.png'), dpi=300)
+        plt.close()
 
-            # for each method
-            fig = plt.figure()
-            s2 = sns.histplot(data=subset, x='value', hue='variable', kde=True)
-            plt.legend(title=parameter + '_method', loc='upper left', labels=subset.variable.unique())
-            plt.title(parameter + ' Distribution per Method')
-            plt.tight_layout()
-            fig.savefig(Path(output_dir, parameter + '_distribution_per_method.png'), dpi=300)
-            plt.close()
-            # for each gauge
-            palette = sns.color_palette(['grey'], len(subset.gauge.unique()))
-            fig, ax = plt.subplots()
-            s3 = sns.kdeplot(data=subset, x='value', hue='gauge', legend=False,
-                             palette=palette, linewidth=0.5)
-            plt.xlabel(parameter)
-            plt.title(parameter + ' Distribution over Gauges')
-            plt.tight_layout()
-            fig.savefig(Path(output_dir, parameter + '_distribution_over_gauges.png'), dpi=300)
-            plt.close()
-            # we further make some boxplots
-            fig, ax = plt.subplots()
-            s5 = sns.boxplot(data=subset, x='variable', y='value')
-            plt.xticks(rotation=90)
-            plt.xlabel(parameter + ' Method')
-            plt.ylabel(parameter)
-            plt.title(parameter + ' Statistical Difference by Method')
-            plt.tight_layout()
-            fig.savefig(Path(output_dir, parameter + '_statistical_difference_by_method.png'), dpi=300)
-            plt.close()
-            # %%
-            fig, ax = plt.subplots()
-            fig.set_size_inches(10.5, 30.5, forward=True)
-            fig.set_dpi(300)
-            s6 = sns.boxplot(data=subset, x='value', y='gauge')
-            plt.tight_layout()
-            fig.savefig(Path(output_dir, parameter + '_per_gauge.png'), dpi=300)
-            plt.close()
+    
+    #%% if we have daily dataset our calculation ends here
+    if 'daily' in parameter_name:
+        return
 
-    # next we plot the top 15 gauges with the largest deviations
+    #%% next we plot the top 15 gauges with the largest deviations
     if len(meta_data) < 15:
         index_max = len(meta_data)
     else:
         index_max = 15
-    # compute
-    cv_cols = [col for col in meta_data.columns if '_cv' in col]
-    for cv_col in cv_cols:
-        fig, ax = plt.subplots()
-        sns.barplot(data=meta_data.reset_index().sort_values(cv_col, ascending=False)[0:index_max], x=cv_col,
-                    y='gauge').set(title=cv_col)
-        fig.savefig(Path(output_dir, 'Gauges_with_largest_' + cv_col + '.png'), dpi=300, bbox_inches="tight")
-        plt.close()
-    # we make lineplots along the river systems
-    para_cols = [col for col in meta_data.columns if '_mean' in col]
-    para_cols.extend(cv_cols)
-    for para_col in para_cols:
-        for stream in streams_to_plot:
+    # plot
+    cv_col = f'{parameter_name}_cv'
+    meta_data.index.name = 'gauge'
+    fig, ax = plt.subplots()
+    sns.barplot(data=meta_data.reset_index().sort_values(cv_col, ascending=False)[0:index_max], x=cv_col,
+                y='gauge').set(title=cv_col)
+    fig.savefig(Path(output_dir, f'Gauges_with_largest_{cv_col}.png'), dpi=300, bbox_inches="tight")
+    plt.close()
+    
 
-            stream_gauges = meta_data[meta_data.gewaesser == stream].reset_index()
-            if len(stream_gauges) == 0:
-                bflow_logger.warning(f'no gauges along stream {stream}')
-                continue
-            stream_gauges['river_km'] = stream_gauges['km_muendung_hauptfluss_model'].max() - stream_gauges[
-                'km_muendung_hauptfluss_model']
-            stream_gauges = stream_gauges.sort_values('river_km')
-            stream_gauges = stream_gauges[stream_gauges['gauge'] != 'eisenhuettenstadt']
-            if stream == 'schwarze_elster':
-                stream_gauges = stream_gauges[stream_gauges['gauge'] != 'eisenhuettenstadt']
-                gauge_ticklabels = stream_gauges['gauge'].unique().tolist()
-            else:
-                gauge_ticklabels = [label.split('_')[0] for label in stream_gauges['gauge'].unique()]
-
+    #%% we make lineplots along all river systems
+    para_cols = [cv_col]
+    para_cols.append(f'{parameter_name}_mean')    
+    #create a subset for each stream
+    for stream,stream_gauges in meta_data.reset_index().groupby('stream'):        
+        #get river km
+        stream_gauges['river_km'] = stream_gauges['distance_to_mouth'].max() - stream_gauges[
+            'distance_to_mouth']
+        stream_gauges = stream_gauges.sort_values('river_km')
+        gauge_ticklabels = [label.split('_')[0] for label in stream_gauges['gauge'].unique()]        
+        #plot for each parameter
+        for para_col in para_cols:
             fig, ax = plt.subplots()
             s6 = sns.lineplot(data=stream_gauges, x='river_km', y=para_col,
                               marker='o', linewidth=2, markersize=10, color='dodgerblue')
@@ -392,51 +378,29 @@ def plot_bf_results(data=dict(), meta_data=pd.DataFrame(), meta_data_decadal=pd.
                 std_col = '_'.join([i for i in para_col.split('_')[:-1]]) + '_std'
                 s6.fill_between(stream_gauges['river_km'], stream_gauges[para_col] - stream_gauges[std_col],
                                 stream_gauges[para_col] + stream_gauges[std_col], alpha=0.2, color='k')
-
-            plt.title(para_col + ' along stream ' + stream)
+            
+            plt.title(f'{para_col} along {stream}')
             plt.ylabel(para_col)
-            plt.xlabel('River Kilometer')
+            plt.xlabel('River kilometer')
             ax.set_xticks(stream_gauges['river_km'].unique())
             plt.xticks(rotation=90)
             ax.set_xticklabels(gauge_ticklabels)
             plt.tight_layout()
-            fig.savefig(Path(output_dir, para_col + '_' + stream + '.png'), dpi=300)
+            fig.savefig(Path(output_dir, f'{stream}_{para_col}_along_streamlines.png'), dpi=300)
             plt.close()
-
-    if decadal_plots:
-        bflow_logger.info('Plot decadal stats')
-        para_cols = [col for col in meta_data_decadal.columns if 'dec_mean' in col]
-        para_cols.extend([col for col in meta_data_decadal.columns if 'dec_cv' in col])
-
-        # loop through data
-        for para_col in para_cols:
-            for stream in streams_to_plot:
-
-                stream_gauges = meta_data_decadal[meta_data_decadal.gewaesser == stream].reset_index()
-                if len(stream_gauges) == 0:
-                    bflow_logger.info(f'no gauges along stream {stream}')
-                    continue
-                # https://stackoverflow.com/questions/62004561/is-this-an-error-in-the-seaborn-lineplot-hue-parameter
-                stream_gauges['river_km'] = stream_gauges['km_muendung_hauptfluss_model'].max() - stream_gauges[
-                    'km_muendung_hauptfluss_model']
-                stream_gauges = stream_gauges.sort_values('river_km')
-                stream_gauges = stream_gauges[stream_gauges['gauge'] != 'eisenhuettenstadt']
-                if stream == 'schwarze_elster':
-                    stream_gauges = stream_gauges[stream_gauges['gauge'] != 'eisenhuettenstadt']
-                    gauge_ticklabels = stream_gauges['gauge'].unique().tolist()
-                else:
-                    gauge_ticklabels = [label.split('_')[0] for label in stream_gauges['gauge'].unique()]
-
-                fig, ax = plt.subplots()
-                s6 = sns.lineplot(data=stream_gauges, x='river_km', y=para_col, hue='decade',
-                                  marker='o', linewidth=2, markersize=10, palette='rocket',
-                                  hue_order=stream_gauges['decade'].sort_values())
-                plt.title(para_col + ' along stream ' + stream)
-                plt.ylabel(para_col)
-                plt.xlabel('River Kilometer')
-                ax.set_xticks(stream_gauges['river_km'].unique())
-                plt.xticks(rotation=90)
-                ax.set_xticklabels(gauge_ticklabels)
-                plt.tight_layout()
-                fig.savefig(Path(output_dir, para_col + '_' + stream + '.png'), dpi=300)
-                plt.close()
+        
+            #plot for each decade
+            fig, ax = plt.subplots()
+            sns.lineplot(data=stream_gauges, x='river_km', y=para_col, hue='decade',
+                              marker='o', linewidth=2, markersize=10, palette='rocket',
+                              hue_order=stream_gauges['decade'].sort_values())
+            
+            plt.title(f'{para_col} along {stream} and decade')
+            plt.ylabel(para_col)
+            plt.xlabel('River kilometer')
+            ax.set_xticks(stream_gauges['river_km'].unique())
+            plt.xticks(rotation=90)
+            ax.set_xticklabels(gauge_ticklabels)
+            plt.tight_layout()
+            fig.savefig(Path(output_dir, f'{stream}_{para_col}_decadal_along_streamlines.png'), dpi=300)
+            plt.close()            

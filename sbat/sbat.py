@@ -184,23 +184,22 @@ class Model:
                                           compute_bfi=self.config['baseflow']['compute_baseflow_index'],
                                           calculate_monthly=self.config['baseflow']['calculate_monthly'])
 
-        # second we update the medatadata if required
-        if self.config['baseflow']['update_metadata']:
-            # get the monthly keys
-            monthly_keys = [key for key in self.bf_output.keys() if len(self.bf_output[key]) > 0 and 'monthly' in key]
+        # Update the meta data
+        # get the monthly keys
+        monthly_keys = [key for key in self.bf_output.keys() if len(self.bf_output[key]) > 0 and 'monthly' in key]
 
-            if monthly_keys:
-                logger.info('Updating metadata with the mean (across all selected bf methods) for monthly data')
-                for bf_key in monthly_keys:
-                    #organizing the data that calculating the mean per method
-                    bf_subset = self.bf_output[bf_key].groupby(['gauge','date']).mean().reset_index()
-                    #pivot the data
-                    bf_subset = bf_subset.pivot(index='date',values='value',columns='gauge')
-                    #update the metadata
-                    self.gauges_meta = self.gauges_meta.apply(lambda x:add_gauge_stats(x,bf_subset,
-                                                                        col_name=bf_key,
-                                                                        ),
-                                                              axis=1)
+        if monthly_keys:
+            logger.info('Updating metadata with the mean (across all selected bf methods) for monthly data')
+            for bf_key in monthly_keys:
+                #organizing the data that calculating the mean per method
+                bf_subset = self.bf_output[bf_key].groupby(['gauge','date']).mean().reset_index()
+                #pivot the data
+                bf_subset = bf_subset.pivot(index='date',values='value',columns='gauge')
+                #update the metadata
+                self.gauges_meta = self.gauges_meta.apply(lambda x:add_gauge_stats(x,bf_subset,
+                                                                    col_name=bf_key,
+                                                                    ),
+                                                          axis=1)
                     
         if self.output:
             #the meta data
@@ -213,13 +212,15 @@ class Model:
 
         if self.config['file_io']['output']['plot_results']:
             logger.info('plot_results of baseflow computation')
-            plot_bf_results(data=self.bf_output, meta_data=self.gauges_meta,
-                            meta_data_decadal=self.gauges_meta_decadal,
-                            parameters_to_plot=['bf_daily', 'bf_monthly', 'bfi_monthly'],
-                            streams_to_plot=['spree', 'lausitzer_neisse', 'schwarze_elster'],
-                            output_dir=Path(self.paths["output_dir"], 'bf_analysis', 'figures'),
-                            decadal_plots=self.config['time']['compute_each_decade'],
-                            )
+            for bf_parameter in self.bf_output.keys():
+                if bf_parameter == 'bf_attributes':
+                    continue
+                else:
+                    plot_bf_results(ts_data=self.bf_output[bf_parameter], meta_data=self.gauges_meta,
+                                    parameter_name=bf_parameter,
+                                    plot_along_streams=True,
+                                    output_dir=Path(self.paths["output_dir"], 'figures','baseflow')
+                                    )
 
     # %%function that adds discharge statistics
 
