@@ -41,11 +41,10 @@ class Model:
         self.output = output
 
         self.gauge_ts = None
-        self.gauge_meta = None
+        self.gauges_meta = None
 
         # todo: Sort these attributes into groups they logically belong to
         self.bf_output = None
-        self.gauge_meta_decadal = None
         self.recession_limbs_ts = None
         self.section_basins = None
         self.sections_meta = None
@@ -71,7 +70,8 @@ class Model:
                                        self.config['file_io']['input']['data_dir'])
         if self.output:
             self.paths["output_dir"] = Path(self.paths["root"],
-                                            self.config['file_io']['output']['output_directory'])
+                                            self.config['file_io']['output']['output_directory'],
+                                            self.config['info']['model_name'])
             self.paths["output_dir"].mkdir(parents=True, exist_ok=True)
             Path(self.paths["output_dir"], 'data').mkdir(parents=True, exist_ok=True)
 
@@ -117,15 +117,15 @@ class Model:
                              'start date and end_date')
 
 
-        self.gauge_meta = pd.read_csv(self.paths["gauge_meta_path"], index_col=0)        
+        self.gauges_meta = pd.read_csv(self.paths["gauge_meta_path"], index_col=0)        
         #meta data also to lower case
         self.gauges_meta.index = list(map(lambda x:x.lower(),self.gauges_meta.index))
         self.gauges_meta.index.name = 'gauge'
         if self.config['data_cleaning']['valid_datapairs_only']:
             # reduce the metadata to the gauges for which we have actual time data
-            self.gauge_meta = self.gauge_meta.loc[self.gauge_ts.columns]
+            self.gauges_meta = self.gauges_meta.loc[self.gauge_ts.columns]
             # reduce the datasets to all which have metadata
-            self.gauge_ts = self.gauge_ts[self.gauge_meta.index]
+            self.gauge_ts = self.gauge_ts[self.gauges_meta.index]
 
             logger.info(f'{self.gauge_ts.shape[1]} gauges with valid meta data')
             
@@ -201,6 +201,12 @@ class Model:
                                                                         col_name=bf_key,
                                                                         ),
                                                               axis=1)
+                    
+        if self.output:
+            #the meta data
+            self.gauges_meta.to_csv(Path(self.paths["output_dir"], 'data', 'gauges_meta.csv'))
+            for key in self.bf_output.keys():
+                self.bf_output[key].to_csv(Path(self.paths["output_dir"], 'data',key+'.csv'))
 
 
 
@@ -235,6 +241,9 @@ class Model:
             self.gauges_meta = self.gauges_meta.apply(lambda x:add_gauge_stats(x,data,
                                                                         col_name=col_name,
                                                                         ),axis=1)
+        if self.output:
+        #the meta data
+            self.gauges_meta.to_csv(Path(self.paths["output_dir"], 'data', 'gauges_meta.csv'))
 
     # %%the function to call the resession curves
     def get_recession_curve(self):
@@ -439,6 +448,14 @@ class Model:
                                                               gw_surface=gw_surface,
                                                               network=network_geometry,
                                                               conceptual_model=conceptual_model)
+            
+            if self.output:
+                #the meta data
+                self.gauges_meta.to_csv(Path(self.paths["output_dir"], 'data', 'gauges_meta.csv'))
+                #the result of the recession
+                self.master_recession_curves.to_csv(Path(self.paths["output_dir"], 'data', 'master_recession_curves.csv'))
+                self.recession_limbs_ts.to_csv(Path(self.paths["output_dir"], 'data', 'recession_limbs_time_series.csv'))
+                
 
 
     def get_water_balance(self, **kwargs):
@@ -549,17 +566,18 @@ class Model:
                                                             )           
   
         if self.output:
-            self.sections_meta.to_csv(Path(self.paths["output_dir"], 'data', 'section_meta.csv'))
+            self.sections_meta.to_csv(Path(self.paths["output_dir"], 'data', 'sections_meta.csv'))
             self.q_diff.to_csv(Path(self.paths["output_dir"], 'data', 'q_diff.csv'))
-            self.gdf_network_map.to_file(Path(self.paths["output_dir"], 'data', 'section_streamlines.gpkg'),
+            self.gdf_network_map.to_file(Path(self.paths["output_dir"], 'data', 'sections_streamlines.gpkg'),
                                          driver='GPKG')
-            self.section_basins.to_file(Path(self.paths["output_dir"], 'data', 'section_subbasins.gpkg'), driver='GPKG')
+            self.section_basins.to_file(Path(self.paths["output_dir"], 'data', 'sections_subbasin.gpkg'), driver='GPKG')
             #the gauge meta data
-            gdf_gauge_meta = gpd.GeoDataFrame(data=self.gauge_meta,
-                                            geometry=[Point(xy) for xy in zip(self.gauge_meta.easting, self.gauge_meta.northing)],
+            self.gauges_meta.to_csv(Path(self.paths["output_dir"], 'data', 'gauges_meta.csv'))
+            gdf_gauge_meta = gpd.GeoDataFrame(data=self.gauges_meta,
+                                            geometry=[Point(xy) for xy in zip(self.gauges_meta.easting, self.gauges_meta.northing)],
                                             crs=self.gdf_network_map.crs,
                             )
-            gdf_gauge_meta.to_file(Path(self.paths["output_dir"], 'data', 'gauge_meta.gpkg'), driver='GPKG')
+            gdf_gauge_meta.to_file(Path(self.paths["output_dir"], 'data', 'gauges_meta.gpkg'), driver='GPKG')
 
 
 def main(config_file=None, output=True):
