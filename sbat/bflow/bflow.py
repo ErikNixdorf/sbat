@@ -240,58 +240,38 @@ def compute_baseflow(data_ts: pd.DataFrame, data_meta: pd.DataFrame, methods: Un
                              )
     return bf_output
 
-
-def add_gauge_stats(df_data: pd.DataFrame, gauge_meta: pd.DataFrame, col_name: str = 'bf', decadal_stats: bool = False) -> pd.DataFrame:
+def add_gauge_stats(gauge_meta: pd.DataFrame, ts_data: pd.DataFrame, col_name: str = 'bf',
+                        DECADAL_NAN_VALUE : int = -9999) -> pd.DataFrame:
     """
-    Adds the mean, standard deviation, and coefficient of variation to a DataFrame containing gauge metadata.
+    Calculates the mean, standard deviation, and coefficient of variation (cv) of a time series subset and adds them to a copy
+    of a DataFrame containing metadata for a gauge.
 
-    Parameters
-    ----------
-    df_data : pandas.DataFrame
-        A DataFrame containing the data for the gauge.
-    gauge_meta : pandas.DataFrame
-        A DataFrame containing the metadata for the gauge.
-    col_name : str, optional
-        The name of the column to use for the statistics. Default is 'bf'.
-    decadal_stats : bool, optional
-        Whether to compute decadal statistics. Default is False.
+    Args:
+        gauge_meta: A pandas DataFrame containing metadata for a gauge.
+        ts_data: A pandas DataFrame containing the time series data for the gauges.
+        col_name: A string representing the name of the column to be added to the gauge_meta DataFrame. Defaults to 'bf'.
+        DECADAL_NAN_VALUE: An integer representing the value used to indicate a missing decade in gauge_meta. Defaults to -9999.
 
-    Returns
-    -------
-    pandas.DataFrame
-        The updated DataFrame containing the metadata and statistics.
-
+    Returns:
+        A pandas DataFrame containing the modified gauge metadata with the added statistics.
     """
-    # compute the mean and std of the dataframe
-    mean = float(df_data.mean())
-    std = float(df_data.std())
-    # add mean, std, and cv to gauge_meta
-    gauge_meta = gauge_meta.assign(
-        **{col_name + '_mean': mean, col_name + '_std': std, col_name + '_cv': std / mean}
-    )
-
-    gauge_meta.index.names = ['gauge']
-    if decadal_stats == True:
-        # add a column for decade
-
-        df_data['decade'] = [x[0:3] + '5' for x in df_data.index.strftime('%Y')]
-
-        df_decadal = df_data.groupby('decade').mean().rename(columns={'value': col_name + '_dec_mean'})
-        df_decadal[col_name + '_dec_std'] = df_data.groupby('decade').std()
-        # remove nan
-        df_decadal = df_decadal.dropna()
-        # add coefficient of variation
-        df_decadal[col_name + '_dec_cv'] = df_decadal[col_name + '_dec_std'] / df_decadal[col_name + '_dec_mean']
-
-        # change index to actual gauge
-        df_decadal['gauge'] = gauge_meta.index[0]
-        df_decadal = df_decadal.reset_index().set_index('gauge')
-
-        # merge
-
-        gauge_meta = gauge_meta.merge(df_decadal, how='outer', left_index=True, right_index=True)
-
-    return gauge_meta
+    #select the subset from time series
+    if gauge_meta['decade'] == DECADAL_NAN_VALUE:
+        time_series_subset= ts_data[gauge_meta.name]
+    else:
+        time_series_subset=ts_data.loc[str(int(gauge_meta['decade'])-5):str(int(gauge_meta['decade'])+4),gauge_meta.name]
+    
+    # Calculate the statistics
+    mean_value = time_series_subset.mean()
+    std_value = time_series_subset.std()
+    cv_value = std_value / mean_value
+    # Add mean, std, and cv to gauge_meta
+    modified_gauge_meta = gauge_meta.copy()
+    modified_gauge_meta[col_name + '_mean'] = mean_value
+    modified_gauge_meta[col_name + '_std'] = std_value
+    modified_gauge_meta[col_name + '_cv'] = cv_value
+    
+    return modified_gauge_meta
 
 
 def plot_bf_results(data=dict(), meta_data=pd.DataFrame(), meta_data_decadal=pd.DataFrame(),
