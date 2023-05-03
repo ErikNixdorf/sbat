@@ -2,11 +2,11 @@
 This is the central Module which is a class from which the different functions are called
 """
 
-from datetime import datetime
 import logging
 from pathlib import Path
 import sys
 import yaml
+
 import numpy as np
 import geopandas as gpd
 import pandas as pd
@@ -18,168 +18,121 @@ from recession.recession import analyse_recession_curves, plot_recession_results
 from recession.aquifer_parameter import get_hydrogeo_properties
 from waterbalance.waterbalance import get_section_water_balance, map_time_dependent_cols_to_gdf
 
+logger = logging.getLogger('sbat')
+logger.setLevel(logging.INFO)
 
-def iterdict(d):
-    """
-    Recursively iterates over a dictionary and converts any strings
-    that can be converted to floats to float, and any lists that can
-    be converted to floats to lists of floats.
-
-    Args:
-        d (dict): A dictionary to be iterated over.
-
-    Returns:
-        dict: The input dictionary with any applicable conversions made.
-    """
-    for k, v in d.items():
-        if isinstance(v, dict):
-            iterdict(v)
-        elif isinstance(v, list):
-            try:
-                d[k] = list(map(float, v))
-            except ValueError:
-                pass
-        elif isinstance(v, str):
-            try:
-                d[k] = float(v)
-            except ValueError:
-                pass
-    return d
-
-
-# small function to convert to datetime
-dateparse = lambda x: datetime.strptime(x, '%Y-%m-%d')
-
+# define the logging output
+fh = logging.FileHandler(f'{Path(__file__).parents[1]}/output/sbat.log', mode='w')
+formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(name)s - %(message)s')
+fh.setFormatter(formatter)
+logger.addHandler(fh)
 
 class Model:
-    def __init__(self, config_file_path=None):
+    def __init__(self, conf: dict, output: bool = True):
+        """Initialization method for a new Model instance. Reads configuration, builds the working directory and reads
+        the input data.
+
+        Args:
+            conf: Dictionary that contains the configurations from sbat.yaml
         """
-        A class for processing gauge time series data.
-        
-        Parameters
-        ----------
-        gauge_time_series : pd.DataFrame, optional
-            A dataframe containing gauge time series data, by default pd.DataFrame()
-        gauge_network : gpd.GeoDataFrame, optional
-            A dataframe containing gauge network data, by default gpd.GeoDataFrame()
-        gauge_metadata : pd.DataFrame, optional
-            A dataframe containing gauge metadata, by default pd.DataFrame()
-        output_dir : str, optional
-            The path to the output directory, by default None
-        valid_datapairs_only : bool, optional
-            Whether to only include data pairs that have valid metadata, by default True
-        decadal_stats : bool, optional
-            Whether to compute decadal statistics, by default True
-        start_date : str, optional
-            The start date for the time series data, by default '1990-01-01'
-        end_date : str, optional
-            The end date for the time series data, by default '2021-12-31'
-        dropna_axis : int or None, optional
-            Whether to drop rows or columns with NaN values, by default None
-        
-        Returns
-        -------
-        None
-        """
-        if 'logger' not in globals():
-           global logger
-           logger = logging.getLogger('sbat')
-           logger.setLevel(logging.INFO)
-        
 
-        # Define the model and output paths
-        self.model_path = Path(__file__).parents[1]
+        self.config = conf
+        self.paths: dict = {"root": Path(__file__).parents[1]}
+        self.output = output
 
-        # load the config_data
-        if not config_file_path:
-            logger.info('take standard configfile location')
-            config_file_path = Path(self.model_path, 'sbat.yml')
+        self.gauge_ts = None
+        self.gauge_meta = None
 
+        # todo: Sort these attributes into groups they logically belong to
+        self.bf_output = None
+        self.gauge_meta_decadal = None
+        self.recession_limbs_ts = None
+        self.section_basins = None
+        self.sections_meta = None
+        self.q_diff = None
+        self.gdf_network_map = None
+        self.master_recession_curves = None
+
+        self._build_wd()
+        self._read_data()
+
+    @staticmethod
+    def read_config(config_file_path : Path
+             ) -> dict:
+        """Creates a dictionary out of a YAML file."""
         with open(config_file_path) as c:
-            self.config = yaml.safe_load(c)
-        # define some directorys
-        self.data_path = Path(self.model_path,
-                              self.config['file_io']['input']['data_dir']
-                              )
-        # get the output_directory
-        self.output_dir = Path(self.model_path, 
-                               self.config['file_io']['output']['output_directory'],
-                               self.config['info']['model_name'].replace(' ','_'))
-        Path(self.output_dir).mkdir(parents=True, exist_ok=True)
-        #data dir
-        Path(self.output_dir, 'data').mkdir(parents=True, exist_ok=True)
-        #figur dir
-        Path(self.output_dir, 'figures').mkdir(parents=True, exist_ok=True)
-        
-        #define the logging output
-        fh = logging.FileHandler(Path(self.output_dir,'sbat.log'), mode='w')
-        formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(name)s - %(message)s')
-        fh.setFormatter(formatter)
-    
-        logger.addHandler(fh)                   
-        
-        # %% we load the dataframes to our class
-        # the gauge_ts
-        gauge_ts_path = Path(self.model_path,
-                             self.config['file_io']['input']['data_dir'],
-                             self.config['file_io']['input']['gauges']['gauge_time_series'],
-                             )
+            conf = yaml.safe_load(c)
+        return conf
 
-        self.gauge_ts = pd.read_csv(gauge_ts_path,
-                                    index_col=0,
-                                    parse_dates=['date'],
-                                    date_parser=dateparse)
-        
+    def _build_wd(self):
+        """Builds the working directory. Reads paths from configuration files and creates output directories."""
+
+        self.paths["input_dir"] = Path(self.paths["root"],
+                                       self.config['file_io']['input']['data_dir'])
+        if self.output:
+            self.paths["output_dir"] = Path(self.paths["root"],
+                                            self.config['file_io']['output']['output_directory'])
+            self.paths["output_dir"].mkdir(parents=True, exist_ok=True)
+            Path(self.paths["output_dir"], 'data').mkdir(parents=True, exist_ok=True)
+
+        self.paths["gauge_ts_path"] = Path(self.paths["input_dir"],
+                                           self.config['file_io']['input']['gauges']['gauge_time_series'])
+        self.paths["gauge_meta_path"] = Path(self.paths["input_dir"],
+                                             self.config['file_io']['input']['gauges']['gauge_meta'])
+
+    def _read_data(self):
+        self.gauge_ts = pd.read_csv(self.paths["gauge_ts_path"], index_col=0, parse_dates=True)
         # all columns to lower case
         self.gauge_ts.columns = list(map(lambda x:x.lower(),self.gauge_ts.columns))
-
+        # todo: Is this test only for debugging? If yes it should be removed for release. For a public test case better
+        #  reduce the input data itself
         if self.config['data_cleaning']['test_mode']:
-            logger.info('test case, focus on three gauges only')
+            # logger.info('test case, focus on three gauges only')
             self.gauge_ts = self.gauge_ts.iloc[:, 0:3]
 
-        # we are only interested in meta data for which we have time series information
-        # remove all nans
+        # Slice gauge time series for start and end date
+        self.gauge_ts = self.gauge_ts.loc[self.config['time']['start_date']:self.config['time']['end_date']]
+
+        # we are only interested in metadata for which we have time series information; remove all nans
         self.gauge_ts = self.gauge_ts.dropna(axis=1, how='all')
 
-        # reduce to time steps
-        self.gauge_ts = self.gauge_ts.loc[self.config['time']['start_date']:self.config['time']['end_date'], :]
-
-        # remove nan values
-        if self.config['data_cleaning']['drop_na_axis'] == None:
+        # log non-standard configuration
+        if self.config['data_cleaning']['drop_na_axis'] is None:
             logger.info('No Nan Values are removed from time series data prior to computation')
+
+        # todo: I do not really get what the following elifs do. Does the order of the axes make a difference? If no we
+        #  we can drop over both axes by passing a tuple `axis=(0, 1)`. More important, NaNs are dropped over axis 1 by
+        #  default (see some lines above)
         elif self.config['data_cleaning']['drop_na_axis'] == 1:
             logger.info('Remove Gauges which contain a nan entry')
             self.gauge_ts.dropna(axis=1, how='any').dropna(axis=0, how='any')
         elif self.config['data_cleaning']['drop_na_axis'] == 0:
-            logger.info('Remove time steps which contain a nan entry')
+            logging.info('Remove time steps which contain a nan entry')
             self.gauge_ts.dropna(axis=0, how='any').dropna(axis=1, how='any')
 
-        if len(self.gauge_ts) == 0:
-            raise ValueError(
-                'No data left after drop NA Values, consider to define dropna_axis as None or changing start date and end_date')
+        try:
+            self.gauge_ts.iloc[0]
+        except IndexError:
+            logger.exception('No data left after drop NA Values, consider to define dropna_axis as None or changing '
+                             'start date and end_date')
 
-        # %%we load the meta_data
-        gauge_meta_path = Path(self.model_path,
-                               self.config['file_io']['input']['data_dir'],
-                               self.config['file_io']['input']['gauges']['gauge_meta'],
-                               )
-        self.gauges_meta = pd.read_csv(gauge_meta_path, index_col=0)
-        
 
-        
+        self.gauge_meta = pd.read_csv(self.paths["gauge_meta_path"], index_col=0)        
         #meta data also to lower case
         self.gauges_meta.index = list(map(lambda x:x.lower(),self.gauges_meta.index))
         self.gauges_meta.index.name = 'gauge'
         if self.config['data_cleaning']['valid_datapairs_only']:
             # reduce the metadata to the gauges for which we have actual time data
-            self.gauges_meta = self.gauges_meta.iloc[self.gauges_meta.index.isin(self.gauge_ts.columns), :]
+            self.gauge_meta = self.gauge_meta.loc[self.gauge_ts.columns]
             # reduce the datasets to all which have metadata
-            self.gauge_ts = self.gauge_ts[self.gauges_meta.index.to_list()]
+            self.gauge_ts = self.gauge_ts[self.gauge_meta.index]
+
             logger.info(f'{self.gauge_ts.shape[1]} gauges with valid meta data')
             
         #we add a new column called decade
         
         # if we want to compute for each decade we do this here
+        # todo: I think there is a better way to solve this
         if self.config['time']['compute_each_decade']:
             logger.info('Statistics for each gauge will be computed for each decade')
             #get information how many decades with data we have per gauge
@@ -210,11 +163,7 @@ class Model:
             logger.info('Statistics for each gauge will be computed over the entire time series')
             self.gauges_meta.loc[:,'decade']=-9999
 
-        
-
-            
-        
-
+  
     # function which controls the baseflow module
 
     def get_baseflow(self):
@@ -255,13 +204,14 @@ class Model:
 
 
 
+
         if self.config['file_io']['output']['plot_results']:
             logger.info('plot_results of baseflow computation')
             plot_bf_results(data=self.bf_output, meta_data=self.gauges_meta,
                             meta_data_decadal=self.gauges_meta_decadal,
                             parameters_to_plot=['bf_daily', 'bf_monthly', 'bfi_monthly'],
                             streams_to_plot=['spree', 'lausitzer_neisse', 'schwarze_elster'],
-                            output_dir=Path(self.output_dir, 'bf_analysis', 'figures'),
+                            output_dir=Path(self.paths["output_dir"], 'bf_analysis', 'figures'),
                             decadal_plots=self.config['time']['compute_each_decade'],
                             )
 
@@ -286,14 +236,9 @@ class Model:
                                                                         col_name=col_name,
                                                                         ),axis=1)
 
-
     # %%the function to call the resession curves
     def get_recession_curve(self):
-        """Compute the recession curve for each gauge and decade.
-        """
-
-        def add_series_id(df, series_id):
-            return df.assign(series_id=series_id)
+        """Compute the recession curve for each gauge and decade."""
 
         logger.info('Started Recession Curve Analysis')
 
@@ -428,7 +373,7 @@ class Model:
                                    meta_data_decadal=self.gauges_meta_decadal,
                                    parameters_to_plot=['Q0_rec', 'pearson_r', 'n0_rec'],
                                    streams_to_plot=['spree', 'lausitzer_neisse', 'schwarze_elster'],
-                                   output_dir=Path(self.output_dir, 'recession_analysis', 'figures'),
+                                   output_dir=Path(self.paths["output_dir"], 'recession_analysis', 'figures'),
                                    decadal_plots=self.config['time']['compute_each_decade'],
                                    )
 
@@ -440,7 +385,7 @@ class Model:
             if self.config['recession']['curve_data']['curve_type'] == 'waterbalance':
                 basins = self.section_basins
             elif self.config['recession']['curve_data']['curve_type'] == 'hydrograph':
-                basins = gpd.read_file(Path(self.data_path,
+                basins = gpd.read_file(Path(self.paths["input_dir"],
                                             self.config['file_io']['input']['geospatial']['gauge_basins'])
                                        )
                 
@@ -452,7 +397,7 @@ class Model:
                 raise ValueError('curve type can either be waterbalance or hydrograph')
             # load the rasterio data
             try:
-                gw_surface = rasterio.open(Path(self.data_path,
+                gw_surface = rasterio.open(Path(self.paths["input_dir"],
                                                 self.config['file_io']['input']['hydrogeology']['gw_levels']
                                                 )
                                            )
@@ -479,7 +424,8 @@ class Model:
                     
                     
 
-            network_geometry = gpd.read_file(Path(self.data_path,
+
+            network_geometry = gpd.read_file(Path(self.paths["input_dir"],
                                                   self.config['file_io']['input']['geospatial'][
                                                       'river_network'])
                                              )
@@ -502,13 +448,13 @@ class Model:
 
         # %% First we load the data
         self.gauges_meta.index.name = 'gauge'
-        network_geometry = gpd.read_file(Path(self.data_path,
+        network_geometry = gpd.read_file(Path(self.paths["input_dir"],       
                                               self.config['file_io']['input']['geospatial']['river_network'])
                                          )
-        
+
         network_geometry['reach_name'] = network_geometry['reach_name'].apply(lambda x: x.lower())
         
-        if self.config['file_io']['input']['geospatial']['branches_topology'] == None:
+        if self.config['file_io']['input']['geospatial']['branches_topology'] is None:
             network_connections = pd.DataFrame(columns=['index',
                                                         'stream',
                                                         'main_stream',
@@ -516,7 +462,7 @@ class Model:
                                                         'distance_junction_from_receiving_water_mouth'
                                                         ])
         else:
-            network_connections = pd.read_csv(Path(self.data_path,
+            network_connections = pd.read_csv(Path(self.paths["input_dir"],
                                                    self.config['file_io']['input']['geospatial'][
                                                        'branches_topology'])
                                               )
@@ -525,7 +471,7 @@ class Model:
         for col in ['stream','main_stream']:
             network_connections[col] = network_connections[col].apply(lambda x: x.lower())
 
-        gauge_basins = gpd.read_file(Path(self.data_path,
+        gauge_basins = gpd.read_file(Path(self.paths["input_dir"],
                                           self.config['file_io']['input']['geospatial']['gauge_basins'])
                                      )
         gauge_basins[self.config['waterbalance']['basin_id_col']] = gauge_basins[self.config['waterbalance']['basin_id_col']].apply(lambda x: x.lower())
@@ -600,13 +546,29 @@ class Model:
                                                            geodf_index_col='basin',
                                                             time_dep_df_index_col ='gauge',
                                                             time_dep_df_time_col = 'decade',
-                                                            )
-        
+                                                            )           
+  
+        if self.output:
+            self.sections_meta.to_csv(Path(self.paths["output_dir"], 'data', 'section_meta.csv'))
+            self.q_diff.to_csv(Path(self.paths["output_dir"], 'data', 'q_diff.csv'))
+            self.gdf_network_map.to_file(Path(self.paths["output_dir"], 'data', 'section_streamlines.gpkg'),
+                                         driver='GPKG')
+            self.section_basins.to_file(Path(self.paths["output_dir"], 'data', 'section_subbasins.gpkg'), driver='GPKG')
+            #the gauge meta data
+            gdf_gauge_meta = gpd.GeoDataFrame(data=self.gauge_meta,
+                                            geometry=[Point(xy) for xy in zip(self.gauge_meta.easting, self.gauge_meta.northing)],
+                                            crs=self.gdf_network_map.crs,
+                            )
+            gdf_gauge_meta.to_file(Path(self.paths["output_dir"], 'data', 'gauge_meta.gpkg'), driver='GPKG')
+
 
 def main(config_file=None, output=True):
-    sbat = Model(config_file_path=config_file)
-    
-    
+    if config_file:
+        configuration = Model.read_config(config_file)
+    else:
+        configuration = Model.read_config(Path(Path(__file__).parents[1], "sbat.yml"))
+
+    sbat = Model(configuration, output)
     # get discharge data
     logger.info(f'discharge statistics activation is set to {sbat.config["discharge"]["activate"]}')
     if sbat.config['discharge']['activate']:
@@ -628,32 +590,14 @@ def main(config_file=None, output=True):
     logger.info(f'water balance computation activation is set to {sbat.config["recession"]["activate"]}')
     if not hasattr(sbat, 'section_meta') and sbat.config['waterbalance']['activate'] :
         sbat.get_water_balance()
-        if output:            
-            sbat.sections_meta.to_csv(Path(sbat.output_dir, 'data', 'section_meta.csv'))
-            sbat.gdf_network_map.to_file(Path(sbat.output_dir, 'data', 'section_streamlines.gpkg'), driver='GPKG')
-            sbat.section_basins.to_file(Path(sbat.output_dir, 'data', 'section_subbasins.gpkg'), driver='GPKG')
-            sbat.q_diff.to_csv(Path(sbat.output_dir, 'data', 'q_diff.csv'))
-            #the gauge meta data
-            gdf_gauge_meta = gpd.GeoDataFrame(data=sbat.gauges_meta,
-                                            geometry=[Point(xy) for xy in zip(sbat.gauges_meta.easting, sbat.gauges_meta.northing)],
-                                            crs=sbat.gdf_network_map.crs,
-                            )
-            gdf_gauge_meta.to_file(Path(sbat.output_dir, 'data', 'gauge_meta.gpkg'), driver='GPKG')
-            
-    else:
-        if output:
-            sbat.gauges_meta.to_csv(Path(sbat.output_dir, 'data', 'gauge_meta.csv'))
-        
-        
-        
-       
-    
+
     logging.shutdown()
     return sbat
 
 
 
 if __name__ == "__main__":
+
 
     if sys.argv == 1:
         cfg_file = sys.argv.pop(1)
