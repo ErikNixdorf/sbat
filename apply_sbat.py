@@ -2,7 +2,7 @@
 Call Function
 """
 
-from sbat import sbat
+import sbat
 
 #%% generate the object
 #sbat=Model()
