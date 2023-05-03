@@ -434,7 +434,7 @@ def find_recession_limbs(Q: Union[pd.DataFrame, pd.Series],
                 # loop through the row ids
                 if len(inflection_ids) > 1:
                     for i in range(len(inflection_ids) - 1):
-                        df_subsection = section.loc[inflection_ids[i]:inflection_ids[i + 1]]
+                        df_subsection = section.loc[inflection_ids[i]:inflection_ids[i + 1]].copy()
                         df_subsection['section_id_new'] = section_id_new
                         section_id_new += 1
                         subsection_dfs.append(df_subsection)
