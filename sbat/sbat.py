@@ -347,7 +347,7 @@ class Model:
                                         
                 # we will add data to the metric
                 metric = pd.DataFrame(np.expand_dims(mrc_out,0),
-                                      columns=['Q0_rec', 'n0_rec', 'pearson_r'],
+                                      columns=['rec_Q0', 'rec_n', 'pearson_r'],
                                       index=[0]
                                       )
                 metric['decade'] = decade
@@ -366,11 +366,8 @@ class Model:
                 recession_limbs.append(Q_rc)        
 
                 # convert master recession array to data Series
-                Q_mrc=pd.DataFrame(data = Q_mrc,
-                                   index = range(len(Q_mrc)),
-                                   columns=['Q_mrc']
-                                   )
-                Q_mrc['section_time'] = range(len(Q_mrc))
+                Q_mrc=Q_mrc.to_frame()
+                Q_mrc['section_time'] = Q_mrc.index.values
                 Q_mrc['gauge'] = gauge
                 Q_mrc['decade'] = decade
                 
@@ -392,12 +389,12 @@ class Model:
         
         if self.config['file_io']['output']['plot_results']:
             logger.info('plot_results')
-            plot_recession_results(meta_data=self.gauges_meta,
-                                   meta_data_decadal=self.gauges_meta_decadal,
-                                   parameters_to_plot=['Q0_rec', 'pearson_r', 'n0_rec'],
-                                   streams_to_plot=['spree', 'lausitzer_neisse', 'schwarze_elster'],
-                                   output_dir=Path(self.paths["output_dir"], 'recession_analysis', 'figures'),
-                                   decadal_plots=self.config['time']['compute_each_decade'],
+            plot_recession_results(meta_data = self.gauges_meta,
+                                   limb_data = self.recession_limbs_ts,
+                                   input_ts = Q,
+                                   mrc_curve = self.master_recession_curves,
+                                   parameters_to_plot=['rec_Q0', 'rec_n', 'pearson_r'],
+                                   output_dir=Path(self.paths["output_dir"], 'figures','recession')
                                    )
 
         logger.info('Recession Curve Analysis Finished')
@@ -461,15 +458,20 @@ class Model:
                                                                   'basin_id_col'],
                                                               gw_surface=gw_surface,
                                                               network=network_geometry,
-                                                              conceptual_model=conceptual_model)
-            
-            if self.output:
-                #the meta data
-                self.gauges_meta.to_csv(Path(self.paths["output_dir"], 'data', 'gauges_meta.csv'))
-                #the result of the recession
-                self.master_recession_curves.to_csv(Path(self.paths["output_dir"], 'data', 'master_recession_curves.csv'))
-                self.recession_limbs_ts.to_csv(Path(self.paths["output_dir"], 'data', 'recession_limbs_time_series.csv'))
-                
+                                                              conceptual_model=conceptual_model,
+                                                              plot = self.config['file_io']['output']['plot_results'],
+                                                              plot_dir = Path(self.paths["output_dir"], 'figures','subsurface_properties'),
+                                                              )
+        
+        
+        if self.output:
+            #the meta data
+            self.gauges_meta.to_csv(Path(self.paths["output_dir"], 'data', 'gauges_meta.csv'))
+            #the result of the recession
+            self.master_recession_curves.to_csv(Path(self.paths["output_dir"], 'data', 'master_recession_curves.csv'))
+            self.recession_limbs_ts.to_csv(Path(self.paths["output_dir"], 'data', 'recession_limbs_time_series.csv'))
+        
+        
 
 
     def get_water_balance(self, **kwargs):

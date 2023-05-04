@@ -403,7 +403,7 @@ def plot_bf_results(ts_data: pd.DataFrame = pd.DataFrame(),
         fig, ax = plt.subplots()
         sns.boxplot(data=subset.reset_index(), x='variable', y='value')
         plt.xticks(rotation=90)
-        plt.xlabel('parameter_name')
+        plt.xlabel(gauge_name)
         plt.ylabel(parameter_name)
         plt.title(f'{parameter_name} method boxplot at {gauge_name}')
         plt.tight_layout()
@@ -457,7 +457,7 @@ def plot_bf_results(ts_data: pd.DataFrame = pd.DataFrame(),
                                        gauge_ticklabels = gauge_ticklabels,
                                        output_dir = output_dir)
 
-            
+    return None
 
     
     

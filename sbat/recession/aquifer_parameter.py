@@ -17,7 +17,8 @@ import pandas as pd
 from rasterio.io import DatasetReader
 from shapely.geometry import Point
 from pandas.core.series import Series
-
+import seaborn as sns
+from bflow.bflow import plot_along_streamlines
 aquifer_logger = logging.getLogger('sbat.aquifer_parameter')
 def extract_coords(pt: Point) -> Tuple[float, float,float]:
     """
@@ -277,6 +278,8 @@ def get_hydrogeo_properties(
     network: gpd.GeoDataFrame = gpd.GeoDataFrame(),
     conceptual_model: str = 'maillet',
     basin_id_col: str = 'basin',
+    plot: bool = True,
+    plot_dir = Path(Path.cwd(), 'bf_analysis', 'figures'),
     ) -> pd.DataFrame:
     """
     Calculate hydrogeological properties for a set of gauging stations based on given inputs.
@@ -299,14 +302,39 @@ def get_hydrogeo_properties(
                                                         river_network=network), axis=1)
     # map to gauge data
     gauge_data = gauge_data.apply(lambda x: map_topo_parameters(x, basins_out), axis=1)
-    
+    cols_old=set(gauge_data.columns)
     # get hydrogeological parameters
     gauge_data = infer_hydrogeo_parameters(basin_data=gauge_data,
                                            conceptual_model=conceptual_model,
-                                           Q0='Q0_rec',
-                                           alpha='n0_rec',
+                                           Q0='rec_Q0',
+                                           alpha='rec_n',
                                            dist_m='dist_m',
                                            network_length='network_length',
                                            h_m='h_m')
+    
+    if plot:
+        aquifer_logger.info('plot inferred aquifer properties along streamline')
+        # first we generate the output dir
+        plot_dir.mkdir(parents=True, exist_ok=True)
+        #default seaborn setting
+        sns.set_context('paper')
+        parameters_to_plot=list(set(gauge_data.columns)-cols_old)
+        for stream,stream_gauges in gauge_data.reset_index().groupby('stream'):        
+            #get river km
+            stream_gauges['river_km'] = stream_gauges['distance_to_mouth'].max() - stream_gauges[
+                'distance_to_mouth']
+            stream_gauges = stream_gauges.sort_values('river_km')
+            gauge_ticklabels = [label.split('_')[0] for label in stream_gauges['gauge'].unique()]        
+            #plot for each parameter
+            for para_col in parameters_to_plot:
+                plot_along_streamlines(stream_gauges = stream_gauges,
+                                           stream_name = stream+'_mrc_',
+                                           sort_column = 'river_km',
+                                           para_column = para_col,
+                                           gauge_ticklabels = gauge_ticklabels,
+                                           output_dir = plot_dir)
+        
+
+
     return gauge_data
 
