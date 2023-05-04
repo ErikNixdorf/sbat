@@ -174,8 +174,8 @@ class Model:
             None
         
         Example:
-            >>> gauge = Gauge(...)
-            >>> gauge.get_baseflow()
+            #>>> gauge = Gauge(...)
+            #>>> gauge.get_baseflow()
         """
         # first we compute the baseflow
         self.bf_output = compute_baseflow(self.gauge_ts,
@@ -343,7 +343,7 @@ class Model:
                 
                 # we will add data to the recession limbs
                 Q_rc['gauge'] = gauge
-                Q_rc['decade'] = decade
+                Q_rc['decade'] = int(decade)
                 Q_rc['mrc_algorithm'] = self.config['recession']['fitting']['mastercurve_algorithm']
                 Q_rc['flow_type'] = self.config['recession']['curve_data']['flow_type']
                 Q_rc['curve_type'] = self.config['recession']['curve_data']['curve_type']
@@ -358,7 +358,7 @@ class Model:
                                    )
                 Q_mrc['section_time'] = range(len(Q_mrc))
                 Q_mrc['gauge'] = gauge
-                Q_mrc['decade'] = decade
+                Q_mrc['decade'] = int(decade)
                 
                 Q_mrcs.append(Q_mrc)
                 
@@ -367,7 +367,7 @@ class Model:
 
         self.recession_limbs_ts = pd.concat(recession_limbs, axis=0, sort=False).reset_index(drop = True)
 
-        self.master_recession_curves = pd.concat(Q_mrcs, axis=0).reset_index(drop = True)             
+        self.master_recession_curves = pd.concat(Q_mrcs, axis=0).reset_index(drop = True)
 
         # append the metrics data to the metadata
         self.gauges_meta.index.name = 'gauge'
