@@ -84,12 +84,6 @@ class Model:
         self.gauge_ts = pd.read_csv(self.paths["gauge_ts_path"], index_col=0, parse_dates=True)
         # all columns to lower case
         self.gauge_ts.columns = list(map(lambda x:x.lower(),self.gauge_ts.columns))
-        # todo: Is this test only for debugging? If yes it should be removed for release. For a public test case better
-        #  reduce the input data itself
-        if self.config['data_cleaning']['test_mode']:
-            # logger.info('test case, focus on three gauges only')
-            self.gauge_ts = self.gauge_ts.iloc[:, 0:3]
-
         # Slice gauge time series for start and end date
         self.gauge_ts = self.gauge_ts.loc[self.config['time']['start_date']:self.config['time']['end_date']]
 
@@ -245,7 +239,26 @@ class Model:
         if self.output:
         #the meta data
             self.gauges_meta.to_csv(Path(self.paths["output_dir"], 'data', 'gauges_meta.csv'))
-
+            
+        if self.config['file_io']['output']['plot_results']:
+            logger.info('plot_results daily and monthly results of discharge computation')
+            discharge_ts_melt_daily = self.gauge_ts.melt(ignore_index=False,var_name='gauge')
+            discharge_ts_melt_daily['variable']='q_daily'
+            q_dict={'q_daily':discharge_ts_melt_daily}
+            #append monthly if existing
+            if self.config['discharge']['compute_monthly']:
+                discharge_ts_melt_monthly = discharge_ts_melt_daily.groupby('gauge').resample('M').mean().reset_index().set_index('date')
+                discharge_ts_melt_monthly['variable']='q_monthly'
+                q_dict={'q_monthly':discharge_ts_melt_monthly}
+            # we run the plotting algorithm from bf_flow
+            for q_parameter in q_dict.keys():
+                plot_bf_results(ts_data=q_dict[q_parameter], meta_data=self.gauges_meta,
+                                parameter_name=q_parameter,
+                                plot_along_streams=True,
+                                output_dir=Path(self.paths["output_dir"], 'figures','discharge')
+                                )
+            
+            
     # %%the function to call the resession curves
     def get_recession_curve(self):
         """Compute the recession curve for each gauge and decade."""
