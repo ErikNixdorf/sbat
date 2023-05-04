@@ -21,7 +21,7 @@ from scipy.signal import savgol_filter
 import seaborn as sns
 
 from .mastercurve import get_master_recession_curve
-
+from bflow.bflow import plot_bf_results
 recession_logger = logging.getLogger('sbat.recession')
 
 dateparse_q = lambda x: datetime.strptime(x, '%Y-%m-%d')
@@ -558,6 +558,8 @@ def analyse_recession_curves(Q, mrc_algorithm: str = 'demuth',
                 limb.loc[:, f'section_x_{reservoir}'] = fit_parameter[3 * (reservoir + 1) - 1]
         limb.loc[:, 'section_corr'] = r_coef
         limb.loc[:, 'Q_interp'] = limb_int
+        #we store the date as an additional column
+        limb['date']=limb.index.values
         # merge sections
         limb_sections_list.append(limb)
     # Concatenate all the groups in the list into a single DataFrame

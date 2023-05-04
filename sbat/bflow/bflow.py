@@ -273,6 +273,81 @@ def add_gauge_stats(gauge_meta: pd.DataFrame, ts_data: pd.DataFrame, col_name: s
     
     return modified_gauge_meta
 
+def plot_along_streamlines(stream_gauges: pd.DataFrame,
+                           stream_name: str = 'river',
+                           sort_column: str = 'river_km',
+                           para_column: str = 'q_daily',
+                           gauge_ticklabels: List[str] = None,
+                           output_dir: Union[str, Path] = Path.cwd() / 'bf_analysis' / 'figures') -> Tuple:
+    """
+    Plot a line chart of a given parameter (e.g. daily discharge) along the streamlines of a river system,
+    and a separate line chart for each decade of data available.
+
+    Parameters:
+    -----------
+    stream_gauges: pd.DataFrame
+        A pandas DataFrame containing the data to plot, with one row per gauge station and columns for the
+        parameters of interest (e.g. 'q_daily' for daily discharge), the station name and location (e.g. 'station_id',
+        'river_km') and the decade of observation (e.g. 'decade').
+    stream_name: str, optional (default='river')
+        The name of the river system to plot.
+    sort_column: str, optional (default='river_km')
+        The column of `stream_gauges` to use for sorting the data along the river system. By default, this is the
+        river kilometre column.
+    para_column: str, optional (default='q_daily')
+        The name of the column in `stream_gauges` containing the parameter of interest to plot (e.g. 'q_daily' for daily
+        discharge). This column should contain numeric values.
+    gauge_ticklabels: list of str, optional (default=[])
+        A list of labels to use for the x-axis ticks, one per gauge station. By default, no labels are shown.
+    output_dir: str or Path-like, optional (default='bf_analysis/figures')
+        The directory where to save the output plots. By default, the plots are saved in a 'bf_analysis/figures'
+        subdirectory of the current working directory.
+
+    Returns:
+    --------
+    None
+    """    
+    fig, ax = plt.subplots()
+    sns.lineplot(data=stream_gauges, x=sort_column, y=para_column,
+                      marker='o', linewidth=2, markersize=10, color='dodgerblue')
+    # we give an error band if available
+    if 'mean' in para_column:
+        std_col = f"{para_column.split('_mean')[0]}_std"
+        ax.fill_between(stream_gauges[sort_column], 
+                        stream_gauges[para_column] - stream_gauges[std_col],
+                        stream_gauges[para_column] + stream_gauges[std_col], 
+                        alpha=0.2, color='k')
+    
+    plt.title(f'{para_column} along {stream_name}')
+    plt.ylabel(para_column)
+    plt.xlabel(sort_column)
+    ax.set_xticks(stream_gauges[sort_column].unique())
+    plt.xticks(rotation=90)
+    if gauge_ticklabels is not None:
+        ax.set_xticklabels(gauge_ticklabels)
+    plt.tight_layout()
+    fig.savefig(Path(output_dir, f'{stream_name}_{para_column}_along_streamlines.png'), dpi=300)
+    plt.close()
+
+    #plot for each decade
+    fig, ax = plt.subplots()
+    sns.lineplot(data=stream_gauges, x=sort_column, y=para_column, hue='decade',
+                      marker='o', linewidth=2, markersize=10, palette='rocket',
+                      hue_order=stream_gauges['decade'].sort_values())
+    
+    plt.title(f'{para_column} along {stream_name} and decade')
+    plt.ylabel(para_column)
+    plt.xlabel(sort_column)
+    ax.set_xticks(stream_gauges[sort_column].unique())
+    plt.xticks(rotation=90)
+    if gauge_ticklabels is not None:
+        ax.set_xticklabels(gauge_ticklabels)
+    plt.tight_layout()
+    fig.savefig(Path(output_dir, f'{stream_name}_{para_column}_decadal_along_streamlines.png'), dpi=300)
+    plt.close()
+    
+    return None
+
 
 def plot_bf_results(ts_data: pd.DataFrame = pd.DataFrame(),
                      meta_data: pd.DataFrame = pd.DataFrame(),
@@ -375,37 +450,14 @@ def plot_bf_results(ts_data: pd.DataFrame = pd.DataFrame(),
         gauge_ticklabels = [label.split('_')[0] for label in stream_gauges['gauge'].unique()]        
         #plot for each parameter
         for para_col in para_cols:
-            fig, ax = plt.subplots()
-            s6 = sns.lineplot(data=stream_gauges, x='river_km', y=para_col,
-                              marker='o', linewidth=2, markersize=10, color='dodgerblue')
-            # we give an error band if available
-            if 'mean' in para_col:
-                std_col = '_'.join([i for i in para_col.split('_')[:-1]]) + '_std'
-                s6.fill_between(stream_gauges['river_km'], stream_gauges[para_col] - stream_gauges[std_col],
-                                stream_gauges[para_col] + stream_gauges[std_col], alpha=0.2, color='k')
+            plot_along_streamlines(stream_gauges = stream_gauges,
+                                       stream_name = stream,
+                                       sort_column = 'river_km',
+                                       para_column = para_col,
+                                       gauge_ticklabels = gauge_ticklabels,
+                                       output_dir = output_dir)
+
             
-            plt.title(f'{para_col} along {stream}')
-            plt.ylabel(para_col)
-            plt.xlabel('River kilometer')
-            ax.set_xticks(stream_gauges['river_km'].unique())
-            plt.xticks(rotation=90)
-            ax.set_xticklabels(gauge_ticklabels)
-            plt.tight_layout()
-            fig.savefig(Path(output_dir, f'{stream}_{para_col}_along_streamlines.png'), dpi=300)
-            plt.close()
-        
-            #plot for each decade
-            fig, ax = plt.subplots()
-            sns.lineplot(data=stream_gauges, x='river_km', y=para_col, hue='decade',
-                              marker='o', linewidth=2, markersize=10, palette='rocket',
-                              hue_order=stream_gauges['decade'].sort_values())
-            
-            plt.title(f'{para_col} along {stream} and decade')
-            plt.ylabel(para_col)
-            plt.xlabel('River kilometer')
-            ax.set_xticks(stream_gauges['river_km'].unique())
-            plt.xticks(rotation=90)
-            ax.set_xticklabels(gauge_ticklabels)
-            plt.tight_layout()
-            fig.savefig(Path(output_dir, f'{stream}_{para_col}_decadal_along_streamlines.png'), dpi=300)
-            plt.close()            
+
+    
+    
