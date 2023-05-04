@@ -25,7 +25,6 @@ file_io:
 data_cleaning:
     drop_na_axis: 0
     valid_datapairs_only: true
-    test_mode: false
 #infomation on time processing
 time:
     compute_each_decade: true
@@ -39,7 +38,6 @@ baseflow:
         - UKIH
     compute_baseflow_index: true
     calculate_monthly: true
-    update_metadata: true
 
 #the discharge
 discharge:
