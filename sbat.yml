@@ -2,22 +2,22 @@
 #the structure is a tree similar to xml
 #info provides some general information of the dataset 
 info:
-    model_name: example1
+    model_name: example3
     contact: Max Mustermann
 #file_io describes the location of all input datasets as well as parameter specifications
 file_io:
     input:
         data_dir: data/examples # all data is located relativ to this path
         gauges:
-            gauge_meta: ex1_gauge_meta.csv
-            gauge_time_series: ex1_gauge_ts.csv
+            gauge_meta: ex3_gauge_meta.csv
+            gauge_time_series: ex3_gauge_ts.csv
 
         hydrogeology:
-            gw_levels: ex1_hydraulic_heads.tif
+            gw_levels: 
         geospatial:
-            river_network: ex1_network.gpkg
-            gauge_basins: ex1_basin.gpkg
-            branches_topology: 
+            river_network: ex3_network.gpkg
+            gauge_basins: ex3_basins.gpkg
+            branches_topology: ex3_topology.csv
     output:
         output_directory: output/
         plot_results: true
@@ -47,13 +47,13 @@ discharge:
 
 #the recession
 recession:
-    activate: true
+    activate: false
     curve_data:
         flow_type: baseflow # flow type can be discharge or baseflow
         #curve type can be either hydrograph or waterbalance
         curve_type: hydrograph
         minimum_limbs: 20
-        split_at_inflection: true # decides whether the inflection points will be used to split recession limbs
+        split_at_inflection: false # decides whether the inflection points will be used to split recession limbs
         moving_average_filter_steps: 5
     fitting:
         mastercurve_algorithm: demuth
@@ -64,7 +64,7 @@ recession:
         
     hydrogeo_parameter_estimation:
         activate: true
-        rorabaugh_simplification : false
+        rorabaugh_simplification : true
 #water balance
 waterbalance:
     activate: true

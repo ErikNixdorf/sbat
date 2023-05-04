@@ -595,30 +595,35 @@ def analyse_recession_curves(Q, mrc_algorithm: str = 'demuth',
     return Q, Q_mrc, mrc_out
 
 # %% plotting
-def plot_recession_results(meta_data=pd.DataFrame(), 
-                           limb_data= pd.DataFrame(),
-                           input_ts = pd.DataFrame(),
-                           mrc_curve = pd.DataFrame(),
-                           parameters_to_plot = ['Q0', 'pearson_r', 'n'],
-                           output_dir = Path(Path.cwd(), 'bf_analysis', 'figures')
-                           ):
-
+def plot_recession_results(meta_data: pd.DataFrame, 
+                           limb_data: pd.DataFrame, 
+                           input_ts: pd.DataFrame,
+                           mrc_curve: pd.DataFrame, 
+                           parameters_to_plot: list[str] = ['Q0', 'pearson_r', 'n'],
+                           output_dir: Path = Path(Path.cwd(), 'bf_analysis', 'figures')
+                           )-> None:
     """
-    Plot the results of the baseflow calculation
+    Plot the results of the baseflow calculation.
 
     Parameters
     ----------
-    data : TYPE, optional
-        DESCRIPTION. The default is dict().
-    meta_data : TYPE, optional
-        DESCRIPTION. The default is pd.DataFrame().
-    streams_to_plot : TYPE, optional
-        DESCRIPTION. The default is ['spree','lausitzer_neisse','schwarze_elster'].
+    meta_data : pandas.DataFrame
+        Metadata for each gauge station, with columns 'gauge', 'lat', 'lon', 'stream', 'distance_to_mouth', and 'altitude'.
+    limb_data : pandas.DataFrame
+        Dataframe containing recession limb parameters for each gauge station and limb, with columns 'gauge', 'section_id',
+        'decade', 'Q0', 'pearson_r', 'n', 'a', 'b', 'k', and 'Q_interp'.
+    input_ts : pandas.DataFrame
+        Time series of water flow for each gauge station, with columns representing dates and rows representing water flow values.
+    mrc_curve : pandas.DataFrame
+        Master recession curve for each gauge station, with columns 'gauge', 'section_id', 'decade', 'section_time', and 'q_rec'.
+    parameters_to_plot : list of str, optional
+        List of the names of the parameters to plot along the streamlines. Default is ['Q0', 'pearson_r', 'n'].
+    output_dir : pathlib.Path, optional
+        Output directory to save the generated figures. Default is 'bf_analysis/figures' in the current working directory.
 
     Returns
     -------
-    None.
-
+    None
     """
     #set up
     # first we generate the output dir
