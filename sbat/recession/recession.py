@@ -557,7 +557,7 @@ def analyse_recession_curves(Q, mrc_algorithm: str = 'demuth',
             if maximum_reservoirs > 1:
                 limb.loc[:, f'section_x_{reservoir}'] = fit_parameter[3 * (reservoir + 1) - 1]
         limb.loc[:, 'pearson_r'] = r_coef
-        limb.loc[:, 'Q_interp'] = limb_int
+        limb.loc[:, 'Q_interp'] = limb_int.values
         #we store the date as an additional column
         limb['date']=limb.index.values
         # merge sections
