@@ -685,9 +685,16 @@ def plot_recession_results(meta_data: pd.DataFrame,
         input_ts_subset=input_ts.loc[:,gauge_name]
         p1=input_ts_subset.plot(linewidth=2)
         
-        for _,section in limb_subset.groupby(['section_id','decade']):
+        for grouper,section in limb_subset.groupby(['section_id','decade']):
             section=section.set_index('date')['Q_interp']
             section.plot(ax=p1.axes,linestyle='--',color='k',linewidth=0.5)
+            p1.axes.axvline(x=section.index[0],color='grey',linewidth=0.2, alpha = 0.5)
+            p1.axes.axvline(x=section.index[-1],color='grey',linewidth=0.2, alpha = 0.5)
+            p1.axes.text(x=section.index.mean(),
+                         y=section.max(),
+                         s=str(grouper[0]),
+                         horizontalalignment='center',
+                         )
         
         plt.ylabel('water flow')
         plt.xlabel('date')

@@ -60,7 +60,7 @@ recession:
         recession_algorithm: maillet
         minimum_limbs: 20
         maximum_reservoirs: 1
-        minimum_recession_curve_length: 10
+        minimum_recession_curve_length: 20
         
     hydrogeo_parameter_estimation:
         activate: false
