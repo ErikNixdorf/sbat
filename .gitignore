@@ -4,7 +4,4 @@ build/
 /output/
 /info/
 /hooks/
-test_schuettung_q.py
-
-
-test_schuettung_no_baseflow.py
+apply_sbat.py
