@@ -584,7 +584,7 @@ def main(config_file=None, output=True):
     if config_file:
         configuration = Model.read_config(config_file)
     else:
-        configuration = Model.read_config(Path(Path(__file__).parents[1], "sbat.yml"))
+        configuration = Model.read_config(Path(Path(__file__).parents[1], "data/examples/ex3_sbat.yml"))
 
     sbat = Model(configuration, output)
     # get discharge data
