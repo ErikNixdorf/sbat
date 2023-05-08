@@ -20,10 +20,11 @@ def model_config1():
     return model
 
 
-# @pytest.fixture(scope="module")
-# def model_config2(config):
-#    model = sbat.Model(conf=config, output=False)
-#    here we could modify the config dictionary, e.g.
-# model.config["data_cleaning"]["drop_na_axis"] = 1
-#    model.get_discharge_stats()
-#    return model
+@pytest.fixture(scope="module")
+def model_config2():
+    config = sbat.Model.read_config(
+        Path(Path(__file__).parents[2], "data/examples/ex2_sbat.yml")
+    )
+    model = sbat.Model(conf=config, output=False)
+    model.get_recession_curve()
+    return model
