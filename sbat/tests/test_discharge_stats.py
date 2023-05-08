@@ -1,4 +1,5 @@
 import numpy as np
+import pandas as pd
 
 
 class TestConfig1:
@@ -19,21 +20,43 @@ class TestConfig1:
         )
 
     def test_monthly_stats(self, model_config1):
-        if model_config1.config["discharge"]["compute_monthly"]:
-            expected = [
-                [0.83616979, 0.55223783, 0.66043744],
-                [0.77583502, 0.49909641, 0.64330225],
-                [0.21478395, 0.13230531, 0.61599255],
-                [0.19565859, 0.1093387, 0.55882393],
-            ]
+        expected = [
+            [0.83616979, 0.55223783, 0.66043744],
+            [0.77583502, 0.49909641, 0.64330225],
+            [0.21478395, 0.13230531, 0.61599255],
+            [0.19565859, 0.1093387, 0.55882393],
+        ]
 
-            result = model_config1.gauges_meta[
-                ["q_monthly_mean", "q_monthly_std", "q_monthly_cv"]
-            ].values
+        result = model_config1.gauges_meta[
+            ["q_monthly_mean", "q_monthly_std", "q_monthly_cv"]
+        ].values
 
-            np.testing.assert_almost_equal(
-                result,
-                expected,
-            )
+        np.testing.assert_almost_equal(
+            result,
+            expected,
+        )
 
 
+class TestConfig3:
+    def test_daily_stats(self, model_config3):
+        expected = pd.Series(
+            [3.304937, 2.084462, 0.829984],
+            index=["q_daily_mean", "q_daily_std", "q_daily_cv"],
+        )
+        result = model_config3.gauges_meta[
+            ["q_daily_mean", "q_daily_std", "q_daily_cv"]
+        ].mean()
+
+        pd.testing.assert_series_equal(expected, result)
+
+    def test_monthly_stats(self, model_config3):
+        expected = pd.Series(
+            [3.332814, 1.762536, 0.602831],
+            index=["q_monthly_mean", "q_monthly_std", "q_monthly_cv"],
+        )
+
+        result = model_config3.gauges_meta[
+            ["q_monthly_mean", "q_monthly_std", "q_monthly_cv"]
+        ].mean()
+
+        pd.testing.assert_series_equal(expected, result)

@@ -25,3 +25,51 @@ class TestConfig1:
         result = model_config1.sections_meta
         result["decade"] = result["decade"].astype(int)
         pd.testing.assert_frame_equal(expected, result)
+
+
+class TestConfig3:
+    def test_updated_gauges_meta_mean(self, model_config3):
+        expected = pd.Series([0.529611], index=["balance"])
+
+        result = model_config3.gauges_meta[["balance"]].mean()
+        pd.testing.assert_series_equal(expected, result)
+
+    def test_updated_gauges_meta_nans(self, model_config3):
+        expected = pd.Series(
+            index=[
+                "goeritz_nr_195",
+                "hammerstadt_1",
+                "hammerstadt_1",
+                "heinersbrueck",
+                "merzdorf_2",
+                "neusalza_spremberg",
+                "neusalza_spremberg",
+                "niedergurig",
+                "radensdorf_1",
+                "radensdorf_2",
+                "reichwalde_3",
+                "reichwalde_3",
+                "schoenfeld",
+                "schoenfeld",
+                "schoeps",
+            ],
+            name="balance",
+        )
+        expected.index.name = "gauge"
+        single_indexed = model_config3.gauges_meta[["balance"]].reset_index(
+            level=1, drop=True
+        )
+        result = single_indexed["balance"][single_indexed["balance"].isnull()]
+        pd.testing.assert_series_equal(expected, result)
+
+    def test_qdiff(self, model_config3):
+        expected = pd.read_csv("data/example3/qdiff.csv", index_col=0)
+        expected.columns.name = "downstream_point"
+        result = model_config3.q_diff
+        pd.testing.assert_frame_equal(expected, result)
+
+    def test_sections_meta(self, model_config3):
+        expected = pd.read_csv("data/example3/sections_meta.csv", index_col=0)
+        result = model_config3.sections_meta
+        result["decade"] = result["decade"].astype(int)
+        pd.testing.assert_frame_equal(expected, result)

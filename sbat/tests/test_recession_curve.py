@@ -59,23 +59,15 @@ class TestConfig1:
                 "transmissivity_maillet",
             ]
         ].values
-        np.testing.assert_almost_equal(
-            result,
-            expected,
-            decimal=5
-        )
+        np.testing.assert_almost_equal(result, expected, decimal=5)
 
     def test_master_recession_curve(self, model_config1):
-        expected = pd.read_csv(
-            "data/example1/master_recession_curves.csv", index_col=0
-        )
+        expected = pd.read_csv("data/example1/master_recession_curves.csv", index_col=0)
         result = model_config1.master_recession_curves
         pd.testing.assert_frame_equal(expected, result)
 
     def test_recession_limbs_ts(self, model_config1):
-        expected = pd.read_csv(
-            "data/example1/recession_limbs_ts.csv", index_col=0
-        )
+        expected = pd.read_csv("data/example1/recession_limbs_ts.csv", index_col=0)
         result = model_config1.recession_limbs_ts
         pd.testing.assert_frame_equal(expected, result)
 
@@ -86,25 +78,19 @@ class TestConfig2:
 
         result = model_config2.gauges_meta[
             [
-                'Q0_rec', 'n0_rec', 'pearson_r',
+                "Q0_rec",
+                "n0_rec",
+                "pearson_r",
             ]
         ].values
-        np.testing.assert_almost_equal(
-            result,
-            expected,
-            decimal=5
-        )
+        np.testing.assert_almost_equal(result, expected, decimal=5)
 
     def test_master_recession_curve(self, model_config2):
-        expected = pd.read_csv(
-            "data/example2/master_recession_curves.csv", index_col=0
-        )
+        expected = pd.read_csv("data/example2/master_recession_curves.csv", index_col=0)
         result = model_config2.master_recession_curves
         pd.testing.assert_frame_equal(expected, result)
 
     def test_recession_limbs_ts(self, model_config2):
-        expected = pd.read_csv(
-            "data/example2/recession_limbs_ts.csv", index_col=0
-        )
+        expected = pd.read_csv("data/example2/recession_limbs_ts.csv", index_col=0)
         result = model_config2.recession_limbs_ts
         pd.testing.assert_frame_equal(expected, result)

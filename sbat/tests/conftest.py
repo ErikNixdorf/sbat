@@ -28,3 +28,15 @@ def model_config2():
     model = sbat.Model(conf=config, output=False)
     model.get_recession_curve()
     return model
+
+
+@pytest.fixture(scope="module")
+def model_config3():
+    config = sbat.Model.read_config(
+        Path(Path(__file__).parents[2], "data/examples/ex3_sbat.yml")
+    )
+    model = sbat.Model(conf=config, output=False)
+    model.get_discharge_stats()
+    model.get_baseflow()
+    model.get_water_balance()
+    return model
