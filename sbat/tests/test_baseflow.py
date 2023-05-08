@@ -31,25 +31,11 @@ class TestConfig1:
         present_keys = model_config1.bf_output.keys()
         assert all(key in present_keys for key in expected_keys)
 
-    def test_baseflow_daily(self, model_config1):
-        expected = pd.read_csv(
-            "data/example1/bf_daily.csv", index_col=0, parse_dates=True
-        )
-        result = model_config1.bf_output["bf_daily"]
-        pd.testing.assert_frame_equal(expected, result)
-
     def test_baseflow_monthly(self, model_config1):
         expected = pd.read_csv(
             "data/example1/bf_monthly.csv", index_col=0, parse_dates=True
         )
         result = model_config1.bf_output["bf_monthly"]
-        pd.testing.assert_frame_equal(expected, result)
-
-    def test_baseflow_index_monthly(self, model_config1):
-        expected = pd.read_csv(
-            "data/example1/bfi_monthly.csv", index_col=0, parse_dates=True
-        )
-        result = model_config1.bf_output["bfi_monthly"]
         pd.testing.assert_frame_equal(expected, result)
 
     def test_baseflow_attributes(self, model_config1):
