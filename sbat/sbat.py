@@ -343,7 +343,7 @@ class Model:
                 
                 # we will add data to the recession limbs
                 Q_rc['gauge'] = gauge
-                Q_rc['decade'] = int(decade)
+                Q_rc['decade'] = decade
                 Q_rc['mrc_algorithm'] = self.config['recession']['fitting']['mastercurve_algorithm']
                 Q_rc['flow_type'] = self.config['recession']['curve_data']['flow_type']
                 Q_rc['curve_type'] = self.config['recession']['curve_data']['curve_type']
@@ -449,13 +449,13 @@ class Model:
                                                               network=network_geometry,
                                                               conceptual_model=conceptual_model)
             
-            if self.output:
-                #the meta data
-                self.gauges_meta.to_csv(Path(self.paths["output_dir"], 'data', 'gauges_meta.csv'))
-                #the result of the recession
-                self.master_recession_curves.to_csv(Path(self.paths["output_dir"], 'data', 'master_recession_curves.csv'))
-                self.recession_limbs_ts.to_csv(Path(self.paths["output_dir"], 'data', 'recession_limbs_time_series.csv'))
-                
+        if self.output:
+            #the meta data
+            self.gauges_meta.to_csv(Path(self.paths["output_dir"], 'data', 'gauges_meta.csv'))
+            #the result of the recession
+            self.master_recession_curves.to_csv(Path(self.paths["output_dir"], 'data', 'master_recession_curves.csv'))
+            self.recession_limbs_ts.to_csv(Path(self.paths["output_dir"], 'data', 'recession_limbs_time_series.csv'))
+            
 
 
     def get_water_balance(self, **kwargs):
