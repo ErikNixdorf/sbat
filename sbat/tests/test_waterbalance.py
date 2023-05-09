@@ -21,11 +21,12 @@ class TestConfig1:
 
 
 class TestConfig3:
-    def test_updated_gauges_meta_mean(self, model_config3):
-        expected = pd.Series([0.529611], index=["balance"])
-
-        result = model_config3.gauges_meta[["balance"]].mean()
-        pd.testing.assert_series_equal(expected, result)
+    def test_updated_gauges_meta(self, model_config3):
+        expected = pd.read_csv("data/example3/gauges_meta.csv")
+        expected['decade'] = expected['decade'].astype(str)
+        expected = expected.set_index(['gauge','decade'])["balance"]
+        result = model_config3.gauges_meta[["balance"]]
+        pd.testing.assert_series_equal(expected, result["balance"])
 
     def test_updated_gauges_meta_nans(self, model_config3):
         expected = pd.Series(
