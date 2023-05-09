@@ -21,7 +21,7 @@ from scipy.signal import savgol_filter
 import seaborn as sns
 
 from .mastercurve import get_master_recession_curve
-
+from bflow.bflow import plot_along_streamlines
 recession_logger = logging.getLogger('sbat.recession')
 
 dateparse_q = lambda x: datetime.strptime(x, '%Y-%m-%d')
@@ -287,7 +287,7 @@ def fit_reservoir_function(t: np.ndarray, Q: np.ndarray, Q_0: float,
             break
         else:
             # we write the output tuple
-            output = (fit_parameter, Q_int, r_cor, reservoirs + 1)
+            output = (fit_parameter, pd.Series(index=t,data=Q_int,name='q_rec'), r_cor, reservoirs + 1)
             r_cor_old = copy(r_cor)
 
     # we return the results:
@@ -552,12 +552,14 @@ def analyse_recession_curves(Q, mrc_algorithm: str = 'demuth',
 
         # add data to the section
         for reservoir in range(reservoirs):
-            limb.loc[:, f'section_n_{reservoir}'] = fit_parameter[3 * (reservoir + 1) - 2]
-            limb.loc[:, f'section_Q0_{reservoir}'] = fit_parameter[3 * (reservoir + 1) - 3]
+            limb.loc[:, f'rec_n_{reservoir}'] = fit_parameter[3 * (reservoir + 1) - 2]
+            limb.loc[:, f'rec_Q0_{reservoir}'] = fit_parameter[3 * (reservoir + 1) - 3]
             if maximum_reservoirs > 1:
                 limb.loc[:, f'section_x_{reservoir}'] = fit_parameter[3 * (reservoir + 1) - 1]
-        limb.loc[:, 'section_corr'] = r_coef
-        limb.loc[:, 'Q_interp'] = limb_int
+        limb.loc[:, 'pearson_r'] = r_coef
+        limb.loc[:, 'Q_interp'] = limb_int.values
+        #we store the date as an additional column
+        limb['date']=limb.index.values
         # merge sections
         limb_sections_list.append(limb)
     # Concatenate all the groups in the list into a single DataFrame
@@ -593,120 +595,129 @@ def analyse_recession_curves(Q, mrc_algorithm: str = 'demuth',
     return Q, Q_mrc, mrc_out
 
 # %% plotting
-def plot_recession_results(meta_data=pd.DataFrame(), meta_data_decadal=pd.DataFrame(),
-                           parameters_to_plot=['Q0', 'pearson_r', 'n'],
-                           streams_to_plot=['spree', 'lausitzer_neisse', 'schwarze_elster'],
-                           output_dir=Path(Path.cwd(), 'bf_analysis', 'figures'),
-                           decadal_plots=True
-                           ):
-
+def plot_recession_results(meta_data: pd.DataFrame, 
+                           limb_data: pd.DataFrame, 
+                           input_ts: pd.DataFrame,
+                           mrc_curve: pd.DataFrame, 
+                           parameters_to_plot: list[str] = ['Q0', 'pearson_r', 'n'],
+                           output_dir: Path = Path(Path.cwd(), 'bf_analysis', 'figures')
+                           )-> None:
     """
-    Plot the results of the baseflow calculation
+    Plot the results of the baseflow calculation.
 
     Parameters
     ----------
-    data : TYPE, optional
-        DESCRIPTION. The default is dict().
-    meta_data : TYPE, optional
-        DESCRIPTION. The default is pd.DataFrame().
-    streams_to_plot : TYPE, optional
-        DESCRIPTION. The default is ['spree','lausitzer_neisse','schwarze_elster'].
+    meta_data : pandas.DataFrame
+        Metadata for each gauge station, with columns 'gauge', 'lat', 'lon', 'stream', 'distance_to_mouth', and 'altitude'.
+    limb_data : pandas.DataFrame
+        Dataframe containing recession limb parameters for each gauge station and limb, with columns 'gauge', 'section_id',
+        'decade', 'Q0', 'pearson_r', 'n', 'a', 'b', 'k', and 'Q_interp'.
+    input_ts : pandas.DataFrame
+        Time series of water flow for each gauge station, with columns representing dates and rows representing water flow values.
+    mrc_curve : pandas.DataFrame
+        Master recession curve for each gauge station, with columns 'gauge', 'section_id', 'decade', 'section_time', and 'q_rec'.
+    parameters_to_plot : list of str, optional
+        List of the names of the parameters to plot along the streamlines. Default is ['Q0', 'pearson_r', 'n'].
+    output_dir : pathlib.Path, optional
+        Output directory to save the generated figures. Default is 'bf_analysis/figures' in the current working directory.
 
     Returns
     -------
-    None.
-
+    None
     """
-    coef_log_scale = {'Q0': True,
-                      'pearson_r': False,
-                      'n': True}
-
+    #set up
     # first we generate the output dir
     output_dir.mkdir(parents=True, exist_ok=True)
-    if not decadal_plots:
+    #default seaborn setting
+    sns.set_context('paper')
+    
+    #%% lets plot the parameters along the streamline
+    recession_logger.info('Plotting the mrc recession parameters along the streamline')
+    for stream,stream_gauges in meta_data.reset_index().groupby('stream'):        
+        #get river km
+        stream_gauges['river_km'] = stream_gauges['distance_to_mouth'].max() - stream_gauges[
+            'distance_to_mouth']
+        stream_gauges = stream_gauges.sort_values('river_km')
+        gauge_ticklabels = [label.split('_')[0] for label in stream_gauges['gauge'].unique()]        
+        #plot for each parameter
+        for para_col in parameters_to_plot:
+            plot_along_streamlines(stream_gauges = stream_gauges,
+                                       stream_name = stream+'_mrc_',
+                                       sort_column = 'river_km',
+                                       para_column = para_col,
+                                       gauge_ticklabels = gauge_ticklabels,
+                                       output_dir = output_dir)
+    
+    
 
-        # next we plot the top 15 gauges with the largest deviations
-        if len(meta_data) < 15:
-            index_max = len(meta_data)
-        else:
-            index_max = 15
-        # compute
-        para_col = 'pearson_r'
-        fig, ax = plt.subplots()
-        sns.barplot(data=meta_data.reset_index().sort_values(para_col, ascending=False)[0:index_max], x=para_col,
-                    y='gauge').set(title='Gauges with weakest Performance')
-        fig.savefig(Path(output_dir, 'Gauges_with_weakest_performance' + '.png'), dpi=300, bbox_inches="tight")
+    #%% We provide a boxplot to get the individual limbs
+    recession_logger.info('Plotting the recession parameters of the individual limbs')
+    for gauge_name,subset in limb_data.groupby('gauge'):
+        for parameter_to_plot in parameters_to_plot:
+            #check whether we have more than 1, e.g by using multiple reservoirs
+            para_cols =[col for col in subset.columns if parameter_to_plot in col]
+            if len(para_cols)==0:                
+                continue
+            else:
+                for parameter_name in para_cols:                    
+                    fig, ax = plt.subplots()
+                    sns.boxplot(data=subset, x='gauge', y=parameter_name)
+                    plt.xticks(rotation=90)
+                    plt.xlabel('gauge')
+                    plt.ylabel(parameter_name)
+                    plt.title(f'{parameter_name} boxplot at {gauge_name}')
+                    plt.tight_layout()
+                    fig.savefig(Path(output_dir, f'{gauge_name}_boxplot_{parameter_name}.png'), dpi=300)
+                    plt.close()
+                    #across all decades
+                    fig, ax = plt.subplots()
+                    sns.boxplot(data=subset.reset_index(), x=parameter_name,y='decade')
+                    plt.title(f'{parameter_name} decade boxplot at {gauge_name}')
+                    plt.tight_layout()
+                    fig.savefig(Path(output_dir, f'{gauge_name}_decade_boxplot_{parameter_name}.png'), dpi=300)
+                    plt.close()
+    #%% plot the time series and the location of the limbs
+    recession_logger.info('Plotting the time series of input data and recession limbs')
+    if 'decade' in input_ts.columns:
+        input_ts=input_ts.drop(columns=['decade'])
+    
+    for gauge_name,limb_subset in limb_data.groupby('gauge'):
+        input_ts_subset=input_ts.loc[:,gauge_name]
+        p1=input_ts_subset.plot(linewidth=2)
+        
+        for grouper,section in limb_subset.groupby(['section_id','decade']):
+            section=section.set_index('date')['Q_interp']
+            section.plot(ax=p1.axes,linestyle='--',color='k',linewidth=0.5)
+            p1.axes.axvline(x=section.index[0],color='grey',linewidth=0.2, alpha = 0.5)
+            p1.axes.axvline(x=section.index[-1],color='grey',linewidth=0.2, alpha = 0.5)
+            p1.axes.text(x=section.index.mean(),
+                         y=section.max(),
+                         s=str(grouper[0]),
+                         horizontalalignment='center',
+                         )
+        
+        plt.ylabel('water flow')
+        plt.xlabel('date')
+        plt.title(f'Time_series with recession limbs at {gauge_name}')
+        h,l = p1.get_legend_handles_labels()
+        plt.legend(h[:2], l[:2])
+        plt.tight_layout()
+        fig=p1.figure        
+        fig.savefig(Path(output_dir, f'{gauge_name}_flow_timeseries_with_recession_limbs.png'), dpi=300)
         plt.close()
 
-        # we make lineplots along the river systems
-
-        para_cols = parameters_to_plot
-        for para_col in para_cols:
-            for stream in streams_to_plot:
-
-                stream_gauges = meta_data[meta_data.gewaesser == stream].reset_index()
-                if len(stream_gauges) == 0:
-                    recession_logger.warning(f'no gauges along stream {stream}')
-                    continue
-                stream_gauges['river_km'] = stream_gauges['km_muendung_hauptfluss_model'].max() - stream_gauges[
-                    'km_muendung_hauptfluss_model']
-                stream_gauges = stream_gauges.sort_values('river_km')
-                stream_gauges = stream_gauges[stream_gauges['gauge'] != 'eisenhuettenstadt']
-                if stream == 'schwarze_elster':
-                    stream_gauges = stream_gauges[stream_gauges['gauge'] != 'eisenhuettenstadt']
-                    gauge_ticklabels = stream_gauges['gauge'].unique().tolist()
-                else:
-                    gauge_ticklabels = [label.split('_')[0] for label in stream_gauges['gauge'].unique()]
-
-                fig, ax = plt.subplots()
-                s6 = sns.lineplot(data=stream_gauges, x='river_km', y=para_col,
-                                  marker='o', linewidth=2, markersize=10, color='dodgerblue')
-                # we give an error band if available
-
-                plt.title(para_col + ' along stream ' + stream)
-                plt.ylabel(para_col)
-                plt.xlabel('River Kilometer')
-                ax.set_xticks(stream_gauges['river_km'].unique())
-                plt.xticks(rotation=90)
-                ax.set_xticklabels(gauge_ticklabels)
-                plt.tight_layout()
-                fig.savefig(Path(output_dir, para_col + '_' + stream + '.png'), dpi=300)
-                plt.close()
-
-    elif decadal_plots:
-        recession_logger.info('Plotting the recession performance for each decade')
-
-        # loop through data
-        for para_col in parameters_to_plot:
-            for stream in streams_to_plot:
-
-                stream_gauges = meta_data_decadal[meta_data_decadal.gewaesser == stream].reset_index()
-                if len(stream_gauges) == 0:
-                    recession_logger.info(f'no gauges along stream {stream}')
-                    continue
-                # https://stackoverflow.com/questions/62004561/is-this-an-error-in-the-seaborn-lineplot-hue-parameter
-                stream_gauges['river_km'] = stream_gauges['km_muendung_hauptfluss_model'].max() - stream_gauges[
-                    'km_muendung_hauptfluss_model']
-                stream_gauges = stream_gauges.sort_values('river_km')
-                stream_gauges = stream_gauges[stream_gauges['gauge'] != 'eisenhuettenstadt']
-                if stream == 'schwarze_elster':
-                    stream_gauges = stream_gauges[stream_gauges['gauge'] != 'eisenhuettenstadt']
-                    gauge_ticklabels = stream_gauges['gauge'].unique().tolist()
-                else:
-                    gauge_ticklabels = [label.split('_')[0] for label in stream_gauges['gauge'].unique()]
-
-                fig, ax = plt.subplots()
-                s6 = sns.lineplot(data=stream_gauges, x='river_km', y=para_col, hue='decade',
-                                  marker='o', linewidth=2, markersize=10, palette='rocket',
-                                  hue_order=stream_gauges['decade'].sort_values())
-                plt.title(para_col + ' along stream ' + stream)
-                plt.ylabel(para_col)
-                plt.xlabel('River Kilometer')
-                ax.set_xticks(stream_gauges['river_km'].unique())
-                plt.xticks(rotation=90)
-                ax.set_xticklabels(gauge_ticklabels)
-                plt.tight_layout()
-                fig.savefig(Path(output_dir, para_col + '_' + stream + '.png'), dpi=300)
-                plt.close()
+    
+    #%% plot the master curve per decade
+    for gauge_name,subset in mrc_curve.groupby('gauge'):
+        fig, ax = plt.subplots()
+        s1=sns.lineplot(data=subset,x='section_time',y='q_rec',hue='decade')
+        plt.xlabel('timestep_from_peak')
+        plt.ylabel('water flow')
+        plt.title(f'MRC Curve per decade at gauge {gauge_name}')
+        plt.tight_layout()
+        fig.savefig(Path(output_dir, f'{gauge_name}_mrc_decadal_curves.png'), dpi=300)
+        plt.close()
+    
+    return None
 
 

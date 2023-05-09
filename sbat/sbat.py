@@ -84,12 +84,6 @@ class Model:
         self.gauge_ts = pd.read_csv(self.paths["gauge_ts_path"], index_col=0, parse_dates=True)
         # all columns to lower case
         self.gauge_ts.columns = list(map(lambda x:x.lower(),self.gauge_ts.columns))
-        # todo: Is this test only for debugging? If yes it should be removed for release. For a public test case better
-        #  reduce the input data itself
-        if self.config['data_cleaning']['test_mode']:
-            # logger.info('test case, focus on three gauges only')
-            self.gauge_ts = self.gauge_ts.iloc[:, 0:3]
-
         # Slice gauge time series for start and end date
         self.gauge_ts = self.gauge_ts.loc[self.config['time']['start_date']:self.config['time']['end_date']]
 
@@ -184,23 +178,22 @@ class Model:
                                           compute_bfi=self.config['baseflow']['compute_baseflow_index'],
                                           calculate_monthly=self.config['baseflow']['calculate_monthly'])
 
-        # second we update the medatadata if required
-        if self.config['baseflow']['update_metadata']:
-            # get the monthly keys
-            monthly_keys = [key for key in self.bf_output.keys() if len(self.bf_output[key]) > 0 and 'monthly' in key]
+        # Update the meta data
+        # get the monthly keys
+        monthly_keys = [key for key in self.bf_output.keys() if len(self.bf_output[key]) > 0 and 'monthly' in key]
 
-            if monthly_keys:
-                logger.info('Updating metadata with the mean (across all selected bf methods) for monthly data')
-                for bf_key in monthly_keys:
-                    #organizing the data that calculating the mean per method
-                    bf_subset = self.bf_output[bf_key].groupby(['gauge','date']).mean().reset_index()
-                    #pivot the data
-                    bf_subset = bf_subset.pivot(index='date',values='value',columns='gauge')
-                    #update the metadata
-                    self.gauges_meta = self.gauges_meta.apply(lambda x:add_gauge_stats(x,bf_subset,
-                                                                        col_name=bf_key,
-                                                                        ),
-                                                              axis=1)
+        if monthly_keys:
+            logger.info('Updating metadata with the mean (across all selected bf methods) for monthly data')
+            for bf_key in monthly_keys:
+                #organizing the data that calculating the mean per method
+                bf_subset = self.bf_output[bf_key].groupby(['gauge','date']).mean().reset_index()
+                #pivot the data
+                bf_subset = bf_subset.pivot(index='date',values='value',columns='gauge')
+                #update the metadata
+                self.gauges_meta = self.gauges_meta.apply(lambda x:add_gauge_stats(x,bf_subset,
+                                                                    col_name=bf_key,
+                                                                    ),
+                                                          axis=1)
                     
         if self.output:
             #the meta data
@@ -213,13 +206,15 @@ class Model:
 
         if self.config['file_io']['output']['plot_results']:
             logger.info('plot_results of baseflow computation')
-            plot_bf_results(data=self.bf_output, meta_data=self.gauges_meta,
-                            meta_data_decadal=self.gauges_meta_decadal,
-                            parameters_to_plot=['bf_daily', 'bf_monthly', 'bfi_monthly'],
-                            streams_to_plot=['spree', 'lausitzer_neisse', 'schwarze_elster'],
-                            output_dir=Path(self.paths["output_dir"], 'bf_analysis', 'figures'),
-                            decadal_plots=self.config['time']['compute_each_decade'],
-                            )
+            for bf_parameter in self.bf_output.keys():
+                if bf_parameter == 'bf_attributes':
+                    continue
+                else:
+                    plot_bf_results(ts_data=self.bf_output[bf_parameter], meta_data=self.gauges_meta,
+                                    parameter_name=bf_parameter,
+                                    plot_along_streams=True,
+                                    output_dir=Path(self.paths["output_dir"], 'figures','baseflow')
+                                    )
 
     # %%function that adds discharge statistics
 
@@ -244,7 +239,26 @@ class Model:
         if self.output:
         #the meta data
             self.gauges_meta.to_csv(Path(self.paths["output_dir"], 'data', 'gauges_meta.csv'))
-
+            
+        if self.config['file_io']['output']['plot_results']:
+            logger.info('plot_results daily and monthly results of discharge computation')
+            discharge_ts_melt_daily = self.gauge_ts.melt(ignore_index=False,var_name='gauge')
+            discharge_ts_melt_daily['variable']='q_daily'
+            q_dict={'q_daily':discharge_ts_melt_daily}
+            #append monthly if existing
+            if self.config['discharge']['compute_monthly']:
+                discharge_ts_melt_monthly = discharge_ts_melt_daily.groupby('gauge').resample('M').mean().reset_index().set_index('date')
+                discharge_ts_melt_monthly['variable']='q_monthly'
+                q_dict={'q_monthly':discharge_ts_melt_monthly}
+            # we run the plotting algorithm from bf_flow
+            for q_parameter in q_dict.keys():
+                plot_bf_results(ts_data=q_dict[q_parameter], meta_data=self.gauges_meta,
+                                parameter_name=q_parameter,
+                                plot_along_streams=True,
+                                output_dir=Path(self.paths["output_dir"], 'figures','discharge')
+                                )
+            
+            
     # %%the function to call the resession curves
     def get_recession_curve(self):
         """Compute the recession curve for each gauge and decade."""
@@ -333,7 +347,7 @@ class Model:
                                         
                 # we will add data to the metric
                 metric = pd.DataFrame(np.expand_dims(mrc_out,0),
-                                      columns=['Q0_rec', 'n0_rec', 'pearson_r'],
+                                      columns=['rec_Q0', 'rec_n', 'pearson_r'],
                                       index=[0]
                                       )
                 metric['decade'] = decade
@@ -352,11 +366,8 @@ class Model:
                 recession_limbs.append(Q_rc)        
 
                 # convert master recession array to data Series
-                Q_mrc=pd.DataFrame(data = Q_mrc,
-                                   index = range(len(Q_mrc)),
-                                   columns=['Q_mrc']
-                                   )
-                Q_mrc['section_time'] = range(len(Q_mrc))
+                Q_mrc=Q_mrc.to_frame()
+                Q_mrc['section_time'] = Q_mrc.index.values
                 Q_mrc['gauge'] = gauge
                 Q_mrc['decade'] = int(decade)
                 
@@ -378,12 +389,12 @@ class Model:
         
         if self.config['file_io']['output']['plot_results']:
             logger.info('plot_results')
-            plot_recession_results(meta_data=self.gauges_meta,
-                                   meta_data_decadal=self.gauges_meta_decadal,
-                                   parameters_to_plot=['Q0_rec', 'pearson_r', 'n0_rec'],
-                                   streams_to_plot=['spree', 'lausitzer_neisse', 'schwarze_elster'],
-                                   output_dir=Path(self.paths["output_dir"], 'recession_analysis', 'figures'),
-                                   decadal_plots=self.config['time']['compute_each_decade'],
+            plot_recession_results(meta_data = self.gauges_meta,
+                                   limb_data = self.recession_limbs_ts,
+                                   input_ts = Q,
+                                   mrc_curve = self.master_recession_curves,
+                                   parameters_to_plot=['rec_Q0', 'rec_n', 'pearson_r'],
+                                   output_dir=Path(self.paths["output_dir"], 'figures','recession')
                                    )
 
         logger.info('Recession Curve Analysis Finished')
@@ -447,15 +458,17 @@ class Model:
                                                                   'basin_id_col'],
                                                               gw_surface=gw_surface,
                                                               network=network_geometry,
-                                                              conceptual_model=conceptual_model)
-            
+                                                              conceptual_model=conceptual_model,
+                                                              plot = self.config['file_io']['output']['plot_results'],
+                                                              plot_dir = Path(self.paths["output_dir"], 'figures','subsurface_properties'),
+                                                              )
+        
         if self.output:
             #the meta data
             self.gauges_meta.to_csv(Path(self.paths["output_dir"], 'data', 'gauges_meta.csv'))
             #the result of the recession
             self.master_recession_curves.to_csv(Path(self.paths["output_dir"], 'data', 'master_recession_curves.csv'))
             self.recession_limbs_ts.to_csv(Path(self.paths["output_dir"], 'data', 'recession_limbs_time_series.csv'))
-            
 
 
     def get_water_balance(self, **kwargs):
