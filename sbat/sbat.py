@@ -140,10 +140,9 @@ class Model:
             gauge_stats_decade['decade'] = [x[0:3] + '5' for x in gauge_stats_decade.index.strftime('%Y')]
             gauge_stats_decade = gauge_stats_decade.groupby('decade').mean().unstack().dropna()
             # we reorganize the data so that we get all decades with measurements per gauge
-            gauge_stats_decade = gauge_stats_decade.reset_index().drop(columns=0)
-            gauge_stats_decade['decade'] = gauge_stats_decade['decade'].astype(int)
-            decades_per_gauge = gauge_stats_decade.groupby('level_0').size()
-            gauge_stats_decade = gauge_stats_decade.set_index('level_0')
+            gauge_stats_decade=gauge_stats_decade.reset_index().drop(columns=0)
+            decades_per_gauge=gauge_stats_decade.groupby('level_0').size()
+            gauge_stats_decade=gauge_stats_decade.set_index('level_0')
             #we extend gauge_meta in order to
             gauge_meta_extend_list=list()
             for i in decades_per_gauge.keys():
