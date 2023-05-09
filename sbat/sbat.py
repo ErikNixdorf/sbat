@@ -369,7 +369,7 @@ class Model:
                 Q_mrc=Q_mrc.to_frame()
                 Q_mrc['section_time'] = Q_mrc.index.values
                 Q_mrc['gauge'] = gauge
-                Q_mrc['decade'] = int(decade)
+                Q_mrc['decade'] = decade
                 
                 Q_mrcs.append(Q_mrc)
                 
