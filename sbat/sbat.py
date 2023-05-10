@@ -168,8 +168,8 @@ class Model:
             None
         
         Example:
-            >>> gauge = Gauge(...)
-            >>> gauge.get_baseflow()
+            #>>> gauge = Gauge(...)
+            #>>> gauge.get_baseflow()
         """
         # first we compute the baseflow
         self.bf_output = compute_baseflow(self.gauge_ts,
@@ -378,7 +378,7 @@ class Model:
 
         self.recession_limbs_ts = pd.concat(recession_limbs, axis=0, sort=False).reset_index(drop = True)
 
-        self.master_recession_curves = pd.concat(Q_mrcs, axis=0).reset_index(drop = True)             
+        self.master_recession_curves = pd.concat(Q_mrcs, axis=0).reset_index(drop = True)
 
         # append the metrics data to the metadata
         self.gauges_meta.index.name = 'gauge'
@@ -463,15 +463,12 @@ class Model:
                                                               plot_dir = Path(self.paths["output_dir"], 'figures','subsurface_properties'),
                                                               )
         
-        
         if self.output:
             #the meta data
             self.gauges_meta.to_csv(Path(self.paths["output_dir"], 'data', 'gauges_meta.csv'))
             #the result of the recession
             self.master_recession_curves.to_csv(Path(self.paths["output_dir"], 'data', 'master_recession_curves.csv'))
             self.recession_limbs_ts.to_csv(Path(self.paths["output_dir"], 'data', 'recession_limbs_time_series.csv'))
-        
-        
 
 
     def get_water_balance(self, **kwargs):
@@ -600,7 +597,7 @@ def main(config_file=None, output=True):
     if config_file:
         configuration = Model.read_config(config_file)
     else:
-        configuration = Model.read_config(Path(Path(__file__).parents[1], "sbat.yml"))
+        configuration = Model.read_config(Path(Path(__file__).parents[1], "data/examples/ex3_sbat.yml"))
 
     sbat = Model(configuration, output)
     # get discharge data
