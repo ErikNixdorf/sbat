@@ -559,6 +559,7 @@ def analyse_recession_curves(Q, mrc_algorithm: str = 'demuth',
         limb.loc[:, 'pearson_r'] = r_coef
         limb.loc[:, 'Q_interp'] = limb_int.values
         #we store the year and doy as an additional column
+        limb['date']=limb.index.values
         limb['year'] = limb.index.year
         limb['doy'] = limb.index.day_of_year
         # merge sections
