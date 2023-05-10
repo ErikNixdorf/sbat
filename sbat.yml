@@ -2,25 +2,25 @@
 #the structure is a tree similar to xml
 #info provides some general information of the dataset 
 info:
-    model_name: example2
+    model_name: example3
     contact: Max Mustermann
 #file_io describes the location of all input datasets as well as parameter specifications
 file_io:
     input:
         data_dir: data/examples # all data is located relativ to this path
         gauges:
-            gauge_meta: ex2_gauge_meta.csv
-            gauge_time_series: ex2_gauge_ts.csv
+            gauge_meta: ex3_gauge_meta.csv
+            gauge_time_series: ex3_gauge_ts.csv
 
         hydrogeology:
             gw_levels: 
         geospatial:
-            river_network: 
-            gauge_basins: 
-            branches_topology: 
+            river_network: ex3_network.gpkg
+            gauge_basins: ex3_basins.gpkg
+            branches_topology: ex3_topology.csv
     output:
         output_directory: output/
-        plot_results: true
+        plot_results: false
         
 data_cleaning:
     drop_na_axis: 0
@@ -33,7 +33,7 @@ time:
 
 #now we provide the parameters for each module
 baseflow:
-    activate: false
+    activate: true
     methods:
         - UKIH
     compute_baseflow_index: true
@@ -41,34 +41,34 @@ baseflow:
 
 #the discharge
 discharge:
-    activate: false
+    activate: true
     col_name: q_daily
     compute_monthly: true
 
 #the recession
 recession:
-    activate: true
+    activate: false
     curve_data:
-        flow_type: discharge # flow type can be discharge or baseflow
+        flow_type: baseflow # flow type can be discharge or baseflow
         #curve type can be either hydrograph or waterbalance
         curve_type: hydrograph
         minimum_limbs: 20
-        split_at_inflection: true # decides whether the inflection points will be used to split recession limbs
+        split_at_inflection: false # decides whether the inflection points will be used to split recession limbs
         moving_average_filter_steps: 5
     fitting:
         mastercurve_algorithm: demuth
         recession_algorithm: maillet
         minimum_limbs: 20
         maximum_reservoirs: 1
-        minimum_recession_curve_length: 20
+        minimum_recession_curve_length: 10
         
     hydrogeo_parameter_estimation:
-        activate: false
+        activate: true
         rorabaugh_simplification : true
 #water balance
 waterbalance:
-    activate: false
-    flow_type: discharge
+    activate: true
+    flow_type: baseflow
     confidence_acceptance_level: 0.05
     time_series_analysis_option: daily
     basin_id_col: basin
