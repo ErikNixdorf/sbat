@@ -558,8 +558,9 @@ def analyse_recession_curves(Q, mrc_algorithm: str = 'demuth',
                 limb.loc[:, f'section_x_{reservoir}'] = fit_parameter[3 * (reservoir + 1) - 1]
         limb.loc[:, 'pearson_r'] = r_coef
         limb.loc[:, 'Q_interp'] = limb_int.values
-        #we store the date as an additional column
-        limb['date']=limb.index.values
+        #we store the year and doy as an additional column
+        limb['year'] = limb.index.year
+        limb['doy'] = limb.index.day_of_year
         # merge sections
         limb_sections_list.append(limb)
     # Concatenate all the groups in the list into a single DataFrame
