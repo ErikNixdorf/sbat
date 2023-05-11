@@ -39,11 +39,13 @@ class Model:
         self.config = conf
         self.paths: dict = {"root": Path(__file__).parents[1]}
         self.output = output
+        if not self.output:
+            logging.info(f'Set output to {self.output} results in no plotting')
+            self.config['file_io']['output']['plot_results'] = False
 
         self.gauge_ts = None
         self.gauges_meta = None
 
-        # todo: Sort these attributes into groups they logically belong to
         self.bf_output = None
         self.recession_limbs_ts = None
         self.section_basins = None
@@ -68,10 +70,11 @@ class Model:
 
         self.paths["input_dir"] = Path(self.paths["root"],
                                        self.config['file_io']['input']['data_dir'])
+
+        self.paths["output_dir"] = Path(self.paths["root"],
+                                        self.config['file_io']['output']['output_directory'],
+                                        self.config['info']['model_name'])
         if self.output:
-            self.paths["output_dir"] = Path(self.paths["root"],
-                                            self.config['file_io']['output']['output_directory'],
-                                            self.config['info']['model_name'])
             self.paths["output_dir"].mkdir(parents=True, exist_ok=True)
             Path(self.paths["output_dir"], 'data').mkdir(parents=True, exist_ok=True)
 
@@ -168,8 +171,8 @@ class Model:
             None
         
         Example:
-            >>> gauge = Gauge(...)
-            >>> gauge.get_baseflow()
+            #>>> gauge = Gauge(...)
+            #>>> gauge.get_baseflow()
         """
         # first we compute the baseflow
         self.bf_output = compute_baseflow(self.gauge_ts,
@@ -186,7 +189,7 @@ class Model:
             logger.info('Updating metadata with the mean (across all selected bf methods) for monthly data')
             for bf_key in monthly_keys:
                 #organizing the data that calculating the mean per method
-                bf_subset = self.bf_output[bf_key].groupby(['gauge','date']).mean().reset_index()
+                bf_subset = self.bf_output[bf_key].groupby(['gauge','date']).mean(numeric_only=True).reset_index()
                 #pivot the data
                 bf_subset = bf_subset.pivot(index='date',values='value',columns='gauge')
                 #update the metadata
@@ -247,7 +250,7 @@ class Model:
             q_dict={'q_daily':discharge_ts_melt_daily}
             #append monthly if existing
             if self.config['discharge']['compute_monthly']:
-                discharge_ts_melt_monthly = discharge_ts_melt_daily.groupby('gauge').resample('M').mean().reset_index().set_index('date')
+                discharge_ts_melt_monthly = discharge_ts_melt_daily.groupby('gauge').resample('M').mean(numeric_only=True).reset_index().set_index('date')
                 discharge_ts_melt_monthly['variable']='q_monthly'
                 q_dict={'q_monthly':discharge_ts_melt_monthly}
             # we run the plotting algorithm from bf_flow
@@ -378,7 +381,7 @@ class Model:
 
         self.recession_limbs_ts = pd.concat(recession_limbs, axis=0, sort=False).reset_index(drop = True)
 
-        self.master_recession_curves = pd.concat(Q_mrcs, axis=0).reset_index(drop = True)             
+        self.master_recession_curves = pd.concat(Q_mrcs, axis=0).reset_index(drop = True)
 
         # append the metrics data to the metadata
         self.gauges_meta.index.name = 'gauge'
@@ -453,16 +456,15 @@ class Model:
             network_geometry['reach_name'] = network_geometry['reach_name'].apply(lambda x: x.lower())
             # get the properties
             self.gauges_meta = get_hydrogeo_properties(gauge_data=self.gauges_meta,
-                                                              basins=basins,
-                                                              basin_id_col=self.config['waterbalance'][
+                                                              basins = basins,
+                                                              basin_id_col =self.config['waterbalance'][
                                                                   'basin_id_col'],
-                                                              gw_surface=gw_surface,
+                                                              gw_surface = gw_surface,
                                                               network=network_geometry,
                                                               conceptual_model=conceptual_model,
                                                               plot = self.config['file_io']['output']['plot_results'],
                                                               plot_dir = Path(self.paths["output_dir"], 'figures','subsurface_properties'),
                                                               )
-        
         
         if self.output:
             #the meta data
@@ -470,8 +472,6 @@ class Model:
             #the result of the recession
             self.master_recession_curves.to_csv(Path(self.paths["output_dir"], 'data', 'master_recession_curves.csv'))
             self.recession_limbs_ts.to_csv(Path(self.paths["output_dir"], 'data', 'recession_limbs_time_series.csv'))
-        
-        
 
 
     def get_water_balance(self, **kwargs):
@@ -558,13 +558,14 @@ class Model:
         )
         
         #we map the mean_balance information on the geodataframes
-        balance_mean = self.sections_meta.groupby(['downstream_point','decade']).mean().loc[:,'balance']
+        balance_mean = self.sections_meta.groupby(['downstream_point','decade']).mean(numeric_only=True).loc[:,'balance']
         
         #reorganize self_gauges_meta and add gauges_mean
         self.gauges_meta = self.gauges_meta.reset_index().set_index(['gauge','decade'])
         balance_mean.index.names = self.gauges_meta.index.names        
         self.gauges_meta = pd.concat([self.gauges_meta,balance_mean],axis=1)
-        
+        self.gauges_meta = self.gauges_meta.reindex(balance_mean.index, axis=0)
+
         # map the data from the recession analysis
         logger.info('Map statistics on stream network geodata')
         self.gdf_network_map=map_time_dependent_cols_to_gdf(self.gdf_network_map,
@@ -600,7 +601,7 @@ def main(config_file=None, output=True):
     if config_file:
         configuration = Model.read_config(config_file)
     else:
-        configuration = Model.read_config(Path(Path(__file__).parents[1], "sbat.yml"))
+        configuration = Model.read_config(Path(Path(__file__).parents[1], "data/examples/sbat.yml"))
 
     sbat = Model(configuration, output)
     # get discharge data
