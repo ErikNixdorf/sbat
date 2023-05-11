@@ -49,8 +49,8 @@ class TestConfig1:
 
         result = model_config1.gauges_meta[
             [
-                "Q0_rec",
-                "n0_rec",
+                "rec_Q0",
+                "rec_n",
                 "pearson_r",
                 "h_m",
                 "dist_m",
@@ -62,25 +62,27 @@ class TestConfig1:
         np.testing.assert_almost_equal(result, expected, decimal=5)
 
     def test_master_recession_curve(self, model_config1):
-        expected = pd.read_csv("data/example1/master_recession_curves.csv", index_col=0)
+        expected = pd.read_csv("sbat/tests/data/example1/master_recession_curves.csv", index_col=0)
         result = model_config1.master_recession_curves
+        result["decade"]=result["decade"].astype(np.int64)
         pd.testing.assert_frame_equal(expected, result)
 
 
 class TestConfig2:
     def test_updated_gauges_meta(self, model_config2):
-        expected = [[5.41445256e-02, 9.58559374e-04, 9.91129803e-01]]
+        expected = [[0.05414452555816426,0.005409251536204091,0.9935334211464345]]
 
         result = model_config2.gauges_meta[
             [
-                "Q0_rec",
-                "n0_rec",
+                "rec_Q0",
+                "rec_n",
                 "pearson_r",
             ]
         ].values
         np.testing.assert_almost_equal(result, expected, decimal=5)
 
     def test_master_recession_curve(self, model_config2):
-        expected = pd.read_csv("data/example2/master_recession_curves.csv", index_col=0)
+        expected = pd.read_csv("sbat/tests/data/example2/master_recession_curves.csv", index_col=0)
         result = model_config2.master_recession_curves
+        result["decade"] = result["decade"].astype(np.int64)
         pd.testing.assert_frame_equal(expected, result)
