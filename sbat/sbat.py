@@ -39,6 +39,9 @@ class Model:
         self.config = conf
         self.paths: dict = {"root": Path(__file__).parents[1]}
         self.output = output
+        if self.output == False:
+            logging.info(f'Set output to {self.output} results in no plotting')
+            self.config['file_io']['output']['plot_results'] = False
 
         self.gauge_ts = None
         self.gauges_meta = None
@@ -68,10 +71,11 @@ class Model:
 
         self.paths["input_dir"] = Path(self.paths["root"],
                                        self.config['file_io']['input']['data_dir'])
+
+        self.paths["output_dir"] = Path(self.paths["root"],
+                                        self.config['file_io']['output']['output_directory'],
+                                        self.config['info']['model_name'])
         if self.output:
-            self.paths["output_dir"] = Path(self.paths["root"],
-                                            self.config['file_io']['output']['output_directory'],
-                                            self.config['info']['model_name'])
             self.paths["output_dir"].mkdir(parents=True, exist_ok=True)
             Path(self.paths["output_dir"], 'data').mkdir(parents=True, exist_ok=True)
 
@@ -453,10 +457,10 @@ class Model:
             network_geometry['reach_name'] = network_geometry['reach_name'].apply(lambda x: x.lower())
             # get the properties
             self.gauges_meta = get_hydrogeo_properties(gauge_data=self.gauges_meta,
-                                                              basins=basins,
-                                                              basin_id_col=self.config['waterbalance'][
+                                                              basins = basins,
+                                                              basin_id_col =self.config['waterbalance'][
                                                                   'basin_id_col'],
-                                                              gw_surface=gw_surface,
+                                                              gw_surface = gw_surface,
                                                               network=network_geometry,
                                                               conceptual_model=conceptual_model,
                                                               plot = self.config['file_io']['output']['plot_results'],

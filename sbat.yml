@@ -2,21 +2,20 @@
 #the structure is a tree similar to xml
 #info provides some general information of the dataset 
 info:
-    model_name: example2
+    model_name: example1
     contact: Max Mustermann
 #file_io describes the location of all input datasets as well as parameter specifications
 file_io:
     input:
         data_dir: data/examples # all data is located relativ to this path
         gauges:
-            gauge_meta: ex2_gauge_meta.csv
-            gauge_time_series: ex2_gauge_ts.csv
-
+            gauge_meta: ex1_gauge_meta.csv
+            gauge_time_series: ex1_gauge_ts.csv
         hydrogeology:
-            gw_levels: 
+            gw_levels: ex1_hydraulic_heads.tif
         geospatial:
-            river_network: 
-            gauge_basins: 
+            river_network: ex1_network.gpkg
+            gauge_basins: ex1_basin.gpkg
             branches_topology: 
     output:
         output_directory: output/
@@ -33,7 +32,7 @@ time:
 
 #now we provide the parameters for each module
 baseflow:
-    activate: false
+    activate: true
     methods:
         - UKIH
     compute_baseflow_index: true
@@ -41,7 +40,7 @@ baseflow:
 
 #the discharge
 discharge:
-    activate: false
+    activate: true
     col_name: q_daily
     compute_monthly: true
 
@@ -49,7 +48,7 @@ discharge:
 recession:
     activate: true
     curve_data:
-        flow_type: discharge # flow type can be discharge or baseflow
+        flow_type: baseflow # flow type can be discharge or baseflow
         #curve type can be either hydrograph or waterbalance
         curve_type: hydrograph
         minimum_limbs: 20
@@ -60,15 +59,15 @@ recession:
         recession_algorithm: maillet
         minimum_limbs: 20
         maximum_reservoirs: 1
-        minimum_recession_curve_length: 20
+        minimum_recession_curve_length: 10
         
     hydrogeo_parameter_estimation:
-        activate: false
-        rorabaugh_simplification : true
+        activate: true
+        rorabaugh_simplification : false
 #water balance
 waterbalance:
-    activate: false
-    flow_type: discharge
+    activate: true
+    flow_type: baseflow
     confidence_acceptance_level: 0.05
     time_series_analysis_option: daily
     basin_id_col: basin

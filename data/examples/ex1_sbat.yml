@@ -19,7 +19,7 @@ file_io:
             branches_topology: 
     output:
         output_directory: output/
-        plot_results: false
+        plot_results: true
         
 data_cleaning:
     drop_na_axis: 0
