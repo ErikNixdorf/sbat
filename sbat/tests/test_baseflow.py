@@ -1,6 +1,6 @@
 import numpy as np
 import pandas as pd
-
+from pathlib import Path
 
 class TestConfig1:
     def test_updated_gauges_meta(self, model_config1):
@@ -32,21 +32,20 @@ class TestConfig1:
         assert all(key in present_keys for key in expected_keys)
 
     def test_baseflow_monthly(self, model_config1):
-        expected = pd.read_csv(
-            "sbat/tests/data/example1/bf_monthly.csv", index_col=0, parse_dates=True
+        expected = pd.read_csv(Path(Path(__file__).parents[0],"data/example1/bf_monthly.csv"), index_col=0, parse_dates=True
         )
         result = model_config1.bf_output["bf_monthly"]
         pd.testing.assert_frame_equal(expected, result)
 
     def test_baseflow_attributes(self, model_config1):
-        expected = pd.read_csv("sbat/tests/data/example1/bf_attributes.csv", index_col=0)
+        expected = pd.read_csv(Path(Path(__file__).parents[0],"data/example1/bf_attributes.csv"), index_col=0)
         result = model_config1.bf_output["bf_attributes"]
         pd.testing.assert_frame_equal(expected, result)
 
 
 class TestConfig3:
     def test_updated_gauges_meta(self, model_config3):
-        expected = pd.read_csv("sbat/tests/data/example3/gauges_meta.csv")
+        expected = pd.read_csv(Path(Path(__file__).parents[0],"data/example3/gauges_meta.csv"))
         expected['decade'] = expected['decade'].astype(str)        
         expected = expected.set_index(['gauge','decade'])[
             [
@@ -76,13 +75,12 @@ class TestConfig3:
         assert all(key in present_keys for key in expected_keys)
 
     def test_baseflow_monthly(self, model_config3):
-        expected = pd.read_csv(
-            "sbat/tests/data/example3/bf_monthly.csv", index_col=0, parse_dates=True
+        expected = pd.read_csv(Path(Path(__file__).parents[0],"data/example3/bf_monthly.csv"), index_col=0, parse_dates=True
         )
         result = model_config3.bf_output["bf_monthly"]
         pd.testing.assert_frame_equal(expected, result)
 
     def test_baseflow_attributes(self, model_config3):
-        expected = pd.read_csv("sbat/tests/data/example3/bf_attributes.csv", index_col=0)
+        expected = pd.read_csv(Path(Path(__file__).parents[0],"data/example3/bf_attributes.csv"), index_col=0)
         result = model_config3.bf_output["bf_attributes"]
         pd.testing.assert_frame_equal(expected, result)
