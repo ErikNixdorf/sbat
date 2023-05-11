@@ -39,14 +39,13 @@ class Model:
         self.config = conf
         self.paths: dict = {"root": Path(__file__).parents[1]}
         self.output = output
-        if self.output == False:
+        if not self.output:
             logging.info(f'Set output to {self.output} results in no plotting')
             self.config['file_io']['output']['plot_results'] = False
 
         self.gauge_ts = None
         self.gauges_meta = None
 
-        # todo: Sort these attributes into groups they logically belong to
         self.bf_output = None
         self.recession_limbs_ts = None
         self.section_basins = None
@@ -190,7 +189,7 @@ class Model:
             logger.info('Updating metadata with the mean (across all selected bf methods) for monthly data')
             for bf_key in monthly_keys:
                 #organizing the data that calculating the mean per method
-                bf_subset = self.bf_output[bf_key].groupby(['gauge','date']).mean().reset_index()
+                bf_subset = self.bf_output[bf_key].groupby(['gauge','date']).mean(numeric_only=True).reset_index()
                 #pivot the data
                 bf_subset = bf_subset.pivot(index='date',values='value',columns='gauge')
                 #update the metadata
@@ -251,7 +250,7 @@ class Model:
             q_dict={'q_daily':discharge_ts_melt_daily}
             #append monthly if existing
             if self.config['discharge']['compute_monthly']:
-                discharge_ts_melt_monthly = discharge_ts_melt_daily.groupby('gauge').resample('M').mean().reset_index().set_index('date')
+                discharge_ts_melt_monthly = discharge_ts_melt_daily.groupby('gauge').resample('M').mean(numeric_only=True).reset_index().set_index('date')
                 discharge_ts_melt_monthly['variable']='q_monthly'
                 q_dict={'q_monthly':discharge_ts_melt_monthly}
             # we run the plotting algorithm from bf_flow
@@ -559,14 +558,14 @@ class Model:
         )
         
         #we map the mean_balance information on the geodataframes
-        balance_mean = self.sections_meta.groupby(['downstream_point','decade']).mean().loc[:,'balance']
+        balance_mean = self.sections_meta.groupby(['downstream_point','decade']).mean(numeric_only=True).loc[:,'balance']
         
         #reorganize self_gauges_meta and add gauges_mean
         self.gauges_meta = self.gauges_meta.reset_index().set_index(['gauge','decade'])
         balance_mean.index.names = self.gauges_meta.index.names        
         self.gauges_meta = pd.concat([self.gauges_meta,balance_mean],axis=1)
         self.gauges_meta = self.gauges_meta.reindex(balance_mean.index, axis=0)
-        
+
         # map the data from the recession analysis
         logger.info('Map statistics on stream network geodata')
         self.gdf_network_map=map_time_dependent_cols_to_gdf(self.gdf_network_map,

@@ -84,5 +84,5 @@ class TestConfig2:
     def test_master_recession_curve(self, model_config2):
         expected = pd.read_csv("data/example2/master_recession_curves.csv", index_col=0)
         result = model_config2.master_recession_curves
-        result["decade"]=result["decade"].astype(np.int64)
+        result["decade"] = result["decade"].astype(np.int64)
         pd.testing.assert_frame_equal(expected, result)

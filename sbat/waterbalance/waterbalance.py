@@ -245,7 +245,7 @@ def generate_upstream_networks(
                                               )
                 if not subbranches.empty:
                     #we add them to the network_data
-                    branch_network=branch_network.append(subbranches)
+                    branch_network = pd.concat([branch_network, subbranches])
                         
         return gauge_branch_list
     
@@ -799,7 +799,7 @@ def get_section_basins(basins: gpd.GeoDataFrame,
             if not distributaries_up.empty:
                 distri_gauges = distributaries_up[distributaries_up.downstream_point != 'river_mouth']
                 for distri_gauge in distri_gauges.downstream_point:
-                    section_basin.iloc[0].geometry = unary_union(
+                    section_basin.loc[section_basin.index[0], 'geometry'] = unary_union(
                         [section_basin.iloc[0].geometry, basins.loc[basins['basin'] == distri_gauge].iloc[0].geometry])
 
                     # we dissolve the geometries
