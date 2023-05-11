@@ -62,7 +62,7 @@ class TestConfig1:
         np.testing.assert_almost_equal(result, expected, decimal=5)
 
     def test_master_recession_curve(self, model_config1):
-        expected = pd.read_csv("data/example1/master_recession_curves.csv", index_col=0)
+        expected = pd.read_csv("sbat/tests/data/example1/master_recession_curves.csv", index_col=0)
         result = model_config1.master_recession_curves
         result["decade"]=result["decade"].astype(np.int64)
         pd.testing.assert_frame_equal(expected, result)
@@ -82,7 +82,7 @@ class TestConfig2:
         np.testing.assert_almost_equal(result, expected, decimal=5)
 
     def test_master_recession_curve(self, model_config2):
-        expected = pd.read_csv("data/example2/master_recession_curves.csv", index_col=0)
+        expected = pd.read_csv("sbat/tests/data/example2/master_recession_curves.csv", index_col=0)
         result = model_config2.master_recession_curves
         result["decade"] = result["decade"].astype(np.int64)
         pd.testing.assert_frame_equal(expected, result)
