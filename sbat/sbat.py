@@ -565,6 +565,7 @@ class Model:
         self.gauges_meta = self.gauges_meta.reset_index().set_index(['gauge','decade'])
         balance_mean.index.names = self.gauges_meta.index.names        
         self.gauges_meta = pd.concat([self.gauges_meta,balance_mean],axis=1)
+        self.gauges_meta = self.gauges_meta.reindex(balance_mean.index, axis=0)
         
         # map the data from the recession analysis
         logger.info('Map statistics on stream network geodata')
