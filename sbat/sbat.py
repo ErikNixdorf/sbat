@@ -22,6 +22,7 @@ logger = logging.getLogger('sbat')
 logger.setLevel(logging.INFO)
 
 # define the logging output
+Path(f'{Path(__file__).parents[1]}', 'output').mkdir(parents=True, exist_ok=True)
 fh = logging.FileHandler(f'{Path(__file__).parents[1]}/output/sbat.log', mode='w')
 formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(name)s - %(message)s')
 fh.setFormatter(formatter)
