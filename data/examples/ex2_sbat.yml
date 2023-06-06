@@ -52,16 +52,14 @@ recession:
         flow_type: discharge # flow type can be discharge or baseflow
         #curve type can be either hydrograph or waterbalance
         curve_type: hydrograph
-        minimum_limbs: 20
+        moving_average_filter_steps: 28
         split_at_inflection: true # decides whether the inflection points will be used to split recession limbs
-        moving_average_filter_steps: 5
+        minimum_limbs: 10
+        minimum_recession_curve_length: 28
     fitting:
         mastercurve_algorithm: demuth
         recession_algorithm: maillet
-        minimum_limbs: 20
         maximum_reservoirs: 1
-        minimum_recession_curve_length: 20
-        
     hydrogeo_parameter_estimation:
         activate: false
         rorabaugh_simplification : true

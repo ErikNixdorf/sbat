@@ -1,3 +1,2 @@
 gauge,gauge_id,bundesland,stream,receiving_water,distance_to_mouth,northing,easting,pegelnullpunkt_m,height_system,timeseries_available,basin_area,drain_length,stream_length
-seebach_station,1,by,seebach,,0.1,5390363.86,449134.28,,,x,,,
-schwarzenbach_station,2,by,schwarzenbach,,0.1,5389811.16,448923.25,,,x,,,
+schwarzenbach_station,1,by,schwarzenbach,,0.1,5389811.16,448923.25,,,x,,,

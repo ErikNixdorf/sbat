@@ -331,13 +331,13 @@ class Model:
                                     'curve_data'][
                                     'moving_average_filter_steps'],
                                 minimum_recession_curve_length=
-                                self.config['recession']['fitting'][
+                                self.config['recession']['curve_data'][
                                     'minimum_recession_curve_length'],
                                 maximum_reservoirs=
                                 self.config['recession']['fitting'][
                                     'maximum_reservoirs'],
                                 minimum_limbs=
-                                self.config['recession']['fitting'][
+                                self.config['recession']['curve_data'][
                                     'minimum_limbs'],
                                 inflection_split=
                                 self.config['recession'][

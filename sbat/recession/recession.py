@@ -532,7 +532,7 @@ def analyse_recession_curves(Q, mrc_algorithm: str = 'demuth',
         recession_logger.info(f'No falling limbs within constraints for gauge {gauge_name}')
         return Q, Q_mrc, mrc_out
     elif len(Q) == 0 or len(Q['section_id'].unique()) < minimum_limbs:
-        recession_logger.info(f'No falling limbs within constraints for gauge {gauge_name}')
+        recession_logger.info(f'less than {minimum_limbs} falling limbs within constraints for gauge {gauge_name}')
         Q = None
         Q_mrc = None        
         return Q, Q_mrc, mrc_out
