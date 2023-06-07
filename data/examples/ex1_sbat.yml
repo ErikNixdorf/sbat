@@ -35,8 +35,9 @@ baseflow:
     activate: true
     methods:
         - UKIH
+        - LH
     compute_baseflow_index: true
-    calculate_monthly: true
+    compute_statistics: true
 
 #the discharge
 discharge:
@@ -59,8 +60,6 @@ recession:
         mastercurve_algorithm: demuth
         recession_algorithm: maillet
         maximum_reservoirs: 1
-
-        
     hydrogeo_parameter_estimation:
         activate: true
         rorabaugh_simplification : false

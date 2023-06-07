@@ -81,7 +81,7 @@ def call_bf_package(Q: pd.Series, methods: str = 'all',
     Q_array = Q.interpolate().values.astype(float).flatten()
 
     if area is not None:
-        bflow_logger.info('Assume that area is in km2, recompute to m2')
+        bflow_logger.info('Assume that area is in m2, recompute to km2')
         area = area / 1000 / 1000
     
     if isinstance(methods,List) and 'all' in methods:
@@ -99,146 +99,67 @@ def call_bf_package(Q: pd.Series, methods: str = 'all',
     return bf_daily, KGEs
 
 
-def melt_gauges(df: pd.DataFrame, 
-                additional_columns: dict = {'a': 'b'}
-                ) -> pd.DataFrame:
-    """
-    Melt gauge data and add additional columns.
-
-    Parameters
-    ----------
-    df : pd.DataFrame
-        Input dataframe containing gauge data.
-    additional_columns : dict, optional
-        Additional columns to be added to the output dataframe.
-        Default is {'a': 'b'}.
-
-    Returns
-    -------
-    pd.DataFrame
-        Melted dataframe with additional columns and date column.
-
-    """
-    df_melted = df.melt()
-    for key, value in additional_columns.items():
-
-        df_melted[key] = value
-    # add date
-    df_melted['date'] = pd.concat([pd.Series(df.index)] * len(df.columns), ignore_index=True)
-
-    return df_melted
-
 
 # %%We calculate baseflows using the baseflow package
-def compute_baseflow(data_ts: pd.DataFrame, data_meta: pd.DataFrame, methods: Union[str, List[str]] = 'all',
-                     compute_bfi: bool = True,
-                     calculate_monthly: bool = True) -> dict:
+def compute_baseflow(Q: pd.Series, basin_area: float = None, methods: Union[str, List[str]] = 'all',
+                     compute_bfi: bool = True) -> dict:
     """
        Compute baseflow for all gauges in the given data.
     
        Parameters
        ----------
-       data_ts : pandas.DataFrame
-           The streamflow data for all gauges.
-       data_meta : pandas.DataFrame
-           The metadata for the gauges, including basin areas.
+       Q : pandas.Series
+           The streamflow data for a single gauge.
+       basin_area : float
+           The area of the basin in m**2
        methods : str or list of str, optional
            The methods to use for baseflow separation. Can be one of 'all', or a single algorithm e.g. demuth
            for documentation check the external baseflow package
        compute_bfi : bool, optional
            Whether to compute baseflow index (BFI) as well. Defaults to True.
-       calculate_monthly : bool, optional
-           Whether to calculate baseflow and BFI values for each month. Defaults to True.
-           Otherwise daily is provided
     
        Returns
        -------
-       dict
-           A dictionary containing the following keys:
-           - 'bf_daily': a pandas DataFrame with daily baseflow values for each gauge.
-           - 'bf_monthly': a pandas DataFrame with monthly baseflow values for each gauge.
-           - 'bfi_monthly': a pandas DataFrame with monthly BFI values for each gauge, if compute_bfi is True.
-           - 'bf_attributes': a pandas DataFrame with various attributes for each gauge, such as mean and standard
-           deviation of baseflow and BFI values, and Demuth curve type, if applicable.
+        - 'bf_daily': a pandas DataFrame with daily baseflow values for a gauge.
+        - 'bf_monthly': a pandas DataFrame with monthly baseflow values for a gauge.
+        - 'bfi_monthly': a pandas DataFrame with monthly BFI values for a gauge, if compute_bfi is True.
+        - 'performance_metrics': dictionary which contains the performance per method
+        deviation of baseflow and BFI values, and Demuth curve type, if applicable.
        """
     # prepare the output data
-    bf_output = dict()
 
-    bfs_monthly = pd.DataFrame()
-    bfis_monthly = pd.DataFrame()
-    gauges_attributes = pd.DataFrame()
-    bfs_daily = pd.DataFrame()
-    # loop trough all gauges
-    i = 0
-    for gauge in data_ts.columns:
-        # if gauge!='zittau_6':
-        #    continue
+    bf_monthly = pd.DataFrame()
+    bfi_monthly = pd.DataFrame()
+    bf_daily = pd.DataFrame()    
+    performance_metrics = dict()
+    #start the workflow
+    gauge = Q.name
+    bflow_logger.info(f'compute baseflow for gauge {gauge}')
 
-        i += 1
-        bflow_logger.info(f'compute baseflow for gauge {gauge}')
-        Q = data_ts[gauge]
+    # clean the data prior to processing
+    Q = clean_gauge_ts(Q)
+    if Q is None:
+        bflow_logger.warning(f'No calculation possible for gauge {gauge} due to lack of discharge data')
+        return bf_daily, bf_monthly, bfi_monthly, performance_metrics      
+    
+    # call the baseflow module
+    bf_daily_raw, KGEs = call_bf_package(Q, methods=methods, area=basin_area)
+    #convert
+    bf_daily = bf_daily_raw.reset_index().melt(id_vars='date').set_index('date')
+    
+    #get output of performance
+    performance_metrics=dict(zip(['kge_' + col for col in methods],KGEs))
+    
+    # get monthly values
+    bf_monthly = bf_daily.resample('m').mean(numeric_only=True)   
+    # bfi computation if requested
+    if compute_bfi:
+        # we compute the BFI
+        bfi_monthly = bf_monthly.divide(Q.resample('m').mean(), axis=0)
 
-        # clean the data prior to processing
-        Q = clean_gauge_ts(Q)
-        if Q is None:
-            bflow_logger.warning(f'No calculation possible for gauge {gauge} due to lack of discharge data')
-            continue
-        # call the baseflow module
-        if 'basin_area' in data_meta.columns:
-            basin_area = data_meta.loc[Q.name, 'basin_area']
-        else:
+    bflow_logger.info(f'compute baseflow for gauge....{gauge}...done')
 
-            basin_area = None
-
-        bf_daily, KGEs = call_bf_package(Q, methods=methods, area=basin_area)
-
-        bf_daily_melted = bf_daily.reset_index().melt(id_vars='date')
-        bf_daily_melted['gauge'] = gauge
-        bfs_daily = pd.concat([bfs_daily, bf_daily_melted])
-
-        bf_output.update({'bf_daily': bfs_daily.set_index('date')})
-
-
-        if calculate_monthly:
-            # get monthly values
-            # from previous methods
-            bf_monthly = bf_daily.resample('m').mean()
-            # append daily and monthly data
-            # monthly
-            bfs_monthly = pd.concat([bfs_monthly, melt_gauges(bf_monthly, additional_columns=dict({'gauge': gauge}))])
-
-            # compute the statistics per gauge
-            KGE_cols = ['kge_' + col for col in bf_daily]
-            gauge_attributes = pd.DataFrame(dict(zip(KGE_cols, KGEs)), index=[gauge])
-
-            gauge_attributes[['nmq_mean_' + col for col in bf_monthly]] = bf_monthly.mean()
-            gauge_attributes[['nmq_std_' + col for col in bf_monthly]] = bf_monthly.std()
-
-            # bfi computation if requested
-            if compute_bfi:
-                # we compute the BFI
-                bfi_monthly = bf_monthly.divide(Q.resample('m').mean(), axis=0)
-                # append
-                bfis_monthly = pd.concat([bfis_monthly,
-                                          melt_gauges(bfi_monthly, additional_columns=dict({'gauge': gauge})).set_index(
-                                              'date')])
-                # compute gauge attributes
-                gauge_attributes[['bfi_mean_' + col for col in bf_monthly]] = bfi_monthly.mean()
-                gauge_attributes[['bfi_std_' + col for col in bf_monthly]] = bfi_monthly.std()
-
-                bf_output.update({'bfi_monthly': bfis_monthly})
-
-            # append the gauge attributes
-            gauges_attributes = pd.concat([gauges_attributes, gauge_attributes])
-
-            bflow_logger.info(f'compute baseflow for gauge....{gauge}...done')
-
-            # update the dictionary
-            bf_output.update({'bf_attributes': gauges_attributes,
-                              'bf_monthly': bfs_monthly.set_index('date')
-                              }
-                             )
-    return bf_output
+    return bf_daily, bf_monthly, bfi_monthly, performance_metrics
 
 def add_gauge_stats(gauge_meta: pd.DataFrame, ts_data: pd.DataFrame, col_name: str = 'bf',
                         DECADAL_NAN_VALUE : int = -9999) -> pd.DataFrame:
@@ -391,24 +312,24 @@ def plot_bf_results(ts_data: pd.DataFrame = pd.DataFrame(),
         fig.savefig(Path(output_dir,f'{gauge_name}_histplot_{parameter_name}.png'), dpi=300)
         plt.close()
         # for each method
-        fig = plt.figure()
-        sns.histplot(data=subset.reset_index(), x='value', hue='variable', kde=True)
-        plt.legend(title='bf_method', loc='upper left', labels=subset.variable.unique())
-        plt.title(f'{parameter_name} method histogram at {gauge_name}')
-        plt.tight_layout()
-        fig.savefig(Path(output_dir, f'{gauge_name}_method_histplot_{parameter_name}.png'), dpi=300)
-        plt.close()
-        
-        # we further make some boxplots
-        fig, ax = plt.subplots()
-        sns.boxplot(data=subset.reset_index(), x='variable', y='value')
-        plt.xticks(rotation=90)
-        plt.xlabel(gauge_name)
-        plt.ylabel(parameter_name)
-        plt.title(f'{parameter_name} method boxplot at {gauge_name}')
-        plt.tight_layout()
-        fig.savefig(Path(output_dir, f'{gauge_name}_method_boxplot_{parameter_name}.png'), dpi=300)
-        plt.close()
+        if 'variable' in subset.columns:
+            fig = plt.figure()
+            sns.histplot(data=subset.reset_index(), x='value', hue='variable', kde=True)
+            plt.legend(title='bf_method', loc='upper left', labels=subset.variable.unique())
+            plt.title(f'{parameter_name} method histogram at {gauge_name}')
+            plt.tight_layout()
+            fig.savefig(Path(output_dir, f'{gauge_name}_method_histplot_{parameter_name}.png'), dpi=300)
+            plt.close()        
+            # we further make some boxplots
+            fig, ax = plt.subplots()
+            sns.boxplot(data=subset.reset_index(), x='variable', y='value')
+            plt.xticks(rotation=90)
+            plt.xlabel(gauge_name)
+            plt.ylabel(parameter_name)
+            plt.title(f'{parameter_name} method boxplot at {gauge_name}')
+            plt.tight_layout()
+            fig.savefig(Path(output_dir, f'{gauge_name}_method_boxplot_{parameter_name}.png'), dpi=300)
+            plt.close()
         #across all decades
         fig, ax = plt.subplots()
         subset['decade'] = [x[0:3] + '5' for x in subset.index.strftime('%Y')]

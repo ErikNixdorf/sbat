@@ -47,7 +47,7 @@ class Model:
         self.gauge_ts = None
         self.gauges_meta = None
 
-        self.bf_output = None
+        self.bf_output = dict()
         self.recession_limbs_ts = None
         self.section_basins = None
         self.sections_meta = None
@@ -176,19 +176,44 @@ class Model:
             #>>> gauge.get_baseflow()
         """
         # first we compute the baseflow
-        self.bf_output = compute_baseflow(self.gauge_ts,
-                                          self.gauges_meta,
-                                          methods=self.config['baseflow']['methods'],
-                                          compute_bfi=self.config['baseflow']['compute_baseflow_index'],
-                                          calculate_monthly=self.config['baseflow']['calculate_monthly'])
+        bfs_monthly = pd.DataFrame()
+        bfis_monthly = pd.DataFrame()
+        bfs_daily = pd.DataFrame()
+        performances_metrics = pd.DataFrame()
+        for gauge_name in self.gauge_ts.columns:
+            basin_area = None
+            
+            if 'basin_area' in self.gauges_meta.columns:
+                basin_area = self.gauges_meta.loc[gauge_name, 'basin_area'].iloc[0]
+                basin_area = None if np.isnan(basin_area) else basin_area
 
-        # Update the meta data
-        # get the monthly keys
-        monthly_keys = [key for key in self.bf_output.keys() if len(self.bf_output[key]) > 0 and 'monthly' in key]
 
-        if monthly_keys:
-            logger.info('Updating metadata with the mean (across all selected bf methods) for monthly data')
-            for bf_key in monthly_keys:
+            bf_daily, bf_monthly, bfi_monthly, performance_metrics = compute_baseflow(
+                                                self.gauge_ts[gauge_name],
+                                                basin_area = basin_area,
+                                                methods=self.config['baseflow']['methods'],
+                                                compute_bfi=self.config['baseflow']['compute_baseflow_index']
+                                                )
+            
+            bf_daily['gauge'] = gauge_name
+            bf_monthly['gauge'] = gauge_name
+            bfi_monthly['gauge'] = gauge_name
+            performance_metrics = pd.DataFrame(performance_metrics,index=[gauge_name])
+            #merge
+            bfs_daily=pd.concat([bfs_daily,bf_daily])
+            bfs_monthly = pd.concat([bfs_monthly,bf_monthly])
+            bfis_monthly = pd.concat([bfis_monthly,bfi_monthly])
+            performances_metrics = pd.concat([performances_metrics,performance_metrics])
+            #add to output dictionary
+            self.bf_output.update({'bf_daily': bfs_daily})
+            self.bf_output.update({'bf_monthly': bfs_monthly})
+            self.bf_output.update({'bfis_monthly': bfis_monthly})
+            
+        #compute the statistics
+        if self.config['baseflow']['compute_statistics']:
+            logger.info('Compute baseflow statistics')            
+            
+            for bf_key in self.bf_output.keys():
                 #organizing the data that calculating the mean per method
                 bf_subset = self.bf_output[bf_key].groupby(['gauge','date']).mean(numeric_only=True).reset_index()
                 #pivot the data
@@ -197,7 +222,25 @@ class Model:
                 self.gauges_meta = self.gauges_meta.apply(lambda x:add_gauge_stats(x,bf_subset,
                                                                     col_name=bf_key,
                                                                     ),
-                                                          axis=1)
+                                                          axis=1
+                                                          )
+            
+            #add performance metrics
+            self.gauges_meta = self.gauges_meta.merge(performances_metrics, 
+                                                      how='left', 
+                                                      left_index=True, 
+                                                      right_index=True,
+                                                      )
+
+        if self.config['file_io']['output']['plot_results']:
+            logger.info('plot_results of baseflow computation')
+            for bf_parameter in self.bf_output.keys():
+
+                plot_bf_results(ts_data=self.bf_output[bf_parameter], meta_data=self.gauges_meta,
+                                parameter_name=bf_parameter,
+                                plot_along_streams=True,
+                                output_dir=Path(self.paths["output_dir"], 'figures','baseflow')
+                                )
                     
         if self.output:
             #the meta data
@@ -208,17 +251,7 @@ class Model:
 
 
 
-        if self.config['file_io']['output']['plot_results']:
-            logger.info('plot_results of baseflow computation')
-            for bf_parameter in self.bf_output.keys():
-                if bf_parameter == 'bf_attributes':
-                    continue
-                else:
-                    plot_bf_results(ts_data=self.bf_output[bf_parameter], meta_data=self.gauges_meta,
-                                    parameter_name=bf_parameter,
-                                    plot_along_streams=True,
-                                    output_dir=Path(self.paths["output_dir"], 'figures','baseflow')
-                                    )
+
 
     # %%function that adds discharge statistics
 
