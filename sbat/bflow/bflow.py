@@ -46,7 +46,7 @@ def clean_gauge_ts(Q: pd.Series) -> Optional[pd.Series]:
 
 
 def call_bf_package(Q: pd.Series, methods: str = 'all', 
-                    area: Optional[float] = None,
+                    basin_area: Optional[float] = None,
                     ) -> Tuple[pd.DataFrame, np.ndarray]:
     """
     Function that converts pandas Series to numpy and calls the baseflow package
@@ -80,14 +80,14 @@ def call_bf_package(Q: pd.Series, methods: str = 'all',
     # interpolate the Nans and convert to 0D Array
     Q_array = Q.interpolate().values.astype(float).flatten()
 
-    if area is not None:
+    if basin_area is not None:
         bflow_logger.info('Assume that area is in m2, recompute to km2')
-        area = area / 1000 / 1000
+        basin_area = basin_area / 1000 / 1000
     
     if isinstance(methods,List) and 'all' in methods:
         methods='all'
 
-    b, KGEs = bf_package.separation(Q_array, date, area=area, method=methods)
+    b, KGEs = bf_package.separation(Q_array, date, area=basin_area, method=methods)
 
     # convert results back to DataFrame
     bf_daily = pd.DataFrame.from_records(b)
@@ -143,7 +143,7 @@ def compute_baseflow(Q: pd.Series, basin_area: float = None, methods: Union[str,
         return bf_daily, bf_monthly, bfi_monthly, performance_metrics      
     
     # call the baseflow module
-    bf_daily_raw, KGEs = call_bf_package(Q, methods=methods, area=basin_area)
+    bf_daily_raw, KGEs = call_bf_package(Q, methods=methods, basin_area=basin_area)
     #convert
     bf_daily = bf_daily_raw.reset_index().melt(id_vars='date').set_index('date')
     

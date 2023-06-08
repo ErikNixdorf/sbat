@@ -16,7 +16,7 @@ from shapely import Point
 from bflow.bflow import compute_baseflow, add_gauge_stats, plot_bf_results
 from recession.recession import analyse_recession_curves, plot_recession_results
 from recession.aquifer_parameter import get_hydrogeo_properties
-from waterbalance.waterbalance import get_section_water_balance, map_time_dependent_cols_to_gdf
+from waterbalance.waterbalance import get_section_waterbalance, map_time_dependent_cols_to_gdf
 
 logger = logging.getLogger('sbat')
 logger.setLevel(logging.INFO)
@@ -49,10 +49,10 @@ class Model:
 
         self.bf_output = dict()
         self.recession_limbs_ts = None
-        self.section_basins = None
+        self.section_basin_map = None
         self.sections_meta = None
         self.q_diff = None
-        self.gdf_network_map = None
+        self.network_map = None
         self.master_recession_curves = None
 
         self._build_wd()
@@ -308,14 +308,15 @@ class Model:
 
             # first we check whether baseflow data exist
             if self.config['recession']['curve_data']['flow_type'] == 'baseflow':
-                if not hasattr(self, 'bf_output'):
-                    raise ValueError('Compute baseflow with function get_baseflow first')
-                else:
-                    Q = self.bf_output['bf_daily']
-                    logger.info('we average the baseflow methods ')
-                    Q = Q.reset_index().groupby(['date', 'gauge']).mean(numeric_only=True).reset_index()
-                    # wide to long
-                    Q = Q.pivot(index='date', columns='gauge', values='value').copy()
+                if not self.bf_output:
+                    logger.info('Calculate Baseflow first before baseflow water balance can be calculated')
+                    self.get_baseflow()
+                #convert data
+                Q = self.bf_output['bf_daily']
+                logger.info('we average the baseflow methods ')
+                Q = Q.reset_index().groupby(['date', 'gauge']).mean(numeric_only=True).reset_index()
+                # wide to long
+                Q = Q.pivot(index='date', columns='gauge', values='value').copy()
 
             elif self.config['recession']['curve_data']['flow_type'] == 'discharge':
                 Q = self.gauge_ts
@@ -554,8 +555,9 @@ class Model:
         if flow_type == 'baseflow':
             logger.info('Use baseflow time series')
             # check whether the baseflow as already be computed
-            if not hasattr(self, 'bf_output'):
-                raise ValueError('Calculate Baseflow first before baseflow water balance can be calculated')
+            if not self.bf_output:
+                logger.info('Calculate Baseflow first before baseflow water balance can be calculated')
+                self.get_baseflow()
 
             # prove whether explicitely daily values should be calculate otherwise we take monthly
             if self.config['waterbalance']['time_series_analysis_option'] == 'daily' and 'bf_' + \
@@ -579,10 +581,10 @@ class Model:
 
         # start the calculation
 
-        self.sections_meta, self.q_diff, self.gdf_network_map, self.section_basins,ts_stats = get_section_water_balance(
+        self.sections_meta, self.q_diff, self.network_map, self.section_basin_map,ts_stats = get_section_waterbalance(
             gauge_data=self.gauges_meta,
             data_ts=data_ts,
-            network=network_geometry,
+            stream_network=network_geometry,
             basins=gauge_basins,
             network_connections=network_connections,
             confidence_acceptance_level=self.config['waterbalance']['confidence_acceptance_level'],
@@ -600,16 +602,16 @@ class Model:
         self.gauges_meta = pd.concat([self.gauges_meta,balance_mean],axis=1)
         self.gauges_meta = self.gauges_meta.reindex(balance_mean.index, axis=0)
 
-        # map the data from the recession analysis
+        # map results of analysis to geodataframes
         logger.info('Map statistics on stream network geodata')
-        self.gdf_network_map=map_time_dependent_cols_to_gdf(self.gdf_network_map,
+        self.network_map=map_time_dependent_cols_to_gdf(self.network_map,
                                                             self.gauges_meta,
                                                             geodf_index_col='downstream_point',
                                                             time_dep_df_index_col ='gauge',
                                                             time_dep_df_time_col = 'decade',
                                                             )
         logger.info('Map statistics on subbasin geodata')
-        self.section_basins=map_time_dependent_cols_to_gdf(self.section_basins, 
+        self.section_basin_map=map_time_dependent_cols_to_gdf(self.section_basin_map, 
                                                            self.gauges_meta.drop(columns='basin_area'),
                                                            geodf_index_col='basin',
                                                             time_dep_df_index_col ='gauge',
@@ -619,14 +621,14 @@ class Model:
         if self.output:
             self.sections_meta.to_csv(Path(self.paths["output_dir"], 'data', 'sections_meta.csv'))
             self.q_diff.to_csv(Path(self.paths["output_dir"], 'data', 'q_diff.csv'))
-            self.gdf_network_map.to_file(Path(self.paths["output_dir"], 'data', 'sections_streamlines.gpkg'),
+            self.network_map.to_file(Path(self.paths["output_dir"], 'data', 'sections_streamlines.gpkg'),
                                          driver='GPKG')
-            self.section_basins.to_file(Path(self.paths["output_dir"], 'data', 'sections_subbasin.gpkg'), driver='GPKG')
+            self.section_basin_map.to_file(Path(self.paths["output_dir"], 'data', 'sections_subbasin.gpkg'), driver='GPKG')
             #the gauge meta data
             self.gauges_meta.to_csv(Path(self.paths["output_dir"], 'data', 'gauges_meta.csv'))
             gdf_gauge_meta = gpd.GeoDataFrame(data=self.gauges_meta,
                                             geometry=[Point(xy) for xy in zip(self.gauges_meta.easting, self.gauges_meta.northing)],
-                                            crs=self.gdf_network_map.crs,
+                                            crs=self.network_map.crs,
                             )
             gdf_gauge_meta.to_file(Path(self.paths["output_dir"], 'data', 'gauges_meta.gpkg'), driver='GPKG')
 

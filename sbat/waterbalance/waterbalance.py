@@ -421,7 +421,6 @@ def multilinestring_to_singlelinestring(
 def calculate_network_balance(
         ts_data: pd.DataFrame = pd.DataFrame(),
         network_dict: Dict[str, Dict[str, Tuple[str, str]]] = dict(),
-        confidence_acceptance_level: float = 0.05,
         get_decadal_stats: bool = True,
     ) -> Tuple[pd.DataFrame, pd.DataFrame]:
     """
@@ -435,10 +434,7 @@ def calculate_network_balance(
         
     network_dict : dict, optional
         A dictionary representing the topology of the network, with each key representing a gauge and the corresponding value being another dictionary containing information about that gauge's upstream and downstream connections. Default is an empty dictionary.
-        
-    confidence_acceptance_level : float, optional
-        A float representing the confidence interval below which water balance values are set to NaN. Default is 0.05.
-    
+  
     get_decadal_stats: boolean, optional
         decides whether decadal stats will be calculated or not
     Returns:
@@ -520,9 +516,7 @@ def calculate_network_balance(
     # Finally we get out the data
 
     sections_meta = pd.concat(sections_meta)
-    # remove all balances below confidence interval
-    #low_confidence_mask = abs(sections_meta['balance_confidence']) < confidence_acceptance_level
-    #sections_meta.loc[low_confidence_mask, 'balance'] = np.nan
+
     q_diff = sections_meta.drop_duplicates().pivot(index='Date', columns='downstream_point', values='balance')
 
     if get_decadal_stats:
@@ -536,7 +530,7 @@ def calculate_network_balance(
 def map_network_sections(
         network_dict: Dict,
         gauge_meta: pd.DataFrame,
-        network: gpd.GeoDataFrame,
+        stream_network: gpd.GeoDataFrame,
 ) -> gpd.GeoDataFrame:
     """
     Parameters
@@ -561,10 +555,10 @@ def map_network_sections(
     # %% We will loop through the gauge sections and extract the relevant stream reaches and clip them
     for _, gauge in network_dict.items():
         # first we get the line within the main reach
-        if gauge['reach_name'] not in network.reach_name.tolist():
+        if gauge['reach_name'] not in stream_network.reach_name.tolist():
             logging.info(f'{gauge["reach_name"]} not in network data, check correct names')
             continue
-        river_line = network[network.reach_name == gauge['reach_name']].geometry.iloc[0]
+        river_line = stream_network[stream_network.reach_name == gauge['reach_name']].geometry.iloc[0]
         pnt_gauge = gauge_meta.loc[gauge_meta.index == gauge['downstream_point'], 'geometry'].iloc[0]
 
         # get all river points as geodataframe
@@ -600,21 +594,21 @@ def map_network_sections(
             # we loop trough the dataset        
             for (_, branch) in gauge[branch_name].iterrows():
                 # extract the river line if available        
-                if branch['stream'] not in network.reach_name.tolist():
+                if branch['stream'] not in stream_network.reach_name.tolist():
                     logging.info(f'{branch["stream"]} not in network data, check correct names')
                     continue
-                river_line = network[network.reach_name == branch['stream'
+                river_line = stream_network[stream_network.reach_name == branch['stream'
                 ]].geometry.iloc[0]
 
                 # first we check whether there is really data in the dataset        
                 if len(gauge[branch_name]) > 0:
                     # we get the river line        
-                    if branch['stream'] not in network.reach_name.tolist():
+                    if branch['stream'] not in stream_network.reach_name.tolist():
                         logging.info(f'{branch["stream"]} not in network data, check correct names')
                         continue
 
                     # extract the river line        
-                    river_line = network[network.reach_name == branch['stream'
+                    river_line = stream_network[stream_network.reach_name == branch['stream'
                     ]].geometry.iloc[0]
 
                     # get all river points as geodataframe        
@@ -668,11 +662,11 @@ def map_network_sections(
         df_columns_dict = dict(
             (k, gauge[k]) for k in ['id', 'reach_name', 'upstream_point', 'downstream_point'] if k in gauge.keys())
         gdf_balance = gpd.GeoDataFrame(pd.DataFrame.from_dict({0: df_columns_dict}).T, geometry=[section_lines],
-                                       crs=network.crs)
+                                       crs=stream_network.crs)
 
         gdf_balances = pd.concat([gdf_balances, gdf_balance])
 
-    return gdf_balances.set_crs(network.crs)
+    return gdf_balances.set_crs(stream_network.crs)
 
 
 # add a function for time series manipulation
@@ -819,9 +813,9 @@ def get_section_basins(basins: gpd.GeoDataFrame,
 
 
 # %% A function which connects all functions
-def get_section_water_balance(gauge_data: pd.DataFrame = pd.DataFrame(),
+def get_section_waterbalance(gauge_data: pd.DataFrame = pd.DataFrame(),
                               data_ts: pd.DataFrame = pd.DataFrame(),
-                              network: gpd.GeoDataFrame = gpd.GeoDataFrame(),
+                              stream_network: gpd.GeoDataFrame = gpd.GeoDataFrame(),
                               basins: gpd.GeoDataFrame = gpd.GeoDataFrame(),
                               network_connections: pd.DataFrame = pd.DataFrame(),
                               confidence_acceptance_level: float = 0.05,
@@ -843,7 +837,7 @@ def get_section_water_balance(gauge_data: pd.DataFrame = pd.DataFrame(),
     data_ts : pandas.DataFrame, optional
         The time series data for the stream gauges, with timestamps as index and
         gauge IDs as columns. The default is an empty DataFrame.
-    network : geopandas.GeoDataFrame, optional
+    stream_network : geopandas.GeoDataFrame, optional
         A network representation of the streams, with columns for 'source' (ID of the
         upstream stream), 'target' (ID of the downstream stream), and 'geometry'
         (shapely LineString representing the stream segment). The default is an empty
@@ -891,7 +885,7 @@ def get_section_water_balance(gauge_data: pd.DataFrame = pd.DataFrame(),
     # make a geodataframe out of the data
     geometry = [Point(xy) for xy in zip(gauge_data['easting'], gauge_data['northing'])]
 
-    gauge_data = gpd.GeoDataFrame(gauge_data, crs=network.crs, geometry=geometry)
+    gauge_data = gpd.GeoDataFrame(gauge_data, crs=stream_network.crs, geometry=geometry)
 
     gauge_data = gauge_data[~gauge_data.geometry.is_empty]
 
@@ -902,12 +896,11 @@ def get_section_water_balance(gauge_data: pd.DataFrame = pd.DataFrame(),
 
     sections_meta, q_diff = calculate_network_balance(ts_data=ts_stats,
                                                       network_dict=gauges_connection_dict,
-                                                      confidence_acceptance_level=confidence_acceptance_level,
                                                       get_decadal_stats = decadal_stats)
 
     gdf_network_map = map_network_sections(network_dict=gauges_connection_dict,
                                            gauge_meta=gauge_data,
-                                           network=network)
+                                           stream_network=stream_network)
 
     # we want a function to calculate the network subbasin area
 

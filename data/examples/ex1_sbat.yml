@@ -29,7 +29,6 @@ time:
     compute_each_decade: true
     start_date: 1990-01-01
     end_date: 2021-12-31
-
 #now we provide the parameters for each module
 baseflow:
     activate: true
@@ -38,13 +37,11 @@ baseflow:
         - LH
     compute_baseflow_index: true
     compute_statistics: true
-
 #the discharge
 discharge:
     activate: true
     col_name: q_daily
     compute_monthly: true
-
 #the recession
 recession:
     activate: true
@@ -53,7 +50,7 @@ recession:
         #curve type can be either hydrograph or waterbalance
         curve_type: hydrograph
         moving_average_filter_steps: 5
-        split_at_inflection: true # decides whether the inflection points will be used to split recession limbs
+        split_at_inflection: false # decides whether the inflection points will be used to split recession limbs
         minimum_limbs: 20
         minimum_recession_curve_length: 10
     fitting:
@@ -67,6 +64,5 @@ recession:
 waterbalance:
     activate: false
     flow_type: baseflow
-    confidence_acceptance_level: 0.05
     time_series_analysis_option: daily
     basin_id_col: basin

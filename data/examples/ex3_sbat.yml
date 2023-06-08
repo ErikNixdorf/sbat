@@ -11,7 +11,6 @@ file_io:
         gauges:
             gauge_meta: ex3_gauge_meta.csv
             gauge_time_series: ex3_gauge_ts.csv
-
         hydrogeology:
             gw_levels: 
         geospatial:
@@ -37,14 +36,12 @@ baseflow:
     methods:
         - UKIH
     compute_baseflow_index: true
-    calculate_monthly: true
-
+    compute_statistics: true
 #the discharge
 discharge:
     activate: true
     col_name: q_daily
     compute_monthly: true
-
 #the recession
 recession:
     activate: false
@@ -68,6 +65,5 @@ recession:
 waterbalance:
     activate: true
     flow_type: baseflow
-    confidence_acceptance_level: 0.05
     time_series_analysis_option: daily
     basin_id_col: basin
