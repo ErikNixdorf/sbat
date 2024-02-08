@@ -72,3 +72,17 @@ waterbalance:
     confidence_acceptance_level: 0.05
     time_series_analysis_option: daily
     basin_id_col: basin
+    
+    # the controll for Baysian Updating for gw_exchange
+    bayesian_updating:
+        activate: true
+        number_of_samplings: 200
+        prior_gaussian_parameters:
+            mean: 0
+            standard_deviation: 0.66
+        river_discharge_uncertainty:
+            measurement_uncertainty: 0.05
+            rating_curve_uncertainty: 0.01
+        
+    
+

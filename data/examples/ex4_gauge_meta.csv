@@ -1,0 +1,10 @@
+gauge,gauge_id,bundesland,stream,receiving_water,distance_to_mouth,northing,easting,position_at_watercourse_official,pegelnullpunkt_m,height_system,timeseries_available,basin_area,drain_length,stream_length,MQ,gw_exchange_per_km
+boxberg,583200,sn,schwarzer_schoeps,spree,7,5695006,470415,7.8,118.94,nn,,353376156.5,10605.80615,39621.30378,4.68,0
+jaenkendorf_1,583251,sn,schwarzer_schoeps,spree,36,5677912,486869,40.2,160.92,nhn92,,125031563.7,6308.627649,19189.332,0.718,0
+quitzdorf_up,583265,sn,schwarzer_schoeps,spree,29,5681808,482373,32.7,151.2,nhn92,,9399365.794,1729.714154,4927.705977,0.899,0
+reichwalde_3,583223,sn,schwarzer_schoeps,spree,15,5691771,476055,16.6,131.56,nhn92,,263182242.2,9152.786984,34683.1091,2.12,0
+schoeps,583235,sn,schwarzer_schoeps,spree,52,5667091,482498,55.2,195.92,nhn92,,41917171.71,3652.759252,9180.008707,0.285,0
+sproitz,583271,sn,schwarzer_schoeps,spree,28,5682071,482330,32.4,150.17,nhn92,,759948.7237,491.8324834,1739.471001,,0
+hammerstadt_1,583302,sn,weisser_schoeps,schwarzer_schoeps,6,5693999,482477,7.9,135.67,nhn92,,20478618.24,2553.144461,7320.297865,1.16,0
+holtendorf,583280,sn,weisser_schoeps,schwarzer_schoeps,49,5666974,494645,53.1,203.6,nhn92,,55116281.12,4188.562662,11069.50796,0.312,0
+saerichen,583290,sn,weisser_schoeps,schwarzer_schoeps,30,5680002,491976,32.6,169.37,nn,,138990621.8,6651.472695,22502.18583,0.792,0
