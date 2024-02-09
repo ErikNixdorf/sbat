@@ -22,6 +22,121 @@ from shapely.ops import nearest_points, unary_union
 waterbalance_logger = logging.getLogger('sbat.waterbalance')
 
 
+class Bayesian_Updating:
+    def __init__(self, 
+                 gauges_meta:pd.DataFrame(),
+                 ts_data: pd.DataFrame(),
+                 bayes_options: dict, 
+                 output: bool = True,
+                 ):
+        """
+        Initialize the Bayesian Updating class.
+
+        Parameters
+        ----------
+        gauges_meta : pd.DataFrame
+            DataFrame containing metadata for gauges.
+        ts_data : pd.DataFrame
+            DataFrame containing time series data.
+        bayes_options : dict
+            Dictionary containing Bayesian updating options.
+        output : bool, optional
+            Flag to indicate whether to output the results. Default is True.
+
+        Raises
+        ------
+        ValueError
+            If the prior Gaussian parameters type is not recognized.
+
+        Returns
+        -------
+        None
+        """
+        # add the input data to class attributes
+        self.gauges_meta = gauges_meta
+        self.ts_data = ts_data
+        self.bayes_options = bayes_options
+        
+        # add the specific prior information to the gauge data
+        prior_type = self.bayes_options['prior_gaussian_parameters']['type'].lower()
+        if prior_type == 'constant':
+            #add constant information to each gauge
+            self.gauges_meta['q_diff[m2/s]'] = self.bayes_options['prior_gaussian_parameters']['mean']
+            self.gauges_meta['q_diff_std[m2/s]'] = self.bayes_options['prior_gaussian_parameters']['standard_deviation']
+        elif prior_type == 'gauge_dependent':
+                   print('Predefined data from the Gauge Metadataset is used')
+        else:
+            raise ValueError('Invalid prior Gaussian parameters type. Should be either constant or gauge_dependent')
+    
+    def add_uncertainty(self):
+        """
+        Add uncertainty to the time series data based on specified gauge uncertainty options.
+        
+        This function computes and adds uncertainty to the time series data based on the specified gauge uncertainty options
+        in the `bayes_options` dictionary.
+        
+        Raises:
+            ValueError: If the gauge uncertainty type is not either constant or discharge_dependent.
+        """
+        # Copy the time series data and melt it
+        q_uncertain_ts = self.ts_data.copy().reset_index().melt(id_vars=['date'])
+    
+        #add the measurement uncertainty
+        q_uncertain_ts['measurement_uncertainty'] = self.bayes_options['gauge_uncertainty']['measurement_uncertainty']
+        
+        # Add rating curve uncertainty based on the specified type
+        gauge_uncertainty_type = self.bayes_options['gauge_uncertainty']['type'].lower()
+    
+        if gauge_uncertainty_type == 'constant':
+
+            q_uncertain_ts['rating_curve_uncertainty'] = self.bayes_options['gauge_uncertainty']['rating_curve_uncertainty']
+        elif gauge_uncertainty_type == 'discharge_dependent':
+            # Merge mean discharge (MQ) to the data
+            q_uncertain_ts=pd.merge(q_uncertain_ts, self.gauges_meta[['gauge', 'MQ']], on='gauge', how='left')
+            
+            #depending on the difference between mean discharge and actual discharge, the uncertainty is provided
+            #method see LAWA Pegelhandbuch 2018, page B-60, we assume that std = np.sqrt(relative_maximum_deviation)
+            q_uncertain_ts.loc[q_uncertain_ts['value']<=0.5 * q_uncertain_ts['MQ'],'rating_curve_uncertainty'] = np.sqrt(0.2)
+            q_uncertain_ts.loc[q_uncertain_ts['value']>=2 * q_uncertain_ts['MQ'],'rating_curve_uncertainty'] = np.sqrt(0.1)
+            #for the values in between which are still nan
+            q_uncertain_ts.loc[q_uncertain_ts['rating_curve_uncertainty'].isna(),'rating_curve_uncertainty'] = np.sqrt(0.05)
+            
+        else:
+            raise ValueError('Gauge uncertainty type can be either constant or discharge_dependent')
+        
+        #add global uncertainty by simply merging --> reference is www.hydrol-earth-syst-sci.net/13/913/2009/ 
+        q_uncertain_ts['Q_error_std'] = q_uncertain_ts['measurement_uncertainty'] + q_uncertain_ts['rating_curve_uncertainty']
+        
+        # clean data
+        self.q_uncertain_ts = q_uncertain_ts[['date', 'gauge', 'value', 'Q_error_std']]
+        self.q_uncertain_ts.rename(columns={'value':'Q'},inplace=True)
+        
+        
+    def generate_uncertainty_samples(self):
+        """
+        Function generates samples based on gaussian distribution
+
+
+        Returns
+        -------
+        None.
+
+        """
+        no_of_samples= self.bayes_options['number_of_samples']
+        
+        # Duplicate the uncertain time series to create multiple samples
+        self.q_ts_samples = pd.concat([self.q_uncertain_ts] * no_of_samples, ignore_index=True)
+    
+        # Generate sample IDs
+        self.q_ts_samples['sample_id'] = [i for i in range(no_of_samples) for _ in range(len(self.q_uncertain_ts))]
+        
+        # Draw random numbers from the distribution based on the standard deviation
+        self.q_ts_samples['sample_error']  = np.random.normal(0, self.q_uncertain_ts['Q_error_std'])
+        
+        # Compute the discharge with error
+        self.q_ts_samples['Q*'] = self.q_ts_samples['Q'] + self.q_ts_samples['sample_error'] * self.q_ts_samples['Q']
+
+
 def generate_upstream_networks(
     gauge_meta: pd.DataFrame, 
     network_connections: pd.DataFrame
@@ -665,8 +780,13 @@ def map_network_sections(
                                        crs=stream_network.crs)
 
         gdf_balances = pd.concat([gdf_balances, gdf_balance])
+    
+    # finally we calculate the length of the section and add the information to the gauges as well
+    gdf_balances['waterway_length'] = gdf_balances.geometry.length
+    
+    gauge_meta['waterway_length'] = gdf_balances.set_index('downstream_point')['waterway_length']
 
-    return gdf_balances.set_crs(stream_network.crs)
+    return gdf_balances.set_crs(stream_network.crs), gauge_meta
 
 
 # add a function for time series manipulation
@@ -822,6 +942,7 @@ def get_section_waterbalance(gauge_data: pd.DataFrame = pd.DataFrame(),
                               time_series_analysis_option: str = 'overall_mean',
                               basin_id_col: str = 'basin',
                               decadal_stats: bool =True,
+                              bayesian_options= dict()
                               ) -> Tuple:
     """
     Calculates the water balance for a network of stream gauges and their upstream
@@ -850,7 +971,7 @@ def get_section_waterbalance(gauge_data: pd.DataFrame = pd.DataFrame(),
 
     confidence_acceptance_level : float, optional
         The significance level (alpha) used for the confidence interval of the water
-        balance calculations. The default is 0.05.
+        balance calculations. The default is 0.05. NOT IMPLEMENTED YET
     time_series_analysis_option : str, optional
         The method used to aggregate the time series data. The default is 'overall_mean'.
     basin_id_col : str, optional
@@ -872,41 +993,56 @@ def get_section_waterbalance(gauge_data: pd.DataFrame = pd.DataFrame(),
     The Hydrological subbasin belonging to each section for which the water balance was been computed
     """
 
-    # %% We do some small data manipulations
+    # first time is aggregated
     ts_stats = aggregate_time_series(data_ts=data_ts, analyse_option=time_series_analysis_option)
-
+    
     # synchrnonize our datasets
     gauge_data = gauge_data.loc[gauge_data.index.isin(ts_stats.columns), :]
     # reduce the datasets to all which have metadata
     ts_stats = ts_stats[gauge_data.index.unique().to_list()]
     logging.info(f'{ts_stats.shape[1]} gauges with valid meta data')
-
-    # our gauge data has to converted to geodataframe
+    
+    #
     # make a geodataframe out of the data
     geometry = [Point(xy) for xy in zip(gauge_data['easting'], gauge_data['northing'])]
 
     gauge_data = gpd.GeoDataFrame(gauge_data, crs=stream_network.crs, geometry=geometry)
 
     gauge_data = gauge_data[~gauge_data.geometry.is_empty]
-
-    # %% run the main functions
-
+    
+    #%% run the main functions dealing with the geometry
     gauges_connection_dict = generate_upstream_networks(gauge_meta=gauge_data,
                                                        network_connections=network_connections)
+    gdf_network_map, gauge_data = map_network_sections(network_dict=gauges_connection_dict,
+                                           gauge_meta=gauge_data,
+                                           stream_network=stream_network)
 
+    def generate_discharge_samples(ts_stats,bayesian_options):
+        ts_stats['sample_id']=0
+        #this is just a proxy to test the workflow
+        return ts_stats
+    #%% Apply Bayesian Updating if requestest
+    if bayesian_options['activate']:
+       logging.info('Initialize Bayesian Updating') 
+       if time_series_analysis_option.lower() in ['overall_mean','annual_mean','summer_mean']:
+           logging.warning('Aggregated Time Series cant be used for Bayesian Updating')
+
+
+
+    # Run the water balance analysis
     sections_meta, q_diff = calculate_network_balance(ts_data=ts_stats,
                                                       network_dict=gauges_connection_dict,
                                                       get_decadal_stats = decadal_stats)
 
-    gdf_network_map = map_network_sections(network_dict=gauges_connection_dict,
-                                           gauge_meta=gauge_data,
-                                           stream_network=stream_network)
+
 
     # we want a function to calculate the network subbasin area
-
-    section_basins = get_section_basins(basins=basins,
-                                        network_dict=gauges_connection_dict,
-                                        basin_id_col=basin_id_col)
+    if basins is None:
+        section_basins=None
+    else:
+        section_basins = get_section_basins(basins=basins,
+                                            network_dict=gauges_connection_dict,
+                                            basin_id_col=basin_id_col)
     
     #we map the balance 
 

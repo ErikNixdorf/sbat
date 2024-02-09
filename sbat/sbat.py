@@ -184,7 +184,7 @@ class Model:
             basin_area = None
             
             if 'basin_area' in self.gauges_meta.columns:
-                basin_area = self.gauges_meta.loc[gauge_name, 'basin_area'].iloc[0]
+                basin_area = self.gauges_meta.loc[gauge_name, 'basin_area']
                 basin_area = None if np.isnan(basin_area) else basin_area
 
 
@@ -538,14 +538,18 @@ class Model:
         #also write to lower case
         for col in ['stream','main_stream']:
             network_connections[col] = network_connections[col].apply(lambda x: x.lower())
-
-        gauge_basins = gpd.read_file(Path(self.paths["input_dir"],
-                                          self.config['file_io']['input']['geospatial']['gauge_basins'])
-                                     )
-        gauge_basins[self.config['waterbalance']['basin_id_col']] = gauge_basins[self.config['waterbalance']['basin_id_col']].apply(lambda x: x.lower())
-        #rewrite to lower case
-        gauge_basins[self.config['waterbalance']['basin_id_col']] = gauge_basins[self.config['waterbalance']['basin_id_col']].apply(lambda x: x.lower())
-        # check whether flow type is given explicitely
+        #add basin data
+        if self.config['file_io']['input']['geospatial']['gauge_basins'] is not None:
+            gauge_basins = gpd.read_file(Path(self.paths["input_dir"],
+                                              self.config['file_io']['input']['geospatial']['gauge_basins'])
+                                         )
+            gauge_basins[self.config['waterbalance']['basin_id_col']] = gauge_basins[self.config['waterbalance']['basin_id_col']].apply(lambda x: x.lower())
+            #rewrite to lower case
+            gauge_basins[self.config['waterbalance']['basin_id_col']] = gauge_basins[self.config['waterbalance']['basin_id_col']].apply(lambda x: x.lower())
+            # check whether flow type is given explicitely
+        else:
+            gauge_basins=None
+            logger.info('No GIS Data for gauged basin geometry provided')
 
         if 'flow_type' in kwargs:
             flow_type = kwargs['flow_type']
@@ -553,7 +557,13 @@ class Model:
             flow_type = self.config['waterbalance']['flow_type']
 
         if flow_type == 'baseflow':
+            
             logger.info('Use baseflow time series')
+            
+
+            if self.config['waterbalance']['bayesian_updating']['activate']:
+                logger.warning('Calculation of baseflow introduces additional uncertainty')
+
             # check whether the baseflow as already be computed
             if not self.bf_output:
                 logger.info('Calculate Baseflow first before baseflow water balance can be calculated')
@@ -566,6 +576,8 @@ class Model:
             else:
                 logger.info('Monthly Averaged values are used')
                 data_ts = self.bf_output['bf_monthly'].copy()
+                if self.config['waterbalance']['bayesian_updating']['activate']:
+                    logger.warning('The provided uncertainty refer to individual measurements not monthly averages which have a reduced random error')
 
             # in any case for the baseflow we have to bring the format from long to wide
             logger.info('Average baseflow data for each gauge and time step')
@@ -591,6 +603,7 @@ class Model:
             time_series_analysis_option=self.config['waterbalance']['time_series_analysis_option'],
             basin_id_col=self.config['waterbalance']['basin_id_col'],
             decadal_stats = self.config['time']['compute_each_decade'],
+            bayesian_options=self.config['waterbalance']['bayesian_updating'],
         )
         
         #we map the mean_balance information on the geodataframes
@@ -610,20 +623,23 @@ class Model:
                                                             time_dep_df_index_col ='gauge',
                                                             time_dep_df_time_col = 'decade',
                                                             )
-        logger.info('Map statistics on subbasin geodata')
-        self.section_basin_map=map_time_dependent_cols_to_gdf(self.section_basin_map, 
-                                                           self.gauges_meta.drop(columns='basin_area'),
-                                                           geodf_index_col='basin',
-                                                            time_dep_df_index_col ='gauge',
-                                                            time_dep_df_time_col = 'decade',
-                                                            )           
+        if self.section_basin_map is not None:
+            logger.info('Map statistics on subbasin geodata')
+            self.section_basin_map=map_time_dependent_cols_to_gdf(self.section_basin_map, 
+                                                               self.gauges_meta.drop(columns='basin_area'),
+                                                               geodf_index_col='basin',
+                                                                time_dep_df_index_col ='gauge',
+                                                                time_dep_df_time_col = 'decade',
+                                                                )           
   
         if self.output:
             self.sections_meta.to_csv(Path(self.paths["output_dir"], 'data', 'sections_meta.csv'))
             self.q_diff.to_csv(Path(self.paths["output_dir"], 'data', 'q_diff.csv'))
             self.network_map.to_file(Path(self.paths["output_dir"], 'data', 'sections_streamlines.gpkg'),
                                          driver='GPKG')
-            self.section_basin_map.to_file(Path(self.paths["output_dir"], 'data', 'sections_subbasin.gpkg'), driver='GPKG')
+            
+            if self.section_basin_map is not None:
+                self.section_basin_map.to_file(Path(self.paths["output_dir"], 'data', 'sections_subbasin.gpkg'), driver='GPKG')
             #the gauge meta data
             self.gauges_meta.to_csv(Path(self.paths["output_dir"], 'data', 'gauges_meta.csv'))
             gdf_gauge_meta = gpd.GeoDataFrame(data=self.gauges_meta,
