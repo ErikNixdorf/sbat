@@ -1014,7 +1014,7 @@ def get_section_waterbalance(gauge_data: pd.DataFrame = pd.DataFrame(),
 
     gauge_data = gauge_data[~gauge_data.geometry.is_empty]
     
-    #%% run the main functions dealing with the geometry
+    # Generate upstream networks and map network sections
     gauges_connection_dict = generate_upstream_networks(gauge_meta=gauge_data,
                                                        network_connections=network_connections)
     gdf_network_map, gauge_data = map_network_sections(network_dict=gauges_connection_dict,
@@ -1024,16 +1024,19 @@ def get_section_waterbalance(gauge_data: pd.DataFrame = pd.DataFrame(),
 
     #%% Apply Bayesian Updating if requestest
     if bayesian_options['activate']:
-        logging.info('Initialize Bayesian Updating') 
+        logging.info('Initialize Discharge Samples with Uncertainty') 
         if time_series_analysis_option.lower() in ['overall_mean','annual_mean','summer_mean']:
             logging.warning('Aggregated Time Series cant be used for Bayesian Updating')
         else:
-            # generate the updater class
+            # Generate the Bayesian Updater class
             bayesian_Updater = Bayesian_Updating(gauge_data, data_ts, bayesian_options)
             bayesian_Updater.add_uncertainty()
             data_ts_samples =bayesian_Updater.generate_uncertainty_samples()
             
+            # Pivot data for analysis
             discharge_samples = data_ts_samples.pivot(columns='gauge',index=['date','sample_id'],values='Q*')
+            
+            # Calculate network balance based on discharge samples
             sections_meta, q_diff = calculate_network_balance(ts_data=discharge_samples,
                                                               network_dict=gauges_connection_dict,
                                                               get_decadal_stats = decadal_stats)
@@ -1052,13 +1055,16 @@ def get_section_waterbalance(gauge_data: pd.DataFrame = pd.DataFrame(),
             q_diff=q_diff.set_index(['date','sample_id','downstream_point'])
             q_diff = pd.concat([q_diff,data_ts_samples],axis=1)
     else:
-        # Run the water balance analysis
+        # Run the water balance analysis without Bayesian Updating
         sections_meta, q_diff = calculate_network_balance(ts_data=data_ts,
                                                           network_dict=gauges_connection_dict,
                                                           get_decadal_stats = decadal_stats)
         
-        #write similar output to the Baysian Case
-        gauge_index=gauge_data.reset_index().rename(columns={'gauge':'downstream point'})
+        # Prepare similar output to the Bayesian case for consistency
+        q_diff=q_diff.melt(ignore_index=False).rename(columns={'value':'q_diff'}).reset_index()
+        q_diff['sample_id'] = 0
+        sections_meta=sections_meta.rename(columns={'Date':'date'})
+        sections_meta['sample_id'] = 0
 
 
 
