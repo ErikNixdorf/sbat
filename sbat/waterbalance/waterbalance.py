@@ -131,11 +131,15 @@ class Bayesian_Updating:
         self.q_ts_samples['sample_id'] = [i for i in range(no_of_samples) for _ in range(len(self.q_uncertain_ts))]
         
         # Draw random numbers from the distribution based on the standard deviation
-        self.q_ts_samples['sample_error']  = np.random.normal(0, self.q_uncertain_ts['Q_error_std'])
+        self.q_ts_samples['sample_error']  = np.random.normal(0, self.q_ts_samples['Q_error_std'])
         
         # Compute the discharge with error
         self.q_ts_samples['Q*'] = self.q_ts_samples['Q'] + self.q_ts_samples['sample_error'] * self.q_ts_samples['Q']
-
+        
+        #finally we map the data on the prior information on the dataset
+        self.q_ts_samples=pd.merge(self.q_ts_samples, self.gauges_meta[[ 'q_diff[m2/s]','q_diff_std[m2/s]']], on='gauge', how='left')
+        
+        return self.q_ts_samples
 
 def generate_upstream_networks(
     gauge_meta: pd.DataFrame, 
@@ -994,13 +998,13 @@ def get_section_waterbalance(gauge_data: pd.DataFrame = pd.DataFrame(),
     """
 
     # first time is aggregated
-    ts_stats = aggregate_time_series(data_ts=data_ts, analyse_option=time_series_analysis_option)
+    data_ts = aggregate_time_series(data_ts=data_ts, analyse_option=time_series_analysis_option)
     
     # synchrnonize our datasets
-    gauge_data = gauge_data.loc[gauge_data.index.isin(ts_stats.columns), :]
+    gauge_data = gauge_data.loc[gauge_data.index.isin(data_ts.columns), :]
     # reduce the datasets to all which have metadata
-    ts_stats = ts_stats[gauge_data.index.unique().to_list()]
-    logging.info(f'{ts_stats.shape[1]} gauges with valid meta data')
+    data_ts = data_ts[gauge_data.index.unique().to_list()]
+    logging.info(f'{data_ts.shape[1]} gauges with valid meta data')
     
     #
     # make a geodataframe out of the data
@@ -1017,22 +1021,30 @@ def get_section_waterbalance(gauge_data: pd.DataFrame = pd.DataFrame(),
                                            gauge_meta=gauge_data,
                                            stream_network=stream_network)
 
-    def generate_discharge_samples(ts_stats,bayesian_options):
-        ts_stats['sample_id']=0
-        #this is just a proxy to test the workflow
-        return ts_stats
+
     #%% Apply Bayesian Updating if requestest
     if bayesian_options['activate']:
-       logging.info('Initialize Bayesian Updating') 
-       if time_series_analysis_option.lower() in ['overall_mean','annual_mean','summer_mean']:
-           logging.warning('Aggregated Time Series cant be used for Bayesian Updating')
-
-
-
-    # Run the water balance analysis
-    sections_meta, q_diff = calculate_network_balance(ts_data=ts_stats,
-                                                      network_dict=gauges_connection_dict,
-                                                      get_decadal_stats = decadal_stats)
+        logging.info('Initialize Bayesian Updating') 
+        if time_series_analysis_option.lower() in ['overall_mean','annual_mean','summer_mean']:
+            logging.warning('Aggregated Time Series cant be used for Bayesian Updating')
+        else:
+            # generate the updater class
+            bayesian_Updater = Bayesian_Updating(gauge_data, data_ts, bayesian_options)
+            bayesian_Updater.add_uncertainty()
+            data_ts_samples =bayesian_Updater.generate_uncertainty_samples()
+            
+            discharge_samples = data_ts_samples.pivot(columns='gauge',index=['date','sample_id'],values='Q*')
+            sections_meta, q_diff = calculate_network_balance(ts_data=discharge_samples,
+                                                              network_dict=gauges_connection_dict,
+                                                              get_decadal_stats = decadal_stats)
+            
+            #unpivot again
+            
+        else:
+            # Run the water balance analysis
+            sections_meta, q_diff = calculate_network_balance(ts_data=data_ts,
+                                                              network_dict=gauges_connection_dict,
+                                                              get_decadal_stats = decadal_stats)
 
 
 
@@ -1047,4 +1059,4 @@ def get_section_waterbalance(gauge_data: pd.DataFrame = pd.DataFrame(),
     #we map the balance 
 
     # return the results
-    return sections_meta, q_diff, gdf_network_map, section_basins,ts_stats
+    return sections_meta, q_diff, gdf_network_map, section_basins,data_ts
