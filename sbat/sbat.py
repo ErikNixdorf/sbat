@@ -607,7 +607,7 @@ class Model:
         )
         
         #we map the mean_balance information on the geodataframes
-        balance_mean = self.sections_meta.groupby(['downstream_point','decade']).mean(numeric_only=True).loc[:,'balance']
+        balance_mean = self.sections_meta.groupby(['downstream_point','decade']).mean(numeric_only=True).loc[:,'balance[m³/s]']
         
         #reorganize self_gauges_meta and add gauges_mean
         self.gauges_meta = self.gauges_meta.reset_index().set_index(['gauge','decade'])

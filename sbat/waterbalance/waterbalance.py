@@ -61,8 +61,8 @@ class Bayesian_Updating:
         prior_type = self.bayes_options['prior_gaussian_parameters']['type'].lower()
         if prior_type == 'constant':
             #add constant information to each gauge
-            self.gauges_meta['q_diff[m2/s]'] = self.bayes_options['prior_gaussian_parameters']['mean']
-            self.gauges_meta['q_diff_std[m2/s]'] = self.bayes_options['prior_gaussian_parameters']['standard_deviation']
+            self.gauges_meta['prior_q_diff_mean[m2/s]'] = self.bayes_options['prior_gaussian_parameters']['mean']
+            self.gauges_meta['prior_q_diff_dd[m2/s]'] = self.bayes_options['prior_gaussian_parameters']['standard_deviation']
         elif prior_type == 'gauge_dependent':
                    print('Predefined data from the Gauge Metadataset is used')
         else:
@@ -137,7 +137,7 @@ class Bayesian_Updating:
         self.q_ts_samples['Q*'] = self.q_ts_samples['Q'] + self.q_ts_samples['sample_error'] * self.q_ts_samples['Q']
         
         #finally we map the data on the prior information on the dataset
-        self.q_ts_samples=pd.merge(self.q_ts_samples, self.gauges_meta[[ 'q_diff[m2/s]','q_diff_std[m2/s]']], on='gauge', how='left')
+        self.q_ts_samples=pd.merge(self.q_ts_samples, self.gauges_meta[[ 'prior_q_diff_mean[m2/s]','prior_q_diff_mean[m2/s]']], on='gauge', how='left')
         
         return self.q_ts_samples
 
@@ -476,7 +476,7 @@ def map_time_dependent_cols_to_gdf(
     if remove_nan_rows:
         #remove geodata with no proper water balance
         waterbalance_logger.info(f'remove values where balance is{nan_value}')
-        geodf_out = geodf_out[geodf_out.balance!=nan_value]
+        geodf_out = geodf_out[geodf_out['balance[m³/s]']!=nan_value]
     return geodf_out
 
 def multilinestring_to_singlelinestring(
@@ -1038,13 +1038,27 @@ def get_section_waterbalance(gauge_data: pd.DataFrame = pd.DataFrame(),
                                                               network_dict=gauges_connection_dict,
                                                               get_decadal_stats = decadal_stats)
             
-            #unpivot again
+            #repair the multiindex
+            q_diff.index=discharge_samples.index
             
-        else:
-            # Run the water balance analysis
-            sections_meta, q_diff = calculate_network_balance(ts_data=data_ts,
-                                                              network_dict=gauges_connection_dict,
-                                                              get_decadal_stats = decadal_stats)
+            #same for sections_meta
+            sections_meta[['date', 'sample_id']] = pd.DataFrame(sections_meta['Date'].tolist(), index=sections_meta.index)
+            sections_meta=sections_meta.drop(columns='Date')
+            #unpivot q_diff
+            q_diff = q_diff.melt(ignore_index=False).rename(columns={'value':'q_diff'}).reset_index()
+            
+            #merge with data from ts_samples, both need a unique index
+            data_ts_samples = data_ts_samples.rename(columns={'gauge':'downstream_point'}).set_index(['date','sample_id','downstream_point'])
+            q_diff=q_diff.set_index(['date','sample_id','downstream_point'])
+            q_diff = pd.concat([q_diff,data_ts_samples],axis=1)
+    else:
+        # Run the water balance analysis
+        sections_meta, q_diff = calculate_network_balance(ts_data=data_ts,
+                                                          network_dict=gauges_connection_dict,
+                                                          get_decadal_stats = decadal_stats)
+        
+        #write similar output to the Baysian Case
+        gauge_index=gauge_data.reset_index().rename(columns={'gauge':'downstream point'})
 
 
 
@@ -1056,7 +1070,20 @@ def get_section_waterbalance(gauge_data: pd.DataFrame = pd.DataFrame(),
                                             network_dict=gauges_connection_dict,
                                             basin_id_col=basin_id_col)
     
-    #we map the balance 
-
+    #in any case we calculate the balance per length of the section
+    gauge_index=gauge_data.reset_index().rename(columns={'gauge':'downstream_point'})[['downstream_point','waterway_length']]
+    #merge with section meta and q_diff to get the values per section length
+    q_diff = pd.merge(q_diff.reset_index(), gauge_index, on='downstream_point', suffixes=('_df1', '_df2'))
+    q_diff['q_diff[m2/s]']=q_diff['q_diff']/q_diff['waterway_length']
+    q_diff=q_diff.rename(columns={'q_diff':'Q_diff[m³/s]'})
+    
+    #now for section meta
+    sections_meta = pd.merge(sections_meta, gauge_index, on='downstream_point', suffixes=('_df1', '_df2'))
+    sections_meta['balance[m2/s]']=sections_meta['balance']/sections_meta['waterway_length']
+    sections_meta=sections_meta.rename(columns={'balance':'balance[m³/s]'})
+    
+    
+    
+    
     # return the results
     return sections_meta, q_diff, gdf_network_map, section_basins,data_ts

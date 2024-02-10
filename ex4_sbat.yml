@@ -71,11 +71,11 @@ waterbalance:
     # the controll for Baysian Updating for gw_exchange
     bayesian_updating:
         activate: true
-        number_of_samples: 200
+        number_of_samples: 20
         prior_gaussian_parameters:
             type: constant
             mean: 0
-            standard_deviation: 0.66
+            standard_deviation: 0.00066
         gauge_uncertainty:
             type: constant
             measurement_uncertainty: 0.05
