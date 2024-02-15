@@ -62,7 +62,7 @@ class Bayesian_Updating:
         if prior_type == 'constant':
             #add constant information to each gauge
             self.gauges_meta['prior_q_diff_mean[m2/s]'] = self.bayes_options['prior_gaussian_parameters']['mean']
-            self.gauges_meta['prior_q_diff_dd[m2/s]'] = self.bayes_options['prior_gaussian_parameters']['standard_deviation']
+            self.gauges_meta['prior_q_diff_std[m2/s]'] = self.bayes_options['prior_gaussian_parameters']['standard_deviation']
         elif prior_type == 'gauge_dependent':
                    print('Predefined data from the Gauge Metadataset is used')
         else:
@@ -137,7 +137,7 @@ class Bayesian_Updating:
         self.q_ts_samples['Q*'] = self.q_ts_samples['Q'] + self.q_ts_samples['sample_error'] * self.q_ts_samples['Q']
         
         #finally we map the data on the prior information on the dataset
-        self.q_ts_samples=pd.merge(self.q_ts_samples, self.gauges_meta[[ 'prior_q_diff_mean[m2/s]','prior_q_diff_mean[m2/s]']], on='gauge', how='left')
+        self.q_ts_samples=pd.merge(self.q_ts_samples, self.gauges_meta[[ 'prior_q_diff_mean[m2/s]','prior_q_diff_std[m2/s]']], on='gauge', how='left')
         
         return self.q_ts_samples
 
