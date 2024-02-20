@@ -75,13 +75,22 @@ waterbalance:
     # the controll for Baysian Updating for gw_exchange
     bayesian_updating:
         activate: true
-        number_of_samplings: 200
-        prior_gaussian_parameters:
-            mean: 0
-            standard_deviation: 0.66
+        bayesian_data_scaling_factor: 86400
         river_discharge_uncertainty:
             measurement_uncertainty: 0.05
             rating_curve_uncertainty: 0.01
+            number_of_datapoints: 200
+        bayesian_parameters:
+            prior_gaussian_parameters:
+                mean: 0
+                standard_deviation: 0.66
+            monte_carlo_parameters:
+                target_accept: 0.8
+                number_of_tunes: 1000
+                number_of_samples: 2000
+                number_of_cores: 1
+                
+            
         
     
 
