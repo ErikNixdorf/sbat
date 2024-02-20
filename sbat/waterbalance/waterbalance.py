@@ -22,7 +22,7 @@ from shapely.ops import nearest_points, unary_union
 waterbalance_logger = logging.getLogger('sbat.waterbalance')
 
 
-class Bayesian_Updating:
+class uncertainty_data_generation:
     def __init__(self, 
                  gauges_meta:pd.DataFrame(),
                  ts_data: pd.DataFrame(),
@@ -68,7 +68,7 @@ class Bayesian_Updating:
         else:
             raise ValueError('Invalid prior Gaussian parameters type. Should be either constant or gauge_dependent')
     
-    def add_uncertainty(self):
+    def add_measurement_uncertainty(self):
         """
         Add uncertainty to the time series data based on specified gauge uncertainty options.
         
