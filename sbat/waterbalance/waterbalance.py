@@ -12,7 +12,7 @@ from copy import deepcopy
 import logging
 import secrets
 from typing import Dict, Any, Union, Tuple, Optional, List
-
+import xarray as xr
 import geopandas as gpd
 import numpy as np
 import pandas as pd
@@ -56,15 +56,16 @@ class uncertainty_data_generation:
         self.gauges_meta = gauges_meta
         self.ts_data = ts_data
         self.bayes_options = bayes_options
-        
         # add the specific prior information to the gauge data
-        prior_type = self.bayes_options['prior_gaussian_parameters']['type'].lower()
+        prior_parameters=self.bayes_options['bayesian_parameters']['prior_gaussian_parameters']
+        prior_type = prior_parameters['type'].lower()
         if prior_type == 'constant':
             #add constant information to each gauge
-            self.gauges_meta['prior_q_diff_mean[m2/s]'] = self.bayes_options['prior_gaussian_parameters']['mean']
-            self.gauges_meta['prior_q_diff_std[m2/s]'] = self.bayes_options['prior_gaussian_parameters']['standard_deviation']
+            self.gauges_meta['prior_q_diff_mean[m2/s]'] = prior_parameters['mean']
+            self.gauges_meta['prior_q_diff_std[m2/s]'] = prior_parameters['standard_deviation']
         elif prior_type == 'gauge_dependent':
                    print('Predefined data from the Gauge Metadataset is used')
+                   raise ValueError('Predefined data from the gauge metadataset has not been implemented yet')
         else:
             raise ValueError('Invalid prior Gaussian parameters type. Should be either constant or gauge_dependent')
     
@@ -82,14 +83,14 @@ class uncertainty_data_generation:
         q_uncertain_ts = self.ts_data.copy().reset_index().melt(id_vars=['date'])
     
         #add the measurement uncertainty
-        q_uncertain_ts['measurement_uncertainty'] = self.bayes_options['gauge_uncertainty']['measurement_uncertainty']
+        q_uncertain_ts['measurement_uncertainty'] = self.bayes_options['river_discharge_uncertainty']['measurement_uncertainty']
         
         # Add rating curve uncertainty based on the specified type
-        gauge_uncertainty_type = self.bayes_options['gauge_uncertainty']['type'].lower()
+        gauge_uncertainty_type = self.bayes_options['river_discharge_uncertainty']['type'].lower()
     
         if gauge_uncertainty_type == 'constant':
 
-            q_uncertain_ts['rating_curve_uncertainty'] = self.bayes_options['gauge_uncertainty']['rating_curve_uncertainty']
+            q_uncertain_ts['rating_curve_uncertainty'] = self.bayes_options['river_discharge_uncertainty']['rating_curve_uncertainty']
         elif gauge_uncertainty_type == 'discharge_dependent':
             # Merge mean discharge (MQ) to the data
             q_uncertain_ts=pd.merge(q_uncertain_ts, self.gauges_meta[['gauge', 'MQ']], on='gauge', how='left')
@@ -122,7 +123,7 @@ class uncertainty_data_generation:
         None.
 
         """
-        no_of_samples= self.bayes_options['number_of_samples']
+        no_of_samples= self.bayes_options['river_discharge_uncertainty']['number_of_datapoints']
         
         # Duplicate the uncertain time series to create multiple samples
         self.q_ts_samples = pd.concat([self.q_uncertain_ts] * no_of_samples, ignore_index=True)
@@ -137,7 +138,8 @@ class uncertainty_data_generation:
         self.q_ts_samples['Q*'] = self.q_ts_samples['Q'] + self.q_ts_samples['sample_error'] * self.q_ts_samples['Q']
         
         #finally we map the data on the prior information on the dataset
-        self.q_ts_samples=pd.merge(self.q_ts_samples, self.gauges_meta[[ 'prior_q_diff_mean[m2/s]','prior_q_diff_std[m2/s]']], on='gauge', how='left')
+        self.q_ts_samples=pd.merge(self.q_ts_samples, self.gauges_meta[[ 'prior_q_diff_mean[m2/s]',
+                                                                        'prior_q_diff_std[m2/s]']], on='gauge', how='left')
         
         return self.q_ts_samples
 
@@ -1024,14 +1026,15 @@ def get_section_waterbalance(gauge_data: pd.DataFrame = pd.DataFrame(),
 
     #%% Apply Bayesian Updating if requestest
     if bayesian_options['activate']:
-        logging.info('Initialize Discharge Samples with Uncertainty') 
+        logging.info('Initialize Discharge Samples with Uncertainty')
+        
         if time_series_analysis_option.lower() in ['overall_mean','annual_mean','summer_mean']:
             logging.warning('Aggregated Time Series cant be used for Bayesian Updating')
         else:
             # Generate the Bayesian Updater class
-            bayesian_Updater = Bayesian_Updating(gauge_data, data_ts, bayesian_options)
-            bayesian_Updater.add_uncertainty()
-            data_ts_samples =bayesian_Updater.generate_uncertainty_samples()
+            Gauge_Uncertainter = uncertainty_data_generation(gauge_data, data_ts, bayesian_options)
+            Gauge_Uncertainter.add_measurement_uncertainty()
+            data_ts_samples =Gauge_Uncertainter.generate_uncertainty_samples()
             
             # Pivot data for analysis
             discharge_samples = data_ts_samples.pivot(columns='gauge',index=['date','sample_id'],values='Q*')
@@ -1055,6 +1058,7 @@ def get_section_waterbalance(gauge_data: pd.DataFrame = pd.DataFrame(),
             q_diff=q_diff.set_index(['date','sample_id','downstream_point'])
             q_diff = pd.concat([q_diff,data_ts_samples],axis=1)
     else:
+        # if no bayesian options, scaling of data is one
         # Run the water balance analysis without Bayesian Updating
         sections_meta, q_diff = calculate_network_balance(ts_data=data_ts,
                                                           network_dict=gauges_connection_dict,
@@ -1080,16 +1084,36 @@ def get_section_waterbalance(gauge_data: pd.DataFrame = pd.DataFrame(),
     gauge_index=gauge_data.reset_index().rename(columns={'gauge':'downstream_point'})[['downstream_point','waterway_length']]
     #merge with section meta and q_diff to get the values per section length
     q_diff = pd.merge(q_diff.reset_index(), gauge_index, on='downstream_point', suffixes=('_df1', '_df2'))
+    
+
+    logging.info('Output qDiff is scaled by f{data_scaling_factor}') 
     q_diff['q_diff[m2/s]']=q_diff['q_diff']/q_diff['waterway_length']
     q_diff=q_diff.rename(columns={'q_diff':'Q_diff[m³/s]'})
     
     #now for section meta
     sections_meta = pd.merge(sections_meta, gauge_index, on='downstream_point', suffixes=('_df1', '_df2'))
-    sections_meta['balance[m2/s]']=sections_meta['balance']/sections_meta['waterway_length']
+    sections_meta['balance[m2/s]']= sections_meta['balance']/sections_meta['waterway_length']
     sections_meta=sections_meta.rename(columns={'balance':'balance[m³/s]'})
     
     
-    
-    
+    #%% if Bayesian Updating is activated we generate an dataarray which can be handled by the class
+    xds_bayes = xr.Dataset()
+    if bayesian_options['activate']:
+        scale_factor = bayesian_options['bayesian_parameters']['monte_carlo_parameters']['data_scaling_factor']
+        waterbalance_logger.info(f"data is scaled by a factor of {scale_factor}")
+        for gauge_name, gauge_data in q_diff.groupby('downstream_point'):
+            
+            gauge_data=gauge_data.set_index(['date','sample_id'])
+            gauge_data['scaled_data'] = scale_factor * gauge_data['q_diff[m2/s]']
+            xa = xr.DataArray.from_series(gauge_data['scaled_data'])
+            xa.attrs['prior_mean']=gauge_data.iloc[0]['prior_q_diff_mean[m2/s]'] * scale_factor
+            xa.attrs['prior_std']=gauge_data.iloc[0]['prior_q_diff_std[m2/s]'] * scale_factor
+            xa.attrs['scale_factor'] = scale_factor
+            xa.attrs['original_dataname'] = 'q_diff[m2/s]'
+            xds_bayes[gauge_name] = xa
+            
+        xds_bayes.to_netcdf('C:\\Users\\Nixdorf.E\\data_for_elli.nc')
+            
+
     # return the results
     return sections_meta, q_diff, gdf_network_map, section_basins,data_ts

@@ -70,13 +70,20 @@ waterbalance:
     basin_id_col: basin
     # the controll for Baysian Updating for gw_exchange
     bayesian_updating:
-        activate: true
-        number_of_samples: 20
-        prior_gaussian_parameters:
-            type: constant
-            mean: 0
-            standard_deviation: 0.00066
-        gauge_uncertainty:
+        activate: true        
+        river_discharge_uncertainty:
             type: constant
             measurement_uncertainty: 0.05
-            rating_curve_uncertainty: 0.07
+            rating_curve_uncertainty: 0.01
+            number_of_datapoints: 200
+        bayesian_parameters:
+            prior_gaussian_parameters:
+                type: constant
+                mean: 0
+                standard_deviation: 0.00066
+            monte_carlo_parameters:
+                data_scaling_factor: 86400
+                target_accept: 0.8
+                number_of_tunes: 1000
+                number_of_samples: 2000
+                number_of_cores: 1
