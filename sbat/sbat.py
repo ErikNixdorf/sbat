@@ -185,6 +185,9 @@ class Model:
             
             if 'basin_area' in self.gauges_meta.columns:
                 basin_area = self.gauges_meta.loc[gauge_name, 'basin_area']
+                #for decadal stats we need to extract basin_area only once
+                if isinstance(basin_area,pd.Series):
+                    basin_area = basin_area.iloc[0]
                 basin_area = None if np.isnan(basin_area) else basin_area
 
 
