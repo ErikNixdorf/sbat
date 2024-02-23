@@ -200,7 +200,7 @@ def plot_along_streamlines(stream_gauges: pd.DataFrame,
                            sort_column: str = 'river_km',
                            para_column: str = 'q_daily',
                            gauge_ticklabels: List[str] = None,
-                           plot_context='paper',
+                           plot_context='talk',
                            fig_width=10,
                            output_dir: Union[str, Path] = Path.cwd() / 'bf_analysis' / 'figures') -> Tuple:
     """

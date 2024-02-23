@@ -32,9 +32,10 @@ time:
 
 #now we provide the parameters for each module
 baseflow:
-    activate: true
+    activate: false
     methods:
         - UKIH
+        - LH
     compute_baseflow_index: true
     compute_statistics: true
 #the discharge
@@ -75,7 +76,7 @@ waterbalance:
             type: constant
             measurement_uncertainty: 0.05
             rating_curve_uncertainty: 0.01
-            number_of_datapoints: 200
+            number_of_datapoints: 2
         bayesian_parameters:
             prior_gaussian_parameters:
                 type: constant

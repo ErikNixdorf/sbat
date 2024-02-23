@@ -109,6 +109,7 @@ class uncertainty_data_generation:
         q_uncertain_ts['Q_error_std'] = q_uncertain_ts['measurement_uncertainty'] + q_uncertain_ts['rating_curve_uncertainty']
         
         # clean data
+        q_uncertain_ts.rename(columns={'variable':'gauge'},inplace=True)
         self.q_uncertain_ts = q_uncertain_ts[['date', 'gauge', 'value', 'Q_error_std']]
         self.q_uncertain_ts.rename(columns={'value':'Q'},inplace=True)
         
@@ -827,16 +828,14 @@ def aggregate_time_series(data_ts: pd.DataFrame,
     # just for testing we take the mean
     if analyse_option == 'overall_mean':
         logging.info(f'{analyse_option} takes entire time series')
-        ts_stats = data_ts.mean()
+        ts_stats = data_ts.groupby(['gauge','sample_id']).mean()
         stats_name = 'mean_discharge_m_s'
-        ts_stats = ts_stats.rename(stats_name).to_frame().T
+        ts_stats = ts_stats.reset_index().set_index('date')
+
 
     elif analyse_option == 'annual_mean':
-        ts_stats = data_ts.resample('Y').mean()
-
-    elif analyse_option == 'summer_mean':
-        logging.info('Calculating summer mean (June to September)')
-        ts_stats = data_ts.loc[data_ts.index.month.isin([6, 7, 8, 9])].resample('Y').mean()
+        ts_stats = data_ts.groupby(['gauge','sample_id']).resample('Y').mean()
+        ts_stats = ts_stats.reset_index().set_index('date')
 
     # daily calculations
     elif analyse_option == 'daily':
@@ -998,14 +997,15 @@ def get_section_waterbalance(gauge_data: pd.DataFrame = pd.DataFrame(),
     section_basins : geopandas.GeoDataFrame
     The Hydrological subbasin belonging to each section for which the water balance was been computed
     """
+    
 
     # first time is aggregated
     data_ts = aggregate_time_series(data_ts=data_ts, analyse_option=time_series_analysis_option)
     
     # synchrnonize our datasets
-    gauge_data = gauge_data.loc[gauge_data.index.isin(data_ts.columns), :]
+    gauge_data = gauge_data.loc[gauge_data.index.isin(data_ts['gauge']), :]
     # reduce the datasets to all which have metadata
-    data_ts = data_ts[gauge_data.index.unique().to_list()]
+    data_ts = data_ts.loc[data_ts['gauge'].isin(gauge_data.index.unique()),:]
     logging.info(f'{data_ts.shape[1]} gauges with valid meta data')
     
     #
@@ -1022,54 +1022,28 @@ def get_section_waterbalance(gauge_data: pd.DataFrame = pd.DataFrame(),
     gdf_network_map, gauge_data = map_network_sections(network_dict=gauges_connection_dict,
                                            gauge_meta=gauge_data,
                                            stream_network=stream_network)
+    
+    #%%calculate the water balance
+    data_ts = data_ts.reset_index().pivot(columns='gauge',index=['date','sample_id'],values='value')
+    
+    sections_meta, q_diff = calculate_network_balance(ts_data=data_ts,
+                                                      network_dict=gauges_connection_dict,
+                                                      get_decadal_stats = decadal_stats)
 
-
-    #%% Apply Bayesian Updating if requestest
-    if bayesian_options['activate']:
-        logging.info('Initialize Discharge Samples with Uncertainty')
-        
-        if time_series_analysis_option.lower() in ['overall_mean','annual_mean','summer_mean']:
-            logging.warning('Aggregated Time Series cant be used for Bayesian Updating')
-        else:
-            # Generate the Bayesian Updater class
-            Gauge_Uncertainter = uncertainty_data_generation(gauge_data, data_ts, bayesian_options)
-            Gauge_Uncertainter.add_uncertainty()
-            data_ts_samples =Gauge_Uncertainter.generate_samples()
-            
-            # Pivot data for analysis
-            discharge_samples = data_ts_samples.pivot(columns='gauge',index=['date','sample_id'],values='Q*')
-            
-            # Calculate network balance based on discharge samples
-            sections_meta, q_diff = calculate_network_balance(ts_data=discharge_samples,
-                                                              network_dict=gauges_connection_dict,
-                                                              get_decadal_stats = decadal_stats)
-            
-            #repair the multiindex
-            q_diff.index=discharge_samples.index
-            
-            #same for sections_meta
-            sections_meta[['date', 'sample_id']] = pd.DataFrame(sections_meta['Date'].tolist(), index=sections_meta.index)
-            sections_meta=sections_meta.drop(columns='Date')
-            #unpivot q_diff
-            q_diff = q_diff.melt(ignore_index=False).rename(columns={'value':'q_diff'}).reset_index()
-            
-            #merge with data from ts_samples, both need a unique index
-            data_ts_samples = data_ts_samples.rename(columns={'gauge':'downstream_point'}).set_index(['date','sample_id','downstream_point'])
-            q_diff=q_diff.set_index(['date','sample_id','downstream_point'])
-            q_diff = pd.concat([q_diff,data_ts_samples],axis=1)
-    else:
-        # if no bayesian options, scaling of data is one
-        # Run the water balance analysis without Bayesian Updating
-        sections_meta, q_diff = calculate_network_balance(ts_data=data_ts,
-                                                          network_dict=gauges_connection_dict,
-                                                          get_decadal_stats = decadal_stats)
-        
-        # Prepare similar output to the Bayesian case for consistency
-        q_diff=q_diff.melt(ignore_index=False).rename(columns={'value':'q_diff'}).reset_index()
-        q_diff['sample_id'] = 0
-        sections_meta=sections_meta.rename(columns={'Date':'date'})
-        sections_meta['sample_id'] = 0
-
+    #repair the multiindex
+    q_diff.index=data_ts.index
+    
+    #same for sections_meta
+    sections_meta[['date', 'sample_id']] = pd.DataFrame(sections_meta['Date'].tolist(), index=sections_meta.index)
+    sections_meta=sections_meta.drop(columns='Date')
+    #unpivot q_diff
+    q_diff = q_diff.melt(ignore_index=False).rename(columns={'value':'q_diff'}).reset_index()
+    
+    #merge with data from ts_samples, both need a unique index
+    data_ts = data_ts.reset_index().melt(id_vars=['date','sample_id'])
+    data_ts = data_ts.rename(columns={'gauge':'downstream_point'}).set_index(['date','sample_id','downstream_point'])
+    q_diff=q_diff.set_index(['date','sample_id','downstream_point'])
+    q_diff = pd.concat([q_diff,data_ts_samples],axis=1)
 
 
     # we want a function to calculate the network subbasin area

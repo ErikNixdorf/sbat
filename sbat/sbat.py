@@ -16,7 +16,7 @@ from shapely import Point
 from bflow.bflow import compute_baseflow, add_gauge_stats, plot_bf_results
 from recession.recession import analyse_recession_curves, plot_recession_results
 from recession.aquifer_parameter import get_hydrogeo_properties
-from waterbalance.waterbalance import get_section_waterbalance, map_time_dependent_cols_to_gdf
+from waterbalance.waterbalance import get_section_waterbalance, map_time_dependent_cols_to_gdf, uncertainty_data_generation
 
 logger = logging.getLogger('sbat')
 logger.setLevel(logging.INFO)
@@ -163,7 +163,6 @@ class Model:
 
   
     # function which controls the baseflow module
-
     def get_baseflow(self):
         """
         Computes the baseflow for the gauge and updates metadata if required.
@@ -201,6 +200,9 @@ class Model:
             bf_daily['gauge'] = gauge_name
             bf_monthly['gauge'] = gauge_name
             bfi_monthly['gauge'] = gauge_name
+            bf_daily['sample_id'] = 0
+            bf_monthly['sample_id'] = 0
+            bfi_monthly['sample_id'] = 0
             performance_metrics = pd.DataFrame(performance_metrics,index=[gauge_name])
             #merge
             bfs_daily=pd.concat([bfs_daily,bf_daily])
@@ -218,7 +220,7 @@ class Model:
             
             for bf_key in self.bf_output.keys():
                 #organizing the data that calculating the mean per method
-                bf_subset = self.bf_output[bf_key].groupby(['gauge','date']).mean(numeric_only=True).reset_index()
+                bf_subset = self.bf_output[bf_key].groupby(['gauge','date','sample_id']).mean(numeric_only=True).reset_index()
                 #pivot the data
                 bf_subset = bf_subset.pivot(index='date',values='value',columns='gauge')
                 #update the metadata
@@ -558,44 +560,102 @@ class Model:
             flow_type = kwargs['flow_type']
         else:
             flow_type = self.config['waterbalance']['flow_type']
-
-        if flow_type == 'baseflow':
             
-            logger.info('Use baseflow time series')
+        #%%process the flow data
+        if self.config['waterbalance']['bayesian_updating']['activate']:
+            logger.info('Generate discharge from discharge with uncertainty')
+                #generate uncertainty
+            Gauge_Uncertainter = uncertainty_data_generation(self.gauges_meta, 
+                                                             self.gauge_ts, 
+                                                             self.config['waterbalance']['bayesian_updating'],
+                                                             )
+            Gauge_Uncertainter.add_uncertainty()
+            data_ts =Gauge_Uncertainter.generate_samples()
+            data_ts.set_index('date',drop=True,inplace=True)
+        
+        
+            if flow_type == 'baseflow':
+                
+                logger.info('Use baseflow time series')           
+                
+                performance_metrics = dict()
+                bf_daily = pd.DataFrame()
+                bf_monthly = pd.DataFrame()
+                bfi_monthly = pd.DataFrame()
+                haha addd prior and q information here
+                for sample_id,subset in data_ts.groupby('sample_id'):
+                    for gauge_name, subsubset in subset.groupby('gauge'):
+                        gauge_ts = subsubset['Q*']
+                        gauge_ts.name = gauge_name
+                
+                        bf_daily_ss, bf_monthly_ss, bfi_monthly_ss, performance_metrics_ss = compute_baseflow(
+                                                            gauge_ts,
+                                                            basin_area = self.gauges_meta.loc[gauge_name,'basin_area'],
+                                                            methods=self.config['baseflow']['methods'],
+                                                            compute_bfi=self.config['baseflow']['compute_baseflow_index']
+                                                            )
+                        bf_daily_ss['sample_id'] = sample_id
+                        bf_daily_ss['gauge'] = gauge_name
+                        
+                        bf_monthly_ss['sample_id'] = sample_id
+                        bf_monthly_ss['gauge'] = gauge_name
+                        
+                        bfi_monthly_ss['sample_id'] = sample_id
+                        bfi_monthly_ss['gauge'] = gauge_name
+                        
+                        # add to main
+                        performance_metrics = pd.DataFrame(performance_metrics_ss,index=[gauge_name,sample_id])
+                        bf_daily = pd.concat([bf_daily,bf_daily_ss])
+                        bf_monthly = pd.concat([bf_monthly,bf_monthly_ss])
+                        bfi_monthly = pd.concat([bfi_monthly,bfi_monthly_ss])
+                
+                #add results to class instance
+                self.bf_output.update({'bf_daily': bf_daily})
+                self.bf_output.update({'bf_monthly': bf_monthly})
+                self.bf_output.update({'bfis_monthly': bfi_monthly})
+                
+                # prove whether explicitely daily values should be calculate otherwise we take monthly
+                if self.config['waterbalance']['time_series_analysis_option'] == 'daily' and 'bf_' + \
+                        self.config['waterbalance']['time_series_analysis_option'] in self.bf_output.keys():
+                    data_ts = self.bf_output['bf_daily'].copy()
+                else:
+                    logger.info('Monthly Averaged values are used')
+                    data_ts = self.bf_output['bf_monthly'].copy()
+
+                
+        else:
+            logger.info('Calculate water balance without uncertainty incooporation')
             
+            
+            if flow_type == 'baseflow':                
+                logger.info('Use baseflow time series')
+                # check whether the baseflow as already be computed
+                if not self.bf_output:
+                    logger.info('Calculate Baseflow first before baseflow water balance can be calculated')
+                    self.get_baseflow()
+                
+                # prove whether explicitely daily values should be calculate otherwise we take monthly
+                if self.config['waterbalance']['time_series_analysis_option'] == 'daily' and 'bf_' + \
+                        self.config['waterbalance']['time_series_analysis_option'] in self.bf_output.keys():
+                    data_ts = self.bf_output['bf_daily'].copy()
+                else:
+                    logger.info('Monthly Averaged values are used')
+                    data_ts = self.bf_output['bf_monthly'].copy()
 
-            if self.config['waterbalance']['bayesian_updating']['activate']:
-                logger.warning('Calculation of baseflow introduces additional uncertainty')
 
-            # check whether the baseflow as already be computed
-            if not self.bf_output:
-                logger.info('Calculate Baseflow first before baseflow water balance can be calculated')
-                self.get_baseflow()
-
-            # prove whether explicitely daily values should be calculate otherwise we take monthly
-            if self.config['waterbalance']['time_series_analysis_option'] == 'daily' and 'bf_' + \
-                    self.config['waterbalance']['time_series_analysis_option'] in self.bf_output.keys():
-                data_ts = self.bf_output['bf_daily'].copy()
-            else:
-                logger.info('Monthly Averaged values are used')
-                data_ts = self.bf_output['bf_monthly'].copy()
-                if self.config['waterbalance']['bayesian_updating']['activate']:
-                    logger.warning('The provided uncertainty refer to individual measurements not monthly averages which have a reduced random error')
-
-            # in any case for the baseflow we have to bring the format from long to wide
-            logger.info('Average baseflow data for each gauge and time step')
-
-            data_ts = data_ts.groupby(['gauge', 'date']).mean(numeric_only=True).reset_index().pivot(index='date',
-                                                                                                     columns='gauge',
-                                                                                                     values='value')
-
-        elif flow_type == 'discharge':
-
-            logger.info('Use daily discharge')
-            data_ts = self.gauge_ts.copy()
+            elif flow_type == 'discharge':
+                
+                logger.info('Use daily discharge')
+                data_ts=self.gauge_ts.reset_index().melt(id_vars='date').set_index('date')
+                data_ts.rename(columns={'variable':'gauge'},inplace=True)
+                data_ts['sample_id'] = 0
+                data_ts['variable'] = 'discharge'
 
         # start the calculation
-
+        #ignore the statistics depending on the baseflow method
+        data_ts = data_ts.reset_index().groupby(['sample_id','gauge','date']).mean(numeric_only=True).reset_index().set_index('date')
+        
+        #calculate water balance
         self.sections_meta, self.q_diff, self.network_map, self.section_basin_map,ts_stats = get_section_waterbalance(
             gauge_data=self.gauges_meta,
             data_ts=data_ts,
