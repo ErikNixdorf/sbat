@@ -69,7 +69,7 @@ class uncertainty_data_generation:
         else:
             raise ValueError('Invalid prior Gaussian parameters type. Should be either constant or gauge_dependent')
     
-    def add_measurement_uncertainty(self):
+    def add_uncertainty(self):
         """
         Add uncertainty to the time series data based on specified gauge uncertainty options.
         
@@ -113,7 +113,7 @@ class uncertainty_data_generation:
         self.q_uncertain_ts.rename(columns={'value':'Q'},inplace=True)
         
         
-    def generate_uncertainty_samples(self):
+    def generate_samples(self):
         """
         Function generates samples based on gaussian distribution
 
@@ -1033,8 +1033,8 @@ def get_section_waterbalance(gauge_data: pd.DataFrame = pd.DataFrame(),
         else:
             # Generate the Bayesian Updater class
             Gauge_Uncertainter = uncertainty_data_generation(gauge_data, data_ts, bayesian_options)
-            Gauge_Uncertainter.add_measurement_uncertainty()
-            data_ts_samples =Gauge_Uncertainter.generate_uncertainty_samples()
+            Gauge_Uncertainter.add_uncertainty()
+            data_ts_samples =Gauge_Uncertainter.generate_samples()
             
             # Pivot data for analysis
             discharge_samples = data_ts_samples.pivot(columns='gauge',index=['date','sample_id'],values='Q*')
@@ -1108,7 +1108,7 @@ def get_section_waterbalance(gauge_data: pd.DataFrame = pd.DataFrame(),
             xa = xr.DataArray.from_series(gauge_data['scaled_data'])
             xa.attrs['prior_mean']=gauge_data.iloc[0]['prior_q_diff_mean[m2/s]'] * scale_factor
             xa.attrs['prior_std']=gauge_data.iloc[0]['prior_q_diff_std[m2/s]'] * scale_factor
-            xa.attrs['scale_factor'] = scale_factor
+            xa.attrs['bayes_data_scale_factor'] = scale_factor
             xa.attrs['original_dataname'] = 'q_diff[m2/s]'
             xds_bayes[gauge_name] = xa
             
