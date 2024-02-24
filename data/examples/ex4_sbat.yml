@@ -76,12 +76,12 @@ waterbalance:
             type: constant
             measurement_uncertainty: 0.05
             rating_curve_uncertainty: 0.01
-            number_of_datapoints: 2
+            number_of_datapoints: 200
         bayesian_parameters:
             prior_gaussian_parameters:
                 type: constant
                 mean: 0
-                standard_deviation: 0.00066
+                standard_deviation: 1.157e-6
             monte_carlo_parameters:
                 data_scaling_factor: 86400
                 target_accept: 0.8

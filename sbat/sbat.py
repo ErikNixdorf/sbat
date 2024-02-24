@@ -163,7 +163,7 @@ class Model:
 
   
     # function which controls the baseflow module
-    def get_baseflow(self):
+    def get_baseflow(self,data_ts=pd.DataFrame):
         """
         Computes the baseflow for the gauge and updates metadata if required.
         
@@ -179,7 +179,7 @@ class Model:
         bfis_monthly = pd.DataFrame()
         bfs_daily = pd.DataFrame()
         performances_metrics = pd.DataFrame()
-        for gauge_name in self.gauge_ts.columns:
+        for gauge_name in data_ts.columns:
             basin_area = None
             
             if 'basin_area' in self.gauges_meta.columns:
@@ -254,7 +254,106 @@ class Model:
                 self.bf_output[key].to_csv(Path(self.paths["output_dir"], 'data',key+'.csv'))
 
 
+    #new baseflow function
+    def get_baseflow2(self,data_ts=pd.DataFrame()):
+        """
+        
 
+        Parameters
+        ----------
+        data_ts : TYPE, optional
+            DESCRIPTION. The default is pd.DataFrame().
+
+        Returns
+        -------
+        None.
+
+        """
+    
+        #first we check whether data_ts has a column sample id
+        if 'sample_id' not in data_ts.columns:
+            data_ts['sample_id'] = 0
+        
+        data_ts_monthly=data_ts.groupby(['gauge','sample_id']).resample('m').mean(numeric_only=True).drop(columns='sample_id')
+        bf_daily = pd.DataFrame()
+        bf_monthly = pd.DataFrame()
+        bfi_monthly = pd.DataFrame()
+        
+        bf_metrics_cols=['kge_'+col for col in self.config['baseflow']['methods']]
+        
+        # we further need the monthly averaged time series
+ 
+        for (sample_id, gauge_name), subset in data_ts.groupby(['sample_id', 'gauge']):
+            gauge_ts = subset['Q*'].rename(gauge_name)
+    
+            bf_daily_ss, bf_monthly_ss, bfi_monthly_ss, performance_metrics_ss = compute_baseflow(
+                                                gauge_ts,
+                                                basin_area = self.gauges_meta.loc[gauge_name,'basin_area'],
+                                                methods=self.config['baseflow']['methods'],
+                                                compute_bfi=self.config['baseflow']['compute_baseflow_index']
+                                                )
+            #manipulate performance metrics
+            performance_metrics_ss.update({'sample_id':sample_id,'gauge':gauge_name})
+            performance_metrics=pd.DataFrame(performance_metrics_ss,index=[0])
+            
+            
+            bf_daily_ss['sample_id'] = sample_id
+            bf_daily_ss['gauge'] = gauge_name
+            bf_daily_ss = pd.merge(bf_daily_ss.reset_index(),performance_metrics,on=['gauge','sample_id'],how='left')
+            
+            bf_monthly_ss['sample_id'] = sample_id
+            bf_monthly_ss['gauge'] = gauge_name
+            
+            bfi_monthly_ss['sample_id'] = sample_id
+            bfi_monthly_ss['gauge'] = gauge_name
+            
+            # Add to main
+            bf_daily = pd.concat([bf_daily, bf_daily_ss])
+            bf_monthly = pd.concat([bf_monthly, bf_monthly_ss.reset_index()])
+            bfi_monthly = pd.concat([bfi_monthly, bfi_monthly_ss.reset_index()])
+
+        # Add the prior information to the output data
+        bf_daily = pd.merge(bf_daily, data_ts, on=['date', 'gauge', 'sample_id'], how='left').reset_index(drop=True)
+        bf_monthly = pd.merge(bf_monthly, data_ts_monthly, on=['date', 'gauge', 'sample_id'], how='left').reset_index(drop=True)
+        
+        # Add results to class instance
+        self.bf_output.update({'bf_daily': bf_daily, 
+                               'bf_monthly': bf_monthly, 
+                               'bfis_monthly': bfi_monthly})
+        
+        
+        if self.config['baseflow']['compute_statistics']:
+            
+            logger.info('Compute baseflow statistics')
+            bf_metrics_cols.append('BF')
+            
+            mean_cols = {k: f'{v}_mean' for k, v in zip(bf_metrics_cols, bf_metrics_cols)}
+            mean_stats = bf_daily.groupby('gauge')[bf_metrics_cols].mean().rename(columns=mean_cols)
+            std_cols = {k: f'{v}_std' for k, v in zip(bf_metrics_cols, bf_metrics_cols)}
+            std_stats = bf_daily.groupby('gauge')[bf_metrics_cols].std().rename(columns=std_cols)
+            
+            cv_stats=(bf_daily.groupby('gauge')[bf_metrics_cols].std().rename(columns=mean_cols) / mean_stats)['BF_mean'].rename('BF_cv').to_frame()
+            
+            #append
+            self.gauges_meta=pd.concat([self.gauges_meta,mean_stats],axis=1)
+            self.gauges_meta=pd.concat([self.gauges_meta,std_stats],axis=1)
+            self.gauges_meta=pd.concat([self.gauges_meta,cv_stats],axis=1)
+        
+        if self.config['file_io']['output']['plot_results']:
+            logger.info('plot_results of baseflow computation')
+            for bf_parameter in self.bf_output.keys():
+
+                plot_bf_results(ts_data=self.bf_output[bf_parameter], meta_data=self.gauges_meta,
+                                parameter_name=bf_parameter,
+                                plot_along_streams=True,
+                                output_dir=Path(self.paths["output_dir"], 'figures','baseflow')
+                                )
+                    
+        if self.output:
+            #the meta data
+            self.gauges_meta.to_csv(Path(self.paths["output_dir"], 'data', 'gauges_meta.csv'))
+            for key in self.bf_output.keys():
+                self.bf_output[key].to_csv(Path(self.paths["output_dir"], 'data',key+'.csv'))
 
 
 
@@ -564,70 +663,25 @@ class Model:
         #%%process the flow data
         if self.config['waterbalance']['bayesian_updating']['activate']:
             logger.info('Generate discharge from discharge with uncertainty')
-                #generate uncertainty
-            Gauge_Uncertainter = uncertainty_data_generation(self.gauges_meta, 
+            # Generate uncertainty
+            gauge_uncertainty = uncertainty_data_generation(self.gauges_meta, 
                                                              self.gauge_ts, 
                                                              self.config['waterbalance']['bayesian_updating'],
                                                              )
-            Gauge_Uncertainter.add_uncertainty()
-            data_ts =Gauge_Uncertainter.generate_samples()
-            data_ts.set_index('date',drop=True,inplace=True)
+            gauge_uncertainty.add_uncertainty()
+            data_ts = gauge_uncertainty.generate_samples().set_index('date')
             
             data_ts_monthly=data_ts.groupby(['gauge','sample_id']).resample('m').mean(numeric_only=True).drop(columns='sample_id')
 
-        
             if flow_type == 'baseflow':
                 
                 logger.info('Use baseflow time series')           
                 balance_value_var = 'BF'
-                performance_metrics = dict()
-                bf_daily = pd.DataFrame()
-                bf_monthly = pd.DataFrame()
-                bfi_monthly = pd.DataFrame()
                 
-                # we further need the monthly averaged time series
- 
-                for sample_id,subset in data_ts.groupby('sample_id'):
-                    for gauge_name, subsubset in subset.groupby('gauge'):
-                        gauge_ts = subsubset['Q*']
-                        gauge_ts.name = gauge_name
+                self.get_baseflow2(data_ts=data_ts)
+                    
                 
-                        bf_daily_ss, bf_monthly_ss, bfi_monthly_ss, performance_metrics_ss = compute_baseflow(
-                                                            gauge_ts,
-                                                            basin_area = self.gauges_meta.loc[gauge_name,'basin_area'],
-                                                            methods=self.config['baseflow']['methods'],
-                                                            compute_bfi=self.config['baseflow']['compute_baseflow_index']
-                                                            )
-                        #manipulate performance metrics
-                        performance_metrics_ss.update({'sample_id':sample_id,'gauge':gauge_name})
-                        performance_metrics=pd.DataFrame(performance_metrics_ss,index=[0])
-                        
-                        
-                        bf_daily_ss['sample_id'] = sample_id
-                        bf_daily_ss['gauge'] = gauge_name
-                        bf_daily_ss = pd.merge(bf_daily_ss.reset_index(),performance_metrics,on=['gauge','sample_id'],how='left')
-                        
-                        bf_monthly_ss['sample_id'] = sample_id
-                        bf_monthly_ss['gauge'] = gauge_name
-                        bf_monthly_ss = pd.merge(bf_monthly_ss.reset_index(),performance_metrics,on=['gauge','sample_id'],how='left')
-                        bfi_monthly_ss['sample_id'] = sample_id
-                        bfi_monthly_ss['gauge'] = gauge_name
-                        
-                        # add to main
-
-                        bf_daily = pd.concat([bf_daily,bf_daily_ss])
-                        bf_monthly = pd.concat([bf_monthly,bf_monthly_ss])
-                        bfi_monthly = pd.concat([bfi_monthly,bfi_monthly_ss])
-                
-                # add the prior information to the output data
-                bf_daily = pd.merge(bf_daily,data_ts,on=['date','gauge','sample_id'],how='left').reset_index(drop=True)
-                bf_monthly = pd.merge(bf_monthly,data_ts_monthly,on=['date','gauge','sample_id'],how='left').reset_index(drop=True)
-                
-                
-                #add results to class instance
-                self.bf_output.update({'bf_daily': bf_daily})
-                self.bf_output.update({'bf_monthly': bf_monthly})
-                self.bf_output.update({'bfis_monthly': bfi_monthly})
+        
                 
                 # prove whether explicitely daily values should be calculate otherwise we take monthly
                 if self.config['waterbalance']['time_series_analysis_option'] == 'daily' and 'bf_' + \
