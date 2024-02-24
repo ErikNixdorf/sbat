@@ -947,7 +947,8 @@ def get_section_waterbalance(gauge_data: pd.DataFrame = pd.DataFrame(),
                               time_series_analysis_option: str = 'overall_mean',
                               basin_id_col: str = 'basin',
                               decadal_stats: bool =True,
-                              bayesian_options= dict()
+                              bayesian_options= dict(),
+                              balance_col_name = str(),
                               ) -> Tuple:
     """
     Calculates the water balance for a network of stream gauges and their upstream

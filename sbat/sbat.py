@@ -572,16 +572,20 @@ class Model:
             Gauge_Uncertainter.add_uncertainty()
             data_ts =Gauge_Uncertainter.generate_samples()
             data_ts.set_index('date',drop=True,inplace=True)
-        
+            
+            data_ts_monthly=data_ts.groupby(['gauge','sample_id']).resample('m').mean(numeric_only=True).drop(columns='sample_id')
+
         
             if flow_type == 'baseflow':
                 
                 logger.info('Use baseflow time series')           
-                
+                balance_value_var = 'BF'
                 performance_metrics = dict()
                 bf_daily = pd.DataFrame()
                 bf_monthly = pd.DataFrame()
                 bfi_monthly = pd.DataFrame()
+                
+                # we further need the monthly averaged time series
  
                 for sample_id,subset in data_ts.groupby('sample_id'):
                     for gauge_name, subsubset in subset.groupby('gauge'):
@@ -594,23 +598,32 @@ class Model:
                                                             methods=self.config['baseflow']['methods'],
                                                             compute_bfi=self.config['baseflow']['compute_baseflow_index']
                                                             )
+                        #manipulate performance metrics
+                        performance_metrics_ss.update({'sample_id':sample_id,'gauge':gauge_name})
+                        performance_metrics=pd.DataFrame(performance_metrics_ss,index=[0])
+                        
+                        
                         bf_daily_ss['sample_id'] = sample_id
                         bf_daily_ss['gauge'] = gauge_name
+                        bf_daily_ss = pd.merge(bf_daily_ss.reset_index(),performance_metrics,on=['gauge','sample_id'],how='left')
                         
                         bf_monthly_ss['sample_id'] = sample_id
                         bf_monthly_ss['gauge'] = gauge_name
-                        
+                        bf_monthly_ss = pd.merge(bf_monthly_ss.reset_index(),performance_metrics,on=['gauge','sample_id'],how='left')
                         bfi_monthly_ss['sample_id'] = sample_id
                         bfi_monthly_ss['gauge'] = gauge_name
                         
                         # add to main
-                        performance_metrics = pd.DataFrame(performance_metrics_ss,index=[gauge_name,sample_id])
+
                         bf_daily = pd.concat([bf_daily,bf_daily_ss])
                         bf_monthly = pd.concat([bf_monthly,bf_monthly_ss])
                         bfi_monthly = pd.concat([bfi_monthly,bfi_monthly_ss])
                 
-                # add the prior information
-                test=pd.merge(bf_daily,data_ts,on='gauge',how='left')
+                # add the prior information to the output data
+                bf_daily = pd.merge(bf_daily,data_ts,on=['date','gauge','sample_id'],how='left').reset_index()
+                bf_monthly = pd.merge(bf_monthly,data_ts_monthly,on=['date','gauge','sample_id'],how='left').reset_index()
+                
+                
                 #add results to class instance
                 self.bf_output.update({'bf_daily': bf_daily})
                 self.bf_output.update({'bf_monthly': bf_monthly})
@@ -623,13 +636,19 @@ class Model:
                 else:
                     logger.info('Monthly Averaged values are used')
                     data_ts = self.bf_output['bf_monthly'].copy()
-
-                
+            
+            else:
+                balance_value_var = 'Q*'
+                logger.info('For Discharge with uncertainty we just need to adapt the time')
+                if self.config['waterbalance']['time_series_analysis_option'] !='monthly':
+                    data_ts = data_ts_monthly.copy()
+                    
         else:
             logger.info('Calculate water balance without uncertainty incooporation')
             
             
-            if flow_type == 'baseflow':                
+            if flow_type == 'baseflow': 
+                balance_value_var = 'BF'
                 logger.info('Use baseflow time series')
                 # check whether the baseflow as already be computed
                 if not self.bf_output:
@@ -646,15 +665,16 @@ class Model:
 
 
             elif flow_type == 'discharge':
-                
+                balance_value_var = 'Q'
                 logger.info('Use daily discharge')
                 data_ts=self.gauge_ts.reset_index().melt(id_vars='date').set_index('date')
                 data_ts.rename(columns={'variable':'gauge'},inplace=True)
                 data_ts['sample_id'] = 0
-                data_ts['variable'] = 'discharge'
+                data_ts['bf_method'] = 'discharge'
 
         # start the calculation
         #ignore the statistics depending on the baseflow method
+        logger.info('Current Implementation takes the average of different bf_methods for calculation of water balance')
         data_ts = data_ts.reset_index().groupby(['sample_id','gauge','date']).mean(numeric_only=True).reset_index().set_index('date')
         
         #calculate water balance
@@ -669,6 +689,7 @@ class Model:
             basin_id_col=self.config['waterbalance']['basin_id_col'],
             decadal_stats = self.config['time']['compute_each_decade'],
             bayesian_options=self.config['waterbalance']['bayesian_updating'],
+            balance_col_name = balance_value_var,
         )
         
         #we map the mean_balance information on the geodataframes
