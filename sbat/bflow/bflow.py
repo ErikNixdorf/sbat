@@ -145,18 +145,20 @@ def compute_baseflow(Q: pd.Series, basin_area: float = None, methods: Union[str,
     # call the baseflow module
     bf_daily_raw, KGEs = call_bf_package(Q, methods=methods, basin_area=basin_area)
     #convert
-    bf_daily = bf_daily_raw.reset_index().melt(id_vars='date').set_index('date')
+    bf_daily = bf_daily_raw.reset_index().melt(id_vars='date',
+                                               var_name='bf_method',
+                                               value_name='BF').set_index('date')
     
     #get output of performance
     performance_metrics=dict(zip(['kge_' + col for col in methods],KGEs))
     
     # get monthly values and bfi
-    bf_monthly = bf_daily.groupby('variable').resample('m').mean(numeric_only=True)
+    bf_monthly = bf_daily.groupby('bf_method').resample('m').mean(numeric_only=True)
     # bfi computation if requested
     if compute_bfi:
         # we compute the BFI
         Q_monthly = Q.resample('m').mean(numeric_only=True)
-        bfi_monthly = bf_daily.groupby('variable').resample('m').mean(numeric_only=True).divide(Q_monthly,axis=0)
+        bfi_monthly = bf_daily.groupby('bf_method').resample('m').mean(numeric_only=True).divide(Q_monthly,axis=0)
 
     bflow_logger.info(f'compute baseflow for gauge....{gauge}...done')
 

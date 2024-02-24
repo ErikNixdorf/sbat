@@ -582,7 +582,7 @@ class Model:
                 bf_daily = pd.DataFrame()
                 bf_monthly = pd.DataFrame()
                 bfi_monthly = pd.DataFrame()
-                haha addd prior and q information here
+ 
                 for sample_id,subset in data_ts.groupby('sample_id'):
                     for gauge_name, subsubset in subset.groupby('gauge'):
                         gauge_ts = subsubset['Q*']
@@ -609,6 +609,8 @@ class Model:
                         bf_monthly = pd.concat([bf_monthly,bf_monthly_ss])
                         bfi_monthly = pd.concat([bfi_monthly,bfi_monthly_ss])
                 
+                # add the prior information
+                test=pd.merge(bf_daily,data_ts,on='gauge',how='left')
                 #add results to class instance
                 self.bf_output.update({'bf_daily': bf_daily})
                 self.bf_output.update({'bf_monthly': bf_monthly})
