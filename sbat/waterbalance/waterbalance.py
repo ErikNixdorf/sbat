@@ -1025,14 +1025,14 @@ def get_section_waterbalance(gauge_data: pd.DataFrame = pd.DataFrame(),
                                            stream_network=stream_network)
     
     #%%calculate the water balance
-    data_ts = data_ts.reset_index().pivot(columns='gauge',index=['date','sample_id'],values='value')
+    data_ts_samples = data_ts.reset_index().pivot(columns='gauge',index=['date','sample_id'],values=balance_col_name)
     
-    sections_meta, q_diff = calculate_network_balance(ts_data=data_ts,
+    sections_meta, q_diff = calculate_network_balance(ts_data=data_ts_samples,
                                                       network_dict=gauges_connection_dict,
                                                       get_decadal_stats = decadal_stats)
 
     #repair the multiindex
-    q_diff.index=data_ts.index
+    q_diff.index=data_ts_samples.index
     
     #same for sections_meta
     sections_meta[['date', 'sample_id']] = pd.DataFrame(sections_meta['Date'].tolist(), index=sections_meta.index)
@@ -1041,10 +1041,10 @@ def get_section_waterbalance(gauge_data: pd.DataFrame = pd.DataFrame(),
     q_diff = q_diff.melt(ignore_index=False).rename(columns={'value':'q_diff'}).reset_index()
     
     #merge with data from ts_samples, both need a unique index
-    data_ts = data_ts.reset_index().melt(id_vars=['date','sample_id'])
+    data_ts = data_ts.reset_index()
     data_ts = data_ts.rename(columns={'gauge':'downstream_point'}).set_index(['date','sample_id','downstream_point'])
     q_diff=q_diff.set_index(['date','sample_id','downstream_point'])
-    q_diff = pd.concat([q_diff,data_ts_samples],axis=1)
+    q_diff = pd.concat([q_diff,data_ts],axis=1)
 
 
     # we want a function to calculate the network subbasin area

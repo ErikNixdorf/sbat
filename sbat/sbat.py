@@ -620,8 +620,8 @@ class Model:
                         bfi_monthly = pd.concat([bfi_monthly,bfi_monthly_ss])
                 
                 # add the prior information to the output data
-                bf_daily = pd.merge(bf_daily,data_ts,on=['date','gauge','sample_id'],how='left').reset_index()
-                bf_monthly = pd.merge(bf_monthly,data_ts_monthly,on=['date','gauge','sample_id'],how='left').reset_index()
+                bf_daily = pd.merge(bf_daily,data_ts,on=['date','gauge','sample_id'],how='left').reset_index(drop=True)
+                bf_monthly = pd.merge(bf_monthly,data_ts_monthly,on=['date','gauge','sample_id'],how='left').reset_index(drop=True)
                 
                 
                 #add results to class instance
@@ -675,7 +675,7 @@ class Model:
         # start the calculation
         #ignore the statistics depending on the baseflow method
         logger.info('Current Implementation takes the average of different bf_methods for calculation of water balance')
-        data_ts = data_ts.reset_index().groupby(['sample_id','gauge','date']).mean(numeric_only=True).reset_index().set_index('date')
+        data_ts = data_ts.reset_index(drop=True).groupby(['sample_id','gauge','date']).mean(numeric_only=True).reset_index().set_index('date')
         
         #calculate water balance
         self.sections_meta, self.q_diff, self.network_map, self.section_basin_map,ts_stats = get_section_waterbalance(
