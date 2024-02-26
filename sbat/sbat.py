@@ -121,9 +121,11 @@ class Model:
         self.gauges_meta.index.name = 'gauge'
         if self.config['data_cleaning']['valid_datapairs_only']:
             # reduce the metadata to the gauges for which we have actual time data
-            self.gauges_meta = self.gauges_meta.loc[self.gauge_ts.columns]
+            intersecting_gauges = list(set(self.gauge_ts.columns).intersection(self.gauges_meta.index))
+            
+            self.gauges_meta = self.gauges_meta.loc[intersecting_gauges]
             # reduce the datasets to all which have metadata
-            self.gauge_ts = self.gauge_ts[self.gauges_meta.index]
+            self.gauge_ts = self.gauge_ts[intersecting_gauges]
 
             logger.info(f'{self.gauge_ts.shape[1]} gauges with valid meta data')
             
@@ -165,101 +167,8 @@ class Model:
         logger.info('Statistics for each gauge will be computed over the entire time series')
         self.gauges_meta.loc[:,'decade']=-9999
 
-  
-    # function which controls the baseflow module
-    def get_baseflow(self,data_ts=pd.DataFrame):
-        """
-        Computes the baseflow for the gauge and updates metadata if required.
-        
-        Returns:
-            None
-        
-        Example:
-            #>>> gauge = Gauge(...)
-            #>>> gauge.get_baseflow()
-        """
-        # first we compute the baseflow
-        bfs_monthly = pd.DataFrame()
-        bfis_monthly = pd.DataFrame()
-        bfs_daily = pd.DataFrame()
-        performances_metrics = pd.DataFrame()
-        for gauge_name in data_ts.columns:
-            basin_area = None
-            
-            if 'basin_area' in self.gauges_meta.columns:
-                basin_area = self.gauges_meta.loc[gauge_name, 'basin_area']
-                #for decadal stats we need to extract basin_area only once
-                if isinstance(basin_area,pd.Series):
-                    basin_area = basin_area.iloc[0]
-                basin_area = None if np.isnan(basin_area) else basin_area
-
-
-            bf_daily, bf_monthly, bfi_monthly, performance_metrics = compute_baseflow(
-                                                self.gauge_ts[gauge_name],
-                                                basin_area = basin_area,
-                                                methods=self.config['baseflow']['methods'],
-                                                compute_bfi=self.config['baseflow']['compute_baseflow_index']
-                                                )
-            
-            bf_daily['gauge'] = gauge_name
-            bf_monthly['gauge'] = gauge_name
-            bfi_monthly['gauge'] = gauge_name
-            bf_daily['sample_id'] = 0
-            bf_monthly['sample_id'] = 0
-            bfi_monthly['sample_id'] = 0
-            performance_metrics = pd.DataFrame(performance_metrics,index=[gauge_name])
-            #merge
-            bfs_daily=pd.concat([bfs_daily,bf_daily])
-            bfs_monthly = pd.concat([bfs_monthly,bf_monthly])
-            bfis_monthly = pd.concat([bfis_monthly,bfi_monthly])
-            performances_metrics = pd.concat([performances_metrics,performance_metrics])
-            #add to output dictionary
-            self.bf_output.update({'bf_daily': bfs_daily})
-            self.bf_output.update({'bf_monthly': bfs_monthly})
-            self.bf_output.update({'bfis_monthly': bfis_monthly})
-            
-        #compute the statistics
-        if self.config['baseflow']['compute_statistics']:
-            logger.info('Compute baseflow statistics')            
-            
-            for bf_key in self.bf_output.keys():
-                #organizing the data that calculating the mean per method
-                bf_subset = self.bf_output[bf_key].groupby(['gauge','date','sample_id']).mean(numeric_only=True).reset_index()
-                #pivot the data
-                bf_subset = bf_subset.pivot(index='date',values='value',columns='gauge')
-                #update the metadata
-                self.gauges_meta = self.gauges_meta.apply(lambda x:add_gauge_stats(x,bf_subset,
-                                                                    col_name=bf_key,
-                                                                    ),
-                                                          axis=1
-                                                          )
-            
-            #add performance metrics
-            self.gauges_meta = self.gauges_meta.merge(performances_metrics, 
-                                                      how='left', 
-                                                      left_index=True, 
-                                                      right_index=True,
-                                                      )
-
-        if self.config['file_io']['output']['plot_results']:
-            logger.info('plot_results of baseflow computation')
-            for bf_parameter in self.bf_output.keys():
-
-                plot_bf_results(ts_data=self.bf_output[bf_parameter], meta_data=self.gauges_meta,
-                                parameter_name=bf_parameter,
-                                plot_along_streams=True,
-                                output_dir=Path(self.paths["output_dir"], 'figures','baseflow')
-                                )
-                    
-        if self.output:
-            #the meta data
-            self.gauges_meta.to_csv(Path(self.paths["output_dir"], 'data', 'gauges_meta.csv'))
-            for key in self.bf_output.keys():
-                self.bf_output[key].to_csv(Path(self.paths["output_dir"], 'data',key+'.csv'))
-
-
     #new baseflow function
-    def get_baseflow2(self,data_ts=pd.DataFrame()):
+    def get_baseflow(self,data_ts=pd.DataFrame()):
         """
         
 
@@ -346,7 +255,7 @@ class Model:
         if self.config['file_io']['output']['plot_results']:
             logger.info('plot_results of baseflow computation')
             for bf_parameter in self.bf_output.keys():
-                if bf_parameter == 'bfi_monthly':
+                if bf_parameter == 'bfis_monthly':
                     plot_var = 'BFI'
                 else:
                     plot_var = 'BF'
@@ -687,7 +596,7 @@ class Model:
                 logger.info('Use baseflow time series')           
                 balance_value_var = 'BF'
                 
-                self.get_baseflow2(data_ts=data_ts)
+                self.get_baseflow(data_ts=data_ts)
                     
                 
         
@@ -817,7 +726,7 @@ def main(config_file=None, output=True):
         #melt to long version
         data_ts=pd.melt(sbat.gauge_ts,ignore_index=False,value_name='Q*',var_name='gauge')
         
-        sbat.get_baseflow2(data_ts=data_ts)
+        sbat.get_baseflow(data_ts=data_ts)
         
     # do the recession analysis
     logger.info(f'recession computation activation is set to {sbat.config["recession"]["activate"]}')

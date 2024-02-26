@@ -630,19 +630,19 @@ def calculate_network_balance(
                 df_section['balance_confidence'] = np.divide(balance.values, (ts_data[gauge] + ts_data_gauge_up).values)
 
         # add index data
-        df_section['Date'] = ts_data.index
+        df_section.index = ts_data.index
         logging.info(f'Water balance added to gauge {gauge}')
 
         sections_meta.append(df_section)
 
     # Finally we get out the data
 
-    sections_meta = pd.concat(sections_meta)
+    sections_meta = pd.concat(sections_meta).reset_index()
 
-    q_diff = sections_meta.drop_duplicates().pivot(index='Date', columns='downstream_point', values='balance')
+    q_diff = sections_meta.drop_duplicates().pivot(index=['date','sample_id'], columns='downstream_point', values='balance')
 
     if get_decadal_stats:
-        sections_meta['decade']=sections_meta['Date'].apply(lambda x: x[:3]+'5')
+        sections_meta['decade']=sections_meta['date'].apply(lambda x: x[0][:3]+'5')
     else:
         sections_meta['decade']=-9999
 
@@ -1031,12 +1031,6 @@ def get_section_waterbalance(gauge_data: pd.DataFrame = pd.DataFrame(),
                                                       network_dict=gauges_connection_dict,
                                                       get_decadal_stats = decadal_stats)
 
-    #repair the multiindex
-    q_diff.index=data_ts_samples.index
-    
-    #same for sections_meta
-    sections_meta[['date', 'sample_id']] = pd.DataFrame(sections_meta['Date'].tolist(), index=sections_meta.index)
-    sections_meta=sections_meta.drop(columns='Date')
     #unpivot q_diff
     q_diff = q_diff.melt(ignore_index=False).rename(columns={'value':'q_diff'}).reset_index()
     

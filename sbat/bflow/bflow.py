@@ -205,7 +205,7 @@ def plot_along_streamlines(stream_gauges: pd.DataFrame,
                            para_column: str = 'q_daily',
                            gauge_ticklabels: List[str] = None,                           
                            plot_context='talk',
-                           fig_width=10,
+                           fig_width=10,                           
                            output_dir: Union[str, Path] = Path.cwd() / 'bf_analysis' / 'figures') -> Tuple:
     """
     Plot a line chart of a given parameter (e.g. daily discharge) along the streamlines of a river system,
@@ -236,9 +236,15 @@ def plot_along_streamlines(stream_gauges: pd.DataFrame,
     None
     """
     stream_ts = pd.merge(stream_ts,stream_gauges[['gauge','river_km']],on='gauge',how='left')
+    stream_ts_decade = stream_ts.copy()
+    stream_ts_decade['decade'] = [x[0:3] + '5' for x in stream_ts_decade['date'].dt.strftime('%Y')]
     
+    axis_labels=dict({'BF':'BF [$m^{3}$/s]',
+                   'BFI': 'BFI [-]'})
+    axis_labels[para_column]
+    sort_label=dict({'river_km':'Gauging Station'})
     #plot over time and generate certain differences of spreading
-    para_column='BF'
+    
     sns.set_context(plot_context)
     fig, ax = plt.subplots(figsize=(fig_width,0.70744 *fig_width))
     sns.lineplot(data=stream_ts.groupby('gauge').mean(numeric_only=True), x=sort_column, y=para_column,
@@ -246,33 +252,110 @@ def plot_along_streamlines(stream_gauges: pd.DataFrame,
     # we give an error band if available
     stream_ts=stream_ts.sort_values(sort_column)
     ax.fill_between(stream_ts.groupby('gauge').first().sort_values(sort_column)[sort_column], 
-                    stream_ts.groupby('river_km')[para_column].mean().sort_index() - stream_ts.groupby('river_km')[para_column].std().sort_index(),
-                    stream_ts.groupby('river_km')[para_column].mean().sort_index() + stream_ts.groupby('river_km')[para_column].std().sort_index(), 
+                    stream_ts.groupby(sort_column)[para_column].mean().sort_index() - stream_ts.groupby(sort_column)[para_column].std().sort_index(),
+                    stream_ts.groupby(sort_column)[para_column].mean().sort_index() + stream_ts.groupby(sort_column)[para_column].std().sort_index(), 
                     alpha=0.2, color='k')
+        
+    plt.title(f'Mean {para_column} at {stream_name}')
+    plt.ylabel(axis_labels[para_column])
+    plt.xlabel(sort_label[sort_column])
+    ax.set_xticks(stream_gauges[sort_column].unique())
+    plt.xticks(rotation=90)
+    plt.ylabel(axis_labels[para_column])
+    plt.xlabel(sort_label[sort_column])
+    if gauge_ticklabels is not None:
+        ax.set_xticklabels(gauge_ticklabels)
+    plt.tight_layout()
+    fig.savefig(Path(output_dir, f'{stream_name}_{para_column}_mean_along_streamlines.png'), dpi=300)
+    plt.close()
     
-    # another band just to show the deviation in data to to method
-    haha
     
-    plt.title(f'{para_column} along {stream_name}')
-    plt.ylabel(para_column)
-    plt.xlabel(sort_column)
+    #make a plot of the CV value
+    col_name = f'{para_column}_cv'
+    data = stream_ts.groupby('gauge').mean(numeric_only=True)
+    data[f'{para_column}_cv'] = stream_ts.groupby('gauge')[para_column].std() / data[para_column]
+    
+    sns.set_context(plot_context)
+    fig, ax = plt.subplots(figsize=(fig_width,0.70744 *fig_width))
+    sns.lineplot(data=data, x=sort_column, y=col_name,
+                      marker='o', linewidth=2, markersize=10, color='red')
+
+    plt.title(f'{col_name} at {stream_name}')
+    plt.ylabel(col_name+ ' [-]')
+    plt.xlabel(sort_label[sort_column])
     ax.set_xticks(stream_gauges[sort_column].unique())
     plt.xticks(rotation=90)
     if gauge_ticklabels is not None:
         ax.set_xticklabels(gauge_ticklabels)
     plt.tight_layout()
-    fig.savefig(Path(output_dir, f'{stream_name}_{para_column}_along_streamlines.png'), dpi=300)
+    fig.savefig(Path(output_dir, f'{stream_name}_{col_name}_along_streamlines.png'), dpi=300)
     plt.close()
+    
+    
+    #cv plot with decade
+    col_name = f'{para_column}_cv'
+    
+    #create new the mean
+    cv_decadal_stats = stream_ts_decade.groupby(['gauge','decade'])[[para_column,'river_km']].mean(numeric_only=True).reset_index()
+    
+    data_std = stream_ts_decade.groupby(['gauge','decade'])[para_column].std(numeric_only=True).reset_index()
+    cv_decadal_stats[f'{para_column}_cv'] = data_std[para_column]/ cv_decadal_stats[para_column]
+    
+    sns.set_context(plot_context)
+    fig, ax = plt.subplots(figsize=(fig_width,0.70744 *fig_width))
+    sns.lineplot(data=cv_decadal_stats, x=sort_column, y=col_name,hue='decade',
+                      marker='o', linewidth=2, markersize=10, 
+                      palette='rocket',
+                      hue_order=cv_decadal_stats['decade'].sort_values())
+
+    plt.title(f'{col_name} at {stream_name} per decade')
+    plt.ylabel(col_name+ ' [-]')
+    plt.xlabel(sort_label[sort_column])
+    ax.set_xticks(stream_gauges[sort_column].unique())
+    plt.xticks(rotation=90)
+    if gauge_ticklabels is not None:
+        ax.set_xticklabels(gauge_ticklabels)
+    plt.tight_layout()
+    fig.savefig(Path(output_dir, f'{stream_name}_{col_name}_decade_along_streamlines.png'), dpi=300)
+    plt.close()
+    
+    
+    #%% Next we make a lineplot where we show the confidence interval from the sampling
+    
+    
+    stream_ts_mean= stream_ts.groupby(['gauge','sample_id','bf_method'])[para_column,'river_km'].mean().reset_index()
+    sns.set_context(plot_context)
+    fig, ax = plt.subplots(figsize=(fig_width,0.70744 *fig_width))
+    sns.lineplot(data=stream_ts_mean, x=sort_column, y=para_column, hue = 'bf_method',
+                      marker='o', linewidth=2, markersize=10, palette='mako_r',errorbar=("pi", 100),err_style='bars')
+
+    plt.title(f'Average {para_column} per method at {stream_name}')
+    ax.set_xticks(stream_gauges[sort_column].unique())
+    plt.xticks(rotation=90)
+    plt.ylabel(axis_labels[para_column])
+    plt.xlabel(sort_label[sort_column])
+    if gauge_ticklabels is not None:
+        ax.set_xticklabels(gauge_ticklabels)
+    plt.tight_layout()
+    fig.savefig(Path(output_dir, f'{stream_name}_{para_column}_method_dependence_mean_along_streamlines.png'), dpi=300)
+    
+    
+    
+    #%% We plot over each decade with error style band 
+    data = stream_ts_decade.groupby(['gauge','sample_id','decade'])[['river_km',para_column]].mean().reset_index()
 
     #plot for each decade
     fig, ax = plt.subplots(figsize=(fig_width,0.70744 *fig_width))
-    sns.lineplot(data=stream_gauges, x=sort_column, y=para_column, hue='decade',
-                      marker='o', linewidth=2, markersize=10, palette='rocket',
-                      hue_order=stream_gauges['decade'].sort_values())
+    sns.lineplot(data=data, x=sort_column, y=para_column, hue='decade',
+                      marker='o', linewidth=2, markersize=10, 
+                      palette='rocket',
+                      errorbar=("pi", 100),
+                      err_style='bars',
+                      hue_order=data['decade'].sort_values())
     
-    plt.title(f'{para_column} along {stream_name} and decade')
-    plt.ylabel(para_column)
-    plt.xlabel(sort_column)
+    plt.title(f'{para_column} at {stream_name} and decade')
+    plt.ylabel(axis_labels[para_column])
+    plt.xlabel(sort_label[sort_column])
     ax.set_xticks(stream_gauges[sort_column].unique())
     plt.xticks(rotation=90)
     if gauge_ticklabels is not None:
@@ -318,53 +401,62 @@ def plot_bf_results(ts_data: pd.DataFrame = pd.DataFrame(),
     output_dir.mkdir(parents=True, exist_ok=True)
     #default seaborn setting
     sns.set_context(plot_context)
-    performance_cols= [col for col in meta_data.columns if col.startswith('kge_')]
     
     parameter_titles={'bf_daily':'daily baseflow',
             'bf_monthly':'monthly baseflow',
             'bfis_monthly':'baseflow index'}
-    #%% first we plot some histogram and boxplots for each station
-    for gauge_name,subset in ts_data.groupby('gauge'):
-        subset= subset.reset_index()
-        try:
-            performance_dict = meta_data.loc[gauge_name,performance_cols].iloc[0].to_dict()
-        except:
-            performance_dict = meta_data.loc[gauge_name,performance_cols].to_dict()
-            pass
-        performance_str =r"$\bf{Performance}$"+'\n'+'\n'.join(f'{key}: {np.round(value,3)}' for key, value in performance_dict.items())
-        # histogram over all data
-        fig,ax = plt.subplots(figsize=(fig_size, fig_size)) 
+    # Loop over each station
+    for gauge_name, subset in ts_data.groupby('gauge'):
+        subset = subset.reset_index()
+            
+        # Extract the performance column and format it
+        bf_methods= ts_data.bf_method.unique()
+        performance_string = ""
+        for bf_method in bf_methods:
+            mean_col = f'kge_{bf_method}_mean'
+            std_col = f'kge_{bf_method}_std'
+            perfor_str = f'{bf_method}: {np.round(meta_data.loc[gauge_name,mean_col],2)} ± {np.round(meta_data.loc[gauge_name,std_col],3)}'
+            performance_string += '\n' + perfor_str
+        
+        performance_string = r"$\bf{Performance [KGE]}$"+ performance_string
+        
+        # Plot histogram over all data
+        fig, ax = plt.subplots(figsize=(fig_size, fig_size))
         sns.histplot(data=subset, x=plot_var, kde=True)
         plt.title(f'{parameter_titles[parameter_name]} at {gauge_name}')
         plt.tight_layout()
-        plt.xlabel(f'{plot_var} [$m^{3}$/s]')
-        fig.savefig(Path(output_dir,f'{gauge_name}_histplot_{parameter_name}.png'), dpi=300)
+        plt.xlabel(f'{plot_var} [$m^3/s$]')
+        fig.savefig(Path(output_dir, f'{gauge_name}_histplot_{parameter_name}.png'), dpi=300)
         plt.close()
-        # for each method
+        
+        # Plot histogram for each method
         if 'bf_method' in subset.columns:
             fig, ax = plt.subplots(figsize=(fig_size, fig_size))
             sns.histplot(data=subset, x=plot_var, hue='bf_method', kde=True)
             plt.legend(title='bf_method', loc='upper right', labels=subset['bf_method'].unique())
-            ax.text(ax.get_xlim()[1]*0.5,
+            txt1=ax.text(ax.get_xlim()[1]*0.5,
                     ax.get_ylim()[1]*0.6,
-                    performance_str,
+                    performance_string,
                     bbox=dict(facecolor='white', alpha=0.5),
                     )
+            txt1.set_fontsize(txt1.get_fontsize()*0.75)
             plt.title(f'{parameter_titles[parameter_name]} at {gauge_name}')
             plt.tight_layout()
             plt.xlabel(f'{plot_var} [$m^{3}$/s]')
             fig.savefig(Path(output_dir, f'{gauge_name}_method_histplot_{parameter_name}.png'), dpi=300)
-            plt.close()        
-            # we further make some boxplots
+            plt.close()
+            
+            # Plot boxplots for each method
             fig, ax = plt.subplots(figsize=(fig_size, fig_size))
             sns.boxplot(data=subset, x='bf_method', y=plot_var)
             plt.xticks(rotation=90)
             plt.xlabel(gauge_name)
-            plt.ylabel(f'{plot_var} [$m^{3}$/s]')
+            plt.ylabel(f'{plot_var} [$m^3/s$]')
             plt.title(f'{parameter_titles[parameter_name]} at {gauge_name}')
             plt.tight_layout()
             fig.savefig(Path(output_dir, f'{gauge_name}_method_boxplot_{parameter_name}.png'), dpi=300)
             plt.close()
+        
         #across all decades
         fig, ax = plt.subplots(figsize=(fig_size, fig_size))
         subset['decade'] = [x[0:3] + '5' for x in subset['date'].dt.strftime('%Y')]
@@ -387,11 +479,13 @@ def plot_bf_results(ts_data: pd.DataFrame = pd.DataFrame(),
         index_max = len(meta_data)
     else:
         index_max = 15
-    # plot
-    cv_df = ts_data.groupby('gauge').std(numeric_only = True)[plot_var]/ts_data.groupby('gauge').mean(numeric_only = True)[plot_var]
-    
+
+    # Calculate coefficient of variation (CV)
+    cv_df = ts_data.groupby('gauge').std(numeric_only=True)[plot_var] / ts_data.groupby('gauge').mean(numeric_only=True)[plot_var]
     cv_col = f'{parameter_name}_cv'
     cv_df.name = cv_col
+    
+    # Plot barplot for gauges with largest CV
     fig, ax = plt.subplots(figsize=(fig_size, fig_size))
     sns.barplot(data=cv_df.reset_index().sort_values(cv_col, ascending=False)[0:index_max], x=cv_col,
                 y='gauge').set(title=cv_col)
@@ -400,9 +494,11 @@ def plot_bf_results(ts_data: pd.DataFrame = pd.DataFrame(),
     
 
     #%% we make lineplots along all river systems
-    para_cols = [cv_col]
-    para_cols.append(f'{parameter_name}_mean')
+    parameter_cols={'bf_daily':'BF',
+            'bf_monthly':'BF',
+            'bfis_monthly':'BFI'}
     meta_data.index.name='gauge'
+    
     #create a subset for each stream
     for stream,stream_gauges in meta_data.reset_index().groupby('stream'):        
         #get river km
@@ -420,6 +516,7 @@ def plot_bf_results(ts_data: pd.DataFrame = pd.DataFrame(),
                                    stream_ts = stream_ts,
                                    stream_name = stream,
                                    sort_column = 'river_km',
+                                   para_column = parameter_cols[parameter_name],
                                    gauge_ticklabels = gauge_ticklabels,
                                    output_dir = output_dir)
 
