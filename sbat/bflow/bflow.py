@@ -159,6 +159,7 @@ def compute_baseflow(Q: pd.Series, basin_area: float = None, methods: Union[str,
         # we compute the BFI
         Q_monthly = Q.resample('m').mean(numeric_only=True)
         bfi_monthly = bf_daily.groupby('bf_method').resample('m').mean(numeric_only=True).divide(Q_monthly,axis=0)
+        bfi_monthly=bfi_monthly.rename(columns={'BF':'BFI'})
 
     bflow_logger.info(f'compute baseflow for gauge....{gauge}...done')
 
@@ -198,10 +199,11 @@ def add_gauge_stats(gauge_meta: pd.DataFrame, ts_data: pd.DataFrame, col_name: s
     return modified_gauge_meta
 
 def plot_along_streamlines(stream_gauges: pd.DataFrame,
+                           stream_ts : pd.DataFrame(),
                            stream_name: str = 'river',
                            sort_column: str = 'river_km',
                            para_column: str = 'q_daily',
-                           gauge_ticklabels: List[str] = None,
+                           gauge_ticklabels: List[str] = None,                           
                            plot_context='talk',
                            fig_width=10,
                            output_dir: Union[str, Path] = Path.cwd() / 'bf_analysis' / 'figures') -> Tuple:
@@ -232,18 +234,24 @@ def plot_along_streamlines(stream_gauges: pd.DataFrame,
     Returns:
     --------
     None
-    """    
+    """
+    stream_ts = pd.merge(stream_ts,stream_gauges[['gauge','river_km']],on='gauge',how='left')
+    
+    #plot over time and generate certain differences of spreading
+    para_column='BF'
     sns.set_context(plot_context)
     fig, ax = plt.subplots(figsize=(fig_width,0.70744 *fig_width))
-    sns.lineplot(data=stream_gauges, x=sort_column, y=para_column,
+    sns.lineplot(data=stream_ts.groupby('gauge').mean(numeric_only=True), x=sort_column, y=para_column,
                       marker='o', linewidth=2, markersize=10, color='dodgerblue')
     # we give an error band if available
-    if 'mean' in para_column:
-        std_col = f"{para_column.split('_mean')[0]}_std"
-        ax.fill_between(stream_gauges[sort_column], 
-                        stream_gauges[para_column] - stream_gauges[std_col],
-                        stream_gauges[para_column] + stream_gauges[std_col], 
-                        alpha=0.2, color='k')
+    stream_ts=stream_ts.sort_values(sort_column)
+    ax.fill_between(stream_ts.groupby('gauge').first().sort_values(sort_column)[sort_column], 
+                    stream_ts.groupby('river_km')[para_column].mean().sort_index() - stream_ts.groupby('river_km')[para_column].std().sort_index(),
+                    stream_ts.groupby('river_km')[para_column].mean().sort_index() + stream_ts.groupby('river_km')[para_column].std().sort_index(), 
+                    alpha=0.2, color='k')
+    
+    # another band just to show the deviation in data to to method
+    haha
     
     plt.title(f'{para_column} along {stream_name}')
     plt.ylabel(para_column)
@@ -283,6 +291,7 @@ def plot_bf_results(ts_data: pd.DataFrame = pd.DataFrame(),
                      output_dir: Union[str, Path] = Path.cwd() / 'bf_analysis' / 'figures',
                      fig_size=10,
                      plot_context='poster',
+                     plot_var = 'BF',
                      ) -> None:
     """
     Plot the results of the baseflow calculation.
@@ -325,16 +334,17 @@ def plot_bf_results(ts_data: pd.DataFrame = pd.DataFrame(),
         performance_str =r"$\bf{Performance}$"+'\n'+'\n'.join(f'{key}: {np.round(value,3)}' for key, value in performance_dict.items())
         # histogram over all data
         fig,ax = plt.subplots(figsize=(fig_size, fig_size)) 
-        sns.histplot(data=subset, x='value', kde=True)
+        sns.histplot(data=subset, x=plot_var, kde=True)
         plt.title(f'{parameter_titles[parameter_name]} at {gauge_name}')
         plt.tight_layout()
+        plt.xlabel(f'{plot_var} [$m^{3}$/s]')
         fig.savefig(Path(output_dir,f'{gauge_name}_histplot_{parameter_name}.png'), dpi=300)
         plt.close()
         # for each method
-        if 'variable' in subset.columns:
+        if 'bf_method' in subset.columns:
             fig, ax = plt.subplots(figsize=(fig_size, fig_size))
-            sns.histplot(data=subset, x='value', hue='variable', kde=True)
-            plt.legend(title='bf_method', loc='upper right', labels=subset.variable.unique())
+            sns.histplot(data=subset, x=plot_var, hue='bf_method', kde=True)
+            plt.legend(title='bf_method', loc='upper right', labels=subset['bf_method'].unique())
             ax.text(ax.get_xlim()[1]*0.5,
                     ax.get_ylim()[1]*0.6,
                     performance_str,
@@ -342,14 +352,15 @@ def plot_bf_results(ts_data: pd.DataFrame = pd.DataFrame(),
                     )
             plt.title(f'{parameter_titles[parameter_name]} at {gauge_name}')
             plt.tight_layout()
+            plt.xlabel(f'{plot_var} [$m^{3}$/s]')
             fig.savefig(Path(output_dir, f'{gauge_name}_method_histplot_{parameter_name}.png'), dpi=300)
             plt.close()        
             # we further make some boxplots
             fig, ax = plt.subplots(figsize=(fig_size, fig_size))
-            sns.boxplot(data=subset, x='variable', y='value')
+            sns.boxplot(data=subset, x='bf_method', y=plot_var)
             plt.xticks(rotation=90)
             plt.xlabel(gauge_name)
-            plt.ylabel(parameter_name)
+            plt.ylabel(f'{plot_var} [$m^{3}$/s]')
             plt.title(f'{parameter_titles[parameter_name]} at {gauge_name}')
             plt.tight_layout()
             fig.savefig(Path(output_dir, f'{gauge_name}_method_boxplot_{parameter_name}.png'), dpi=300)
@@ -357,11 +368,14 @@ def plot_bf_results(ts_data: pd.DataFrame = pd.DataFrame(),
         #across all decades
         fig, ax = plt.subplots(figsize=(fig_size, fig_size))
         subset['decade'] = [x[0:3] + '5' for x in subset['date'].dt.strftime('%Y')]
-        sns.boxplot(data=subset, x='value',y='decade',hue='variable')
+        sns.boxplot(data=subset, x=plot_var,y='decade',hue='bf_method')
         plt.title(f'{parameter_titles[parameter_name]} at {gauge_name}')
         plt.tight_layout()
+        plt.xlabel(f'{plot_var} [$m^{3}$/s]')
         fig.savefig(Path(output_dir, f'{gauge_name}_decade_boxplot_{parameter_name}.png'), dpi=300)
         plt.close()
+        
+        #also for 
 
     
     #%% if we have daily dataset our calculation ends here
@@ -374,10 +388,12 @@ def plot_bf_results(ts_data: pd.DataFrame = pd.DataFrame(),
     else:
         index_max = 15
     # plot
+    cv_df = ts_data.groupby('gauge').std(numeric_only = True)[plot_var]/ts_data.groupby('gauge').mean(numeric_only = True)[plot_var]
+    
     cv_col = f'{parameter_name}_cv'
-    meta_data.index.name = 'gauge'
+    cv_df.name = cv_col
     fig, ax = plt.subplots(figsize=(fig_size, fig_size))
-    sns.barplot(data=meta_data.reset_index().sort_values(cv_col, ascending=False)[0:index_max], x=cv_col,
+    sns.barplot(data=cv_df.reset_index().sort_values(cv_col, ascending=False)[0:index_max], x=cv_col,
                 y='gauge').set(title=cv_col)
     fig.savefig(Path(output_dir, f'Gauges_with_largest_{cv_col}.png'), dpi=300, bbox_inches="tight")
     plt.close()
@@ -385,22 +401,27 @@ def plot_bf_results(ts_data: pd.DataFrame = pd.DataFrame(),
 
     #%% we make lineplots along all river systems
     para_cols = [cv_col]
-    para_cols.append(f'{parameter_name}_mean')    
+    para_cols.append(f'{parameter_name}_mean')
+    meta_data.index.name='gauge'
     #create a subset for each stream
     for stream,stream_gauges in meta_data.reset_index().groupby('stream'):        
         #get river km
         stream_gauges['river_km'] = stream_gauges['distance_to_mouth'].max() - stream_gauges[
             'distance_to_mouth']
         stream_gauges = stream_gauges.sort_values('river_km')
-        gauge_ticklabels = stream_gauges['gauge'].unique()        
+        gauge_ticklabels = stream_gauges['gauge'].unique()
+        stream_ts=ts_data[ts_data.gauge.isin(stream_gauges.gauge)]
+        #add the relevant columns
+        stream_ts['decade'] = [x[0:3] + '5' for x in stream_ts['date'].dt.strftime('%Y')]
+
         #plot for each parameter
-        for para_col in para_cols:
-            plot_along_streamlines(stream_gauges = stream_gauges,
-                                       stream_name = stream,
-                                       sort_column = 'river_km',
-                                       para_column = para_col,
-                                       gauge_ticklabels = gauge_ticklabels,
-                                       output_dir = output_dir)
+
+        plot_along_streamlines(stream_gauges = stream_gauges,
+                                   stream_ts = stream_ts,
+                                   stream_name = stream,
+                                   sort_column = 'river_km',
+                                   gauge_ticklabels = gauge_ticklabels,
+                                   output_dir = output_dir)
 
     return None
 

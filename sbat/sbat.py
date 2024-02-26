@@ -131,6 +131,7 @@ class Model:
         
         # if we want to compute for each decade we do this here
         # todo: I think there is a better way to solve this
+        """
         if self.config['time']['compute_each_decade']:
             logger.info('Statistics for each gauge will be computed for each decade')
             #get information how many decades with data we have per gauge
@@ -160,6 +161,9 @@ class Model:
         else:
             logger.info('Statistics for each gauge will be computed over the entire time series')
             self.gauges_meta.loc[:,'decade']=-9999
+        """
+        logger.info('Statistics for each gauge will be computed over the entire time series')
+        self.gauges_meta.loc[:,'decade']=-9999
 
   
     # function which controls the baseflow module
@@ -342,11 +346,16 @@ class Model:
         if self.config['file_io']['output']['plot_results']:
             logger.info('plot_results of baseflow computation')
             for bf_parameter in self.bf_output.keys():
-
+                if bf_parameter == 'bfi_monthly':
+                    plot_var = 'BFI'
+                else:
+                    plot_var = 'BF'
+                    
                 plot_bf_results(ts_data=self.bf_output[bf_parameter], meta_data=self.gauges_meta,
                                 parameter_name=bf_parameter,
                                 plot_along_streams=True,
-                                output_dir=Path(self.paths["output_dir"], 'figures','baseflow')
+                                output_dir=Path(self.paths["output_dir"], 'figures','baseflow'),
+                                plot_var = plot_var,
                                 )
                     
         if self.output:
@@ -805,7 +814,10 @@ def main(config_file=None, output=True):
     # get baseflow        
     logger.info(f'baseflow computation activation is set to {sbat.config["baseflow"]["activate"]}')
     if sbat.config['baseflow']['activate']:
-        sbat.get_baseflow()
+        #melt to long version
+        data_ts=pd.melt(sbat.gauge_ts,ignore_index=False,value_name='Q*',var_name='gauge')
+        
+        sbat.get_baseflow2(data_ts=data_ts)
         
     # do the recession analysis
     logger.info(f'recession computation activation is set to {sbat.config["recession"]["activate"]}')
