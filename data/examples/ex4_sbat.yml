@@ -75,7 +75,7 @@ waterbalance:
         river_discharge_uncertainty:
             type: constant
             measurement_uncertainty: 0.05
-            rating_curve_uncertainty: 0.01
+            rating_curve_uncertainty: 0.05
             number_of_datapoints: 200
         bayesian_parameters:
             prior_gaussian_parameters:

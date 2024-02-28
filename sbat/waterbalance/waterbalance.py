@@ -642,6 +642,8 @@ def calculate_network_balance(
     q_diff = sections_meta.drop_duplicates().pivot(index=['date','sample_id'], columns='downstream_point', values='balance')
 
     if get_decadal_stats:
+        if sections_meta['date'].dtype =='<M8[ns]':
+            sections_meta['date'] = sections_meta['date'].astype(str)
         sections_meta['decade']=sections_meta['date'].apply(lambda x: x[0][:3]+'5')
     else:
         sections_meta['decade']=-9999

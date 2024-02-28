@@ -235,14 +235,23 @@ def plot_along_streamlines(stream_gauges: pd.DataFrame,
     --------
     None
     """
+    if 'sample_id' not in stream_ts.columns:
+        stream_ts['sample_id'] = 0
+    if 'bf_method' not in stream_ts.columns:
+        stream_ts['bf_method'] = 'default'
     stream_ts = pd.merge(stream_ts,stream_gauges[['gauge','river_km']],on='gauge',how='left')
     stream_ts_decade = stream_ts.copy()
     stream_ts_decade['decade'] = [x[0:3] + '5' for x in stream_ts_decade['date'].dt.strftime('%Y')]
     
     axis_labels=dict({'BF':'BF [$m^{3}$/s]',
-                   'BFI': 'BFI [-]'})
+                   'BFI': 'BFI [-]',
+                   'Q': 'Q [$m^{3}$/s]',
+                   'Q*': 'Q* [$m^{3}$/s]'})
     axis_labels[para_column]
-    sort_label=dict({'river_km':'Gauging Station'})
+    if gauge_ticklabels is not None:
+        sort_label=dict({'river_km':'Gauging Station'})
+    else:
+        sort_label=dict({'river_km':'Distance from Source [km]'})
     #plot over time and generate certain differences of spreading
     
     sns.set_context(plot_context)
@@ -265,8 +274,9 @@ def plot_along_streamlines(stream_gauges: pd.DataFrame,
     plt.xlabel(sort_label[sort_column])
     if gauge_ticklabels is not None:
         ax.set_xticklabels(gauge_ticklabels)
+    
     plt.tight_layout()
-    fig.savefig(Path(output_dir, f'{stream_name}_{para_column}_mean_along_streamlines.png'), dpi=300)
+    fig.savefig(Path(output_dir, f'{stream_name}_{para_column.replace("*","")}_mean_along_streamlines.png'), dpi=300)
     plt.close()
     
     
@@ -288,7 +298,7 @@ def plot_along_streamlines(stream_gauges: pd.DataFrame,
     if gauge_ticklabels is not None:
         ax.set_xticklabels(gauge_ticklabels)
     plt.tight_layout()
-    fig.savefig(Path(output_dir, f'{stream_name}_{col_name}_along_streamlines.png'), dpi=300)
+    fig.savefig(Path(output_dir, f'{stream_name}_{col_name.replace("*","")}_along_streamlines.png'), dpi=300)
     plt.close()
     
     
@@ -316,7 +326,7 @@ def plot_along_streamlines(stream_gauges: pd.DataFrame,
     if gauge_ticklabels is not None:
         ax.set_xticklabels(gauge_ticklabels)
     plt.tight_layout()
-    fig.savefig(Path(output_dir, f'{stream_name}_{col_name}_decade_along_streamlines.png'), dpi=300)
+    fig.savefig(Path(output_dir, f'{stream_name}_{col_name.replace("*","")}_decade_along_streamlines.png'), dpi=300)
     plt.close()
     
     
@@ -337,7 +347,7 @@ def plot_along_streamlines(stream_gauges: pd.DataFrame,
     if gauge_ticklabels is not None:
         ax.set_xticklabels(gauge_ticklabels)
     plt.tight_layout()
-    fig.savefig(Path(output_dir, f'{stream_name}_{para_column}_method_dependence_mean_along_streamlines.png'), dpi=300)
+    fig.savefig(Path(output_dir, f'{stream_name}_{para_column.replace("*","")}_method_dependence_mean_along_streamlines.png'), dpi=300)
     
     
     
@@ -361,7 +371,7 @@ def plot_along_streamlines(stream_gauges: pd.DataFrame,
     if gauge_ticklabels is not None:
         ax.set_xticklabels(gauge_ticklabels)
     plt.tight_layout()
-    fig.savefig(Path(output_dir, f'{stream_name}_{para_column}_decadal_along_streamlines.png'), dpi=300)
+    fig.savefig(Path(output_dir, f'{stream_name}_{para_column.replace("*","")}_decadal_along_streamlines.png'), dpi=300)
     plt.close()
     
     return None
@@ -404,21 +414,31 @@ def plot_bf_results(ts_data: pd.DataFrame = pd.DataFrame(),
     
     parameter_titles={'bf_daily':'daily baseflow',
             'bf_monthly':'monthly baseflow',
-            'bfis_monthly':'baseflow index'}
+            'bfis_monthly':'baseflow index',
+            'q_monthly': 'monthly discharge',
+            'q_daily': 'daily discharge'}
     # Loop over each station
     for gauge_name, subset in ts_data.groupby('gauge'):
         subset = subset.reset_index()
             
         # Extract the performance column and format it
-        bf_methods= ts_data.bf_method.unique()
         performance_string = ""
-        for bf_method in bf_methods:
-            mean_col = f'kge_{bf_method}_mean'
-            std_col = f'kge_{bf_method}_std'
-            perfor_str = f'{bf_method}: {np.round(meta_data.loc[gauge_name,mean_col],2)} ± {np.round(meta_data.loc[gauge_name,std_col],3)}'
-            performance_string += '\n' + perfor_str
-        
-        performance_string = r"$\bf{Performance [KGE]}$"+ performance_string
+        if 'bf_method' in subset.columns:
+            if 'discharge' not in subset['bf_method'].unique():
+                bf_methods= ts_data.bf_method.unique()
+                for bf_method in bf_methods:
+                    mean_col = f'kge_{bf_method}_mean'
+                    std_col = f'kge_{bf_method}_std'
+                    perfor_str = f'{bf_method}: {np.round(meta_data.loc[gauge_name,mean_col],2)} ± {np.round(meta_data.loc[gauge_name,std_col],3)}'
+                    performance_string += '\n' + perfor_str
+                
+                performance_string = r"$\bf{Performance [KGE]}$"+ performance_string            
+                
+        else:
+            subset['bf_method'] = 'discharge'
+            
+            
+
         
         # Plot histogram over all data
         fig, ax = plt.subplots(figsize=(fig_size, fig_size))
@@ -430,9 +450,10 @@ def plot_bf_results(ts_data: pd.DataFrame = pd.DataFrame(),
         plt.close()
         
         # Plot histogram for each method
-        if 'bf_method' in subset.columns:
+        if 'discharge' not in subset['bf_method']:
+            subset_merge=subset.groupby(['bf_method','date']).mean(numeric_only=True).reset_index()
             fig, ax = plt.subplots(figsize=(fig_size, fig_size))
-            sns.histplot(data=subset, x=plot_var, hue='bf_method', kde=True)
+            sns.histplot(data=subset_merge, x=plot_var, hue='bf_method', kde=True)
             plt.legend(title='bf_method', loc='upper right', labels=subset['bf_method'].unique())
             txt1=ax.text(ax.get_xlim()[1]*0.5,
                     ax.get_ylim()[1]*0.6,
@@ -440,15 +461,14 @@ def plot_bf_results(ts_data: pd.DataFrame = pd.DataFrame(),
                     bbox=dict(facecolor='white', alpha=0.5),
                     )
             txt1.set_fontsize(txt1.get_fontsize()*0.75)
-            plt.title(f'{parameter_titles[parameter_name]} at {gauge_name}')
-            plt.tight_layout()
+            plt.title(f'{parameter_titles[parameter_name]} at {gauge_name}')            
             plt.xlabel(f'{plot_var} [$m^{3}$/s]')
             fig.savefig(Path(output_dir, f'{gauge_name}_method_histplot_{parameter_name}.png'), dpi=300)
             plt.close()
             
             # Plot boxplots for each method
             fig, ax = plt.subplots(figsize=(fig_size, fig_size))
-            sns.boxplot(data=subset, x='bf_method', y=plot_var)
+            sns.boxplot(data=subset_merge, x='bf_method', y=plot_var)
             plt.xticks(rotation=90)
             plt.xlabel(gauge_name)
             plt.ylabel(f'{plot_var} [$m^3/s$]')
@@ -467,7 +487,18 @@ def plot_bf_results(ts_data: pd.DataFrame = pd.DataFrame(),
         fig.savefig(Path(output_dir, f'{gauge_name}_decade_boxplot_{parameter_name}.png'), dpi=300)
         plt.close()
         
-        #also for 
+        
+        
+        #also for plot along the line --> too time consuming
+        """
+        subset=subset.dropna()
+        fig, ax = plt.subplots(figsize=(fig_size,0.70744 *fig_size))
+        sns.lineplot(data=subset,x='date',y=plot_var)
+        plt.title(f'TS of{parameter_name} at {gauge_name} with {subset["sample_id"].max()} samples')
+        plt.tight_layout()
+        plt.xlabel(f'{plot_var} [$m^{3}$/s]')
+        fig.savefig(Path(output_dir, f'TS_{parameter_name}_{gauge_name}_sample_size_{subset["sample_id"].max()}.png'), dpi=300)
+        """
 
     
     #%% if we have daily dataset our calculation ends here
@@ -494,9 +525,6 @@ def plot_bf_results(ts_data: pd.DataFrame = pd.DataFrame(),
     
 
     #%% we make lineplots along all river systems
-    parameter_cols={'bf_daily':'BF',
-            'bf_monthly':'BF',
-            'bfis_monthly':'BFI'}
     meta_data.index.name='gauge'
     
     #create a subset for each stream
@@ -505,7 +533,8 @@ def plot_bf_results(ts_data: pd.DataFrame = pd.DataFrame(),
         stream_gauges['river_km'] = stream_gauges['distance_to_mouth'].max() - stream_gauges[
             'distance_to_mouth']
         stream_gauges = stream_gauges.sort_values('river_km')
-        gauge_ticklabels = stream_gauges['gauge'].unique()
+        #gauge_ticklabels = stream_gauges['gauge'].unique()
+        gauge_ticklabels = None
         stream_ts=ts_data[ts_data.gauge.isin(stream_gauges.gauge)]
         #add the relevant columns
         stream_ts['decade'] = [x[0:3] + '5' for x in stream_ts['date'].dt.strftime('%Y')]
@@ -516,7 +545,7 @@ def plot_bf_results(ts_data: pd.DataFrame = pd.DataFrame(),
                                    stream_ts = stream_ts,
                                    stream_name = stream,
                                    sort_column = 'river_km',
-                                   para_column = parameter_cols[parameter_name],
+                                   para_column = plot_var,
                                    gauge_ticklabels = gauge_ticklabels,
                                    output_dir = output_dir)
 

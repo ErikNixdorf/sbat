@@ -168,7 +168,7 @@ class Model:
         self.gauges_meta.loc[:,'decade']=-9999
 
     #new baseflow function
-    def get_baseflow(self,data_ts=pd.DataFrame()):
+    def get_baseflow(self,data_ts=pd.DataFrame(),data_var = 'Q*'):
         """
         
 
@@ -197,7 +197,7 @@ class Model:
         # we further need the monthly averaged time series
  
         for (sample_id, gauge_name), subset in data_ts.groupby(['sample_id', 'gauge']):
-            gauge_ts = subset['Q*'].rename(gauge_name)
+            gauge_ts = subset[data_var].rename(gauge_name)
     
             bf_daily_ss, bf_monthly_ss, bfi_monthly_ss, performance_metrics_ss = compute_baseflow(
                                                 gauge_ts,
@@ -301,7 +301,7 @@ class Model:
             
         if self.config['file_io']['output']['plot_results']:
             logger.info('plot_results daily and monthly results of discharge computation')
-            discharge_ts_melt_daily = self.gauge_ts.melt(ignore_index=False,var_name='gauge')
+            discharge_ts_melt_daily = self.gauge_ts.melt(ignore_index=False,var_name='gauge',value_name='Q')
             discharge_ts_melt_daily['variable']='q_daily'
             q_dict={'q_daily':discharge_ts_melt_daily}
             #append monthly if existing
@@ -311,10 +311,11 @@ class Model:
                 q_dict={'q_monthly':discharge_ts_melt_monthly}
             # we run the plotting algorithm from bf_flow
             for q_parameter in q_dict.keys():
-                plot_bf_results(ts_data=q_dict[q_parameter], meta_data=self.gauges_meta,
+                plot_bf_results(ts_data=q_dict[q_parameter].reset_index(), meta_data=self.gauges_meta,
                                 parameter_name=q_parameter,
                                 plot_along_streams=True,
-                                output_dir=Path(self.paths["output_dir"], 'figures','discharge')
+                                output_dir=Path(self.paths["output_dir"], 'figures','discharge'),
+                                plot_var = 'Q'
                                 )
             
             
@@ -596,7 +597,7 @@ class Model:
                 logger.info('Use baseflow time series')           
                 balance_value_var = 'BF'
                 
-                self.get_baseflow(data_ts=data_ts)
+                self.get_baseflow(data_ts=data_ts,data_var='Q*')
                     
                 
         
@@ -611,13 +612,30 @@ class Model:
             
             else:
                 balance_value_var = 'Q*'
+                q_parameter ='q_daily'
                 logger.info('For Discharge with uncertainty we just need to adapt the time')
-                if self.config['waterbalance']['time_series_analysis_option'] !='monthly':
+                if self.config['waterbalance']['time_series_analysis_option'] =='monthly':
+                    q_parameter ='q_monthly'
                     data_ts = data_ts_monthly.copy()
+                    data_ts['bf_method'] = 'discharge'
+                logger.info('Plot Discharge results with uncertainty')
+                if self.config['file_io']['output']['plot_results']:
+                    plot_bf_results(ts_data=data_ts.reset_index(), meta_data=self.gauges_meta,
+                                    parameter_name=q_parameter,
+                                    plot_along_streams=True,
+                                    output_dir=Path(self.paths["output_dir"], 'figures','discharge'),
+                                    plot_var = 'Q*'
+                                    )
+                    
+                
                     
         else:
             logger.info('Calculate water balance without uncertainty incooporation')
-            
+            data_value_var_name = 'Q'
+            data_ts=self.gauge_ts.reset_index().melt(id_vars='date',value_name=data_value_var_name).set_index('date')
+            data_ts.rename(columns={'variable':'gauge'},inplace=True)
+            data_ts['sample_id'] = 0
+            balance_value_var = data_value_var_name
             
             if flow_type == 'baseflow': 
                 balance_value_var = 'BF'
@@ -625,7 +643,8 @@ class Model:
                 # check whether the baseflow as already be computed
                 if not self.bf_output:
                     logger.info('Calculate Baseflow first before baseflow water balance can be calculated')
-                    self.get_baseflow()
+                    self.get_baseflow(data_ts=data_ts,
+                                      data_var=data_value_var_name)
                 
                 # prove whether explicitely daily values should be calculate otherwise we take monthly
                 if self.config['waterbalance']['time_series_analysis_option'] == 'daily' and 'bf_' + \
@@ -637,17 +656,14 @@ class Model:
 
 
             elif flow_type == 'discharge':
-                balance_value_var = 'Q'
                 logger.info('Use daily discharge')
-                data_ts=self.gauge_ts.reset_index().melt(id_vars='date').set_index('date')
-                data_ts.rename(columns={'variable':'gauge'},inplace=True)
-                data_ts['sample_id'] = 0
                 data_ts['bf_method'] = 'discharge'
 
         # start the calculation
         #ignore the statistics depending on the baseflow method
         logger.info('Current Implementation takes the average of different bf_methods for calculation of water balance')
-        data_ts = data_ts.reset_index(drop=True).groupby(['sample_id','gauge','date']).mean(numeric_only=True).reset_index().set_index('date')
+        drop_index=False
+        data_ts = data_ts.reset_index(drop=drop_index).groupby(['sample_id','gauge','date']).mean(numeric_only=True).reset_index().set_index('date')
         
         #calculate water balance
         self.sections_meta, self.q_diff, self.network_map, self.section_basin_map,ts_stats = get_section_waterbalance(
