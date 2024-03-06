@@ -633,24 +633,29 @@ def plot_recession_results(meta_data: pd.DataFrame,
     #default seaborn setting
     sns.set_context('paper')
     
+    #convert the time series data
+    
     #%% lets plot the parameters along the streamline
+    #convert time series data
+    stream_ts=input_ts.drop(columns='decade').reset_index().melt(id_vars='date').set_index('date')
+    #add the relevant columns
+    stream_ts['decade'] = [x[0:3] + '5' for x in stream_ts.index.strftime('%Y')]
     recession_logger.info('Plotting the mrc recession parameters along the streamline')
     for stream,stream_gauges in meta_data.reset_index().groupby('stream'):        
         #get river km
         stream_gauges['river_km'] = stream_gauges['distance_to_mouth'].max() - stream_gauges[
             'distance_to_mouth']
         stream_gauges = stream_gauges.sort_values('river_km')
-        gauge_ticklabels = [label.split('_')[0] for label in stream_gauges['gauge'].unique()]        
-        #plot for each parameter
+        gauge_ticklabels = [label.split('_')[0] for label in stream_gauges['gauge'].unique()]
+
         for para_col in parameters_to_plot:
             plot_along_streamlines(stream_gauges = stream_gauges,
+                                       stream_ts = stream_ts,
                                        stream_name = stream+'_mrc_',
                                        sort_column = 'river_km',
                                        para_column = para_col,
                                        gauge_ticklabels = gauge_ticklabels,
                                        output_dir = output_dir)
-    
-    
 
     #%% We provide a boxplot to get the individual limbs
     recession_logger.info('Plotting the recession parameters of the individual limbs')

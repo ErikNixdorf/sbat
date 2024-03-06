@@ -240,14 +240,18 @@ def plot_along_streamlines(stream_gauges: pd.DataFrame,
     if 'bf_method' not in stream_ts.columns:
         stream_ts['bf_method'] = 'default'
     stream_ts = pd.merge(stream_ts,stream_gauges[['gauge','river_km']],on='gauge',how='left')
-    stream_ts_decade = stream_ts.copy()
-    stream_ts_decade['decade'] = [x[0:3] + '5' for x in stream_ts_decade['date'].dt.strftime('%Y')]
-    
+    stream_ts_decade = stream_ts.copy().reset_index()
+    if 'decade' not in stream_ts_decade.columns:
+        stream_ts_decade['decade'] = [x[0:3] + '5' for x in stream_ts_decade['date'].dt.strftime('%Y')]
+
     axis_labels=dict({'BF':'BF [$m^{3}$/s]',
                    'BFI': 'BFI [-]',
                    'Q': 'Q [$m^{3}$/s]',
                    'Q*': 'Q* [$m^{3}$/s]'})
-    axis_labels[para_column]
+    #if new parameter appears, just integrate as new key value pair
+    if para_column not in axis_labels.keys():
+        axis_labels.update({para_column:para_column})
+
     if gauge_ticklabels is not None:
         sort_label=dict({'river_km':'Gauging Station'})
     else:
@@ -533,8 +537,8 @@ def plot_bf_results(ts_data: pd.DataFrame = pd.DataFrame(),
         stream_gauges['river_km'] = stream_gauges['distance_to_mouth'].max() - stream_gauges[
             'distance_to_mouth']
         stream_gauges = stream_gauges.sort_values('river_km')
-        #gauge_ticklabels = stream_gauges['gauge'].unique()
-        gauge_ticklabels = None
+        gauge_ticklabels = stream_gauges['gauge'].unique()
+        #gauge_ticklabels = None
         stream_ts=ts_data[ts_data.gauge.isin(stream_gauges.gauge)]
         #add the relevant columns
         stream_ts['decade'] = [x[0:3] + '5' for x in stream_ts['date'].dt.strftime('%Y')]

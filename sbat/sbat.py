@@ -339,7 +339,7 @@ class Model:
                 logger.info('we average the baseflow methods ')
                 Q = Q.reset_index().groupby(['date', 'gauge']).mean(numeric_only=True).reset_index()
                 # wide to long
-                Q = Q.pivot(index='date', columns='gauge', values='value').copy()
+                Q = Q.pivot(index='date', columns='gauge', values='BF').copy()
 
             elif self.config['recession']['curve_data']['flow_type'] == 'discharge':
                 Q = self.gauge_ts
