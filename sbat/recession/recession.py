@@ -637,7 +637,7 @@ def plot_recession_results(meta_data: pd.DataFrame,
     
     #%% lets plot the parameters along the streamline
     #convert time series data
-    streams_ts=input_ts.drop(columns='decade').reset_index().melt(id_vars='date').set_index('date')
+    streams_ts=input_ts.drop(columns='decade').reset_index().melt(id_vars='date',var_name='gauge').set_index('date')
     #add the relevant columns
     streams_ts['decade'] = [x[0:3] + '5' for x in streams_ts.index.strftime('%Y')]
     recession_logger.info('Plotting the mrc recession parameters along the streamline')

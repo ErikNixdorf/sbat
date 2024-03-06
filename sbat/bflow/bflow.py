@@ -359,7 +359,7 @@ def plot_along_streamlines(stream_ts : pd.DataFrame(),
         ax.set_xticklabels(gauge_ticklabels)
     plt.tight_layout()
     fig.savefig(Path(output_dir, f'{stream_name}_{para_column.replace("*","")}_method_dependence_mean_along_streamlines.png'), dpi=300)
-    
+    plt.close()
     
     
     #%% We plot over each decade with error style band 
