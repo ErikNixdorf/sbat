@@ -198,8 +198,7 @@ def add_gauge_stats(gauge_meta: pd.DataFrame, ts_data: pd.DataFrame, col_name: s
     
     return modified_gauge_meta
 
-def plot_along_streamlines(stream_gauges: pd.DataFrame,
-                           stream_ts : pd.DataFrame(),
+def plot_along_streamlines(stream_ts : pd.DataFrame(),
                            stream_name: str = 'river',
                            sort_column: str = 'river_km',
                            para_column: str = 'q_daily',
@@ -213,7 +212,7 @@ def plot_along_streamlines(stream_gauges: pd.DataFrame,
 
     Parameters:
     -----------
-    stream_gauges: pd.DataFrame
+    stream_ts: pd.DataFrame
         A pandas DataFrame containing the data to plot, with one row per gauge station and columns for the
         parameters of interest (e.g. 'q_daily' for daily discharge), the station name and location (e.g. 'station_id',
         'river_km') and the decade of observation (e.g. 'decade').
@@ -235,22 +234,26 @@ def plot_along_streamlines(stream_gauges: pd.DataFrame,
     --------
     None
     """
+    #first we check whether there is actually data to plot
+    if all([np.isnan(entry) for entry in stream_ts[para_column].unique()]):
+        bflow_logger.info(f'No estimates for parameter{para_column} in dataset, skip plotting')
+        return
     if 'sample_id' not in stream_ts.columns:
         stream_ts['sample_id'] = 0
     if 'bf_method' not in stream_ts.columns:
         stream_ts['bf_method'] = 'default'
-    stream_ts = pd.merge(stream_ts,stream_gauges[['gauge','river_km']],on='gauge',how='left')
     stream_ts_decade = stream_ts.copy().reset_index()
     if 'decade' not in stream_ts_decade.columns:
         stream_ts_decade['decade'] = [x[0:3] + '5' for x in stream_ts_decade['date'].dt.strftime('%Y')]
 
-    axis_labels=dict({'BF':'BF [$m^{3}$/s]',
+    yaxis_labels=dict({'BF':'BF [$m^{3}$/s]',
                    'BFI': 'BFI [-]',
                    'Q': 'Q [$m^{3}$/s]',
                    'Q*': 'Q* [$m^{3}$/s]'})
+    xticks= stream_ts[sort_column].unique()
     #if new parameter appears, just integrate as new key value pair
-    if para_column not in axis_labels.keys():
-        axis_labels.update({para_column:para_column})
+    if para_column not in yaxis_labels.keys():
+        yaxis_labels.update({para_column:para_column})
 
     if gauge_ticklabels is not None:
         sort_label=dict({'river_km':'Gauging Station'})
@@ -270,11 +273,10 @@ def plot_along_streamlines(stream_gauges: pd.DataFrame,
                     alpha=0.2, color='k')
         
     plt.title(f'Mean {para_column} at {stream_name}')
-    plt.ylabel(axis_labels[para_column])
+    plt.ylabel(yaxis_labels[para_column])
     plt.xlabel(sort_label[sort_column])
-    ax.set_xticks(stream_gauges[sort_column].unique())
+    ax.set_xticks(xticks)
     plt.xticks(rotation=90)
-    plt.ylabel(axis_labels[para_column])
     plt.xlabel(sort_label[sort_column])
     if gauge_ticklabels is not None:
         ax.set_xticklabels(gauge_ticklabels)
@@ -297,7 +299,7 @@ def plot_along_streamlines(stream_gauges: pd.DataFrame,
     plt.title(f'{col_name} at {stream_name}')
     plt.ylabel(col_name+ ' [-]')
     plt.xlabel(sort_label[sort_column])
-    ax.set_xticks(stream_gauges[sort_column].unique())
+    ax.set_xticks(xticks)
     plt.xticks(rotation=90)
     if gauge_ticklabels is not None:
         ax.set_xticklabels(gauge_ticklabels)
@@ -315,38 +317,43 @@ def plot_along_streamlines(stream_gauges: pd.DataFrame,
     data_std = stream_ts_decade.groupby(['gauge','decade'])[para_column].std(numeric_only=True).reset_index()
     cv_decadal_stats[f'{para_column}_cv'] = data_std[para_column]/ cv_decadal_stats[para_column]
     
-    sns.set_context(plot_context)
-    fig, ax = plt.subplots(figsize=(fig_width,0.70744 *fig_width))
-    sns.lineplot(data=cv_decadal_stats, x=sort_column, y=col_name,hue='decade',
-                      marker='o', linewidth=2, markersize=10, 
-                      palette='rocket',
-                      hue_order=cv_decadal_stats['decade'].sort_values())
-
-    plt.title(f'{col_name} at {stream_name} per decade')
-    plt.ylabel(col_name+ ' [-]')
-    plt.xlabel(sort_label[sort_column])
-    ax.set_xticks(stream_gauges[sort_column].unique())
-    plt.xticks(rotation=90)
-    if gauge_ticklabels is not None:
-        ax.set_xticklabels(gauge_ticklabels)
-    plt.tight_layout()
-    fig.savefig(Path(output_dir, f'{stream_name}_{col_name.replace("*","")}_decade_along_streamlines.png'), dpi=300)
-    plt.close()
+    if all([np.isnan(entry) for entry in cv_decadal_stats[col_name].unique()]):
+        bflow_logger.info(f'No estimates for parameter{col_name} in dataset, skip plotting')
+        
+    else:
+    
+        sns.set_context(plot_context)
+        fig, ax = plt.subplots(figsize=(fig_width,0.70744 *fig_width))
+        sns.lineplot(data=cv_decadal_stats, x=sort_column, y=col_name,hue='decade',
+                          marker='o', linewidth=2, markersize=10, 
+                          palette='rocket',
+                          hue_order=cv_decadal_stats['decade'].sort_values())
+        
+        plt.title(f'{col_name} at {stream_name} per decade')
+        plt.ylabel(col_name+ ' [-]')
+        plt.xlabel(sort_label[sort_column])
+        ax.set_xticks(xticks)
+        plt.xticks(rotation=90)
+        if gauge_ticklabels is not None:
+            ax.set_xticklabels(gauge_ticklabels)
+        plt.tight_layout()
+        fig.savefig(Path(output_dir, f'{stream_name}_{col_name.replace("*","")}_decade_along_streamlines.png'), dpi=300)
+        plt.close()
     
     
     #%% Next we make a lineplot where we show the confidence interval from the sampling
     
     
-    stream_ts_mean= stream_ts.groupby(['gauge','sample_id','bf_method'])[para_column,'river_km'].mean().reset_index()
+    stream_ts_mean= stream_ts.groupby(['gauge','sample_id','bf_method'])[[para_column,'river_km']].mean().reset_index()
     sns.set_context(plot_context)
     fig, ax = plt.subplots(figsize=(fig_width,0.70744 *fig_width))
     sns.lineplot(data=stream_ts_mean, x=sort_column, y=para_column, hue = 'bf_method',
                       marker='o', linewidth=2, markersize=10, palette='mako_r',errorbar=("pi", 100),err_style='bars')
 
     plt.title(f'Average {para_column} per method at {stream_name}')
-    ax.set_xticks(stream_gauges[sort_column].unique())
+    ax.set_xticks(xticks)
     plt.xticks(rotation=90)
-    plt.ylabel(axis_labels[para_column])
+    plt.ylabel(yaxis_labels[para_column])
     plt.xlabel(sort_label[sort_column])
     if gauge_ticklabels is not None:
         ax.set_xticklabels(gauge_ticklabels)
@@ -368,9 +375,9 @@ def plot_along_streamlines(stream_gauges: pd.DataFrame,
                       hue_order=data['decade'].sort_values())
     
     plt.title(f'{para_column} at {stream_name} and decade')
-    plt.ylabel(axis_labels[para_column])
+    plt.ylabel(yaxis_labels[para_column])
     plt.xlabel(sort_label[sort_column])
-    ax.set_xticks(stream_gauges[sort_column].unique())
+    ax.set_xticks(xticks)
     plt.xticks(rotation=90)
     if gauge_ticklabels is not None:
         ax.set_xticklabels(gauge_ticklabels)
@@ -539,19 +546,20 @@ def plot_bf_results(ts_data: pd.DataFrame = pd.DataFrame(),
         stream_gauges = stream_gauges.sort_values('river_km')
         gauge_ticklabels = stream_gauges['gauge'].unique()
         #gauge_ticklabels = None
-        stream_ts=ts_data[ts_data.gauge.isin(stream_gauges.gauge)]
+        stream_ts=ts_data[ts_data.gauge.isin(stream_gauges.gauge)].copy()
         #add the relevant columns
         stream_ts['decade'] = [x[0:3] + '5' for x in stream_ts['date'].dt.strftime('%Y')]
 
         #plot for each parameter
+        transfer_props=['river_km','gauge']
+        stream_ts = pd.merge(stream_ts,stream_gauges[transfer_props],on='gauge',how='left')
 
-        plot_along_streamlines(stream_gauges = stream_gauges,
-                                   stream_ts = stream_ts,
-                                   stream_name = stream,
-                                   sort_column = 'river_km',
-                                   para_column = plot_var,
-                                   gauge_ticklabels = gauge_ticklabels,
-                                   output_dir = output_dir)
+        plot_along_streamlines(stream_ts = stream_ts,
+                                stream_name = stream,
+                                sort_column = 'river_km',
+                                para_column = plot_var,
+                                gauge_ticklabels = gauge_ticklabels,
+                                output_dir = output_dir)
 
     return None
 

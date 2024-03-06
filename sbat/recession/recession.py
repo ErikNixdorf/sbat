@@ -637,9 +637,9 @@ def plot_recession_results(meta_data: pd.DataFrame,
     
     #%% lets plot the parameters along the streamline
     #convert time series data
-    stream_ts=input_ts.drop(columns='decade').reset_index().melt(id_vars='date').set_index('date')
+    streams_ts=input_ts.drop(columns='decade').reset_index().melt(id_vars='date').set_index('date')
     #add the relevant columns
-    stream_ts['decade'] = [x[0:3] + '5' for x in stream_ts.index.strftime('%Y')]
+    streams_ts['decade'] = [x[0:3] + '5' for x in streams_ts.index.strftime('%Y')]
     recession_logger.info('Plotting the mrc recession parameters along the streamline')
     for stream,stream_gauges in meta_data.reset_index().groupby('stream'):        
         #get river km
@@ -647,10 +647,18 @@ def plot_recession_results(meta_data: pd.DataFrame,
             'distance_to_mouth']
         stream_gauges = stream_gauges.sort_values('river_km')
         gauge_ticklabels = [label.split('_')[0] for label in stream_gauges['gauge'].unique()]
+        
+        #merge all properties of stream_gauges on stream_ts
+        transfer_props=copy(parameters_to_plot)
+        transfer_props.extend(['river_km','gauge'])
+        stream_ts = streams_ts[streams_ts['gauge'].isin(stream_gauges['gauge'])]
+        stream_ts = pd.merge(stream_ts,stream_gauges[transfer_props],on='gauge',how='left')
 
         for para_col in parameters_to_plot:
-            plot_along_streamlines(stream_gauges = stream_gauges,
-                                       stream_ts = stream_ts,
+            
+            #check whether data on the parameter exists otherwise
+
+            plot_along_streamlines(stream_ts = stream_ts,
                                        stream_name = stream+'_mrc_',
                                        sort_column = 'river_km',
                                        para_column = para_col,
@@ -684,13 +692,15 @@ def plot_recession_results(meta_data: pd.DataFrame,
                     fig.savefig(Path(output_dir, f'{gauge_name}_decade_boxplot_{parameter_name}.png'), dpi=300)
                     plt.close()
     #%% plot the time series and the location of the limbs
+
     recession_logger.info('Plotting the time series of input data and recession limbs')
     if 'decade' in input_ts.columns:
         input_ts=input_ts.drop(columns=['decade'])
     
     for gauge_name,limb_subset in limb_data.groupby('gauge'):
         input_ts_subset=input_ts.loc[:,gauge_name]
-        p1=input_ts_subset.plot(linewidth=2)
+        fig,p1=plt.subplots()
+        input_ts_subset.plot(linewidth=2,ax=p1)
         
         for grouper,section in limb_subset.groupby(['section_id','decade']):
             section=section.set_index('date')['Q_interp']
