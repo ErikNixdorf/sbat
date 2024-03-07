@@ -375,10 +375,14 @@ def generate_upstream_networks(
     #%% start main function
     gauges_connection_dict = dict()
     for i, gauge in gauge_meta.iterrows():
-        gauge_connection_dict = generate_gauge_up_network(gauge,gauge_meta.reset_index(),network_connections,
-                                                          gauge_column = gauge_meta.index.name)
-        gauges_connection_dict.update({gauge.name: gauge_connection_dict})
-        
+        try:
+            gauge_connection_dict = generate_gauge_up_network(gauge,gauge_meta.reset_index(),network_connections,
+                                                              gauge_column = gauge_meta.index.name)
+            gauges_connection_dict.update({gauge.name: gauge_connection_dict})
+        except:
+            gauge_connection_dict = generate_gauge_up_network(gauge,gauge_meta.reset_index(),network_connections,
+                                                              gauge_column = gauge_meta.index.name)
+            gauges_connection_dict.update({gauge.name: gauge_connection_dict})
     return gauges_connection_dict
     
     
