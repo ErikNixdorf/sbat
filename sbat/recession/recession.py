@@ -21,7 +21,7 @@ from scipy.signal import savgol_filter
 import seaborn as sns
 
 from .mastercurve import get_master_recession_curve
-from bflow.bflow import plot_along_streamlines
+from postprocess.plot import plot_along_streamlines
 recession_logger = logging.getLogger('sbat.recession')
 
 dateparse_q = lambda x: datetime.strptime(x, '%Y-%m-%d')
