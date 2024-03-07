@@ -110,7 +110,7 @@ class uncertainty_data_generation:
         
         # clean data
         q_uncertain_ts.rename(columns={'variable':'gauge'},inplace=True)
-        self.q_uncertain_ts = q_uncertain_ts[['date', 'gauge', 'value', 'Q_error_std']]
+        self.q_uncertain_ts = q_uncertain_ts[['date', 'gauge', 'value', 'Q_error_std']].copy()
         self.q_uncertain_ts.rename(columns={'value':'Q'},inplace=True)
         
         
