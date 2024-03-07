@@ -12,9 +12,9 @@ import geopandas as gpd
 import pandas as pd
 import rasterio
 from shapely import Point
-
-from bflow.bflow import compute_baseflow, add_gauge_stats, plot_bf_results
-from recession.recession import analyse_recession_curves, plot_recession_results
+from postprocess.plot import Plotter
+from bflow.bflow import compute_baseflow, add_gauge_stats
+from recession.recession import analyse_recession_curves
 from recession.aquifer_parameter import get_hydrogeo_properties
 from waterbalance.waterbalance import get_section_waterbalance, map_time_dependent_cols_to_gdf, uncertainty_data_generation
 
@@ -252,21 +252,6 @@ class Model:
             self.gauges_meta=pd.concat([self.gauges_meta,std_stats],axis=1)
             self.gauges_meta=pd.concat([self.gauges_meta,cv_stats],axis=1)
         
-        if self.config['file_io']['output']['plot_results']:
-            logger.info('plot_results of baseflow computation')
-            for bf_parameter in self.bf_output.keys():
-                if bf_parameter == 'bfis_monthly':
-                    plot_var = 'BFI'
-                else:
-                    plot_var = 'BF'
-                    
-                plot_bf_results(ts_data=self.bf_output[bf_parameter], meta_data=self.gauges_meta,
-                                parameter_name=bf_parameter,
-                                plot_along_streams=True,
-                                output_dir=Path(self.paths["output_dir"], 'figures','baseflow'),
-                                plot_var = plot_var,
-                                )
-                    
         if self.output:
             #the meta data
             self.gauges_meta.to_csv(Path(self.paths["output_dir"], 'data', 'gauges_meta.csv'))
@@ -299,24 +284,7 @@ class Model:
         #the meta data
             self.gauges_meta.to_csv(Path(self.paths["output_dir"], 'data', 'gauges_meta.csv'))
             
-        if self.config['file_io']['output']['plot_results']:
-            logger.info('plot_results daily and monthly results of discharge computation')
-            discharge_ts_melt_daily = self.gauge_ts.melt(ignore_index=False,var_name='gauge',value_name='Q')
-            discharge_ts_melt_daily['variable']='q_daily'
-            q_dict={'q_daily':discharge_ts_melt_daily}
-            #append monthly if existing
-            if self.config['discharge']['compute_monthly']:
-                discharge_ts_melt_monthly = discharge_ts_melt_daily.groupby('gauge').resample('M').mean(numeric_only=True).reset_index().set_index('date')
-                discharge_ts_melt_monthly['variable']='q_monthly'
-                q_dict={'q_monthly':discharge_ts_melt_monthly}
-            # we run the plotting algorithm from bf_flow
-            for q_parameter in q_dict.keys():
-                plot_bf_results(ts_data=q_dict[q_parameter].reset_index(), meta_data=self.gauges_meta,
-                                parameter_name=q_parameter,
-                                plot_along_streams=True,
-                                output_dir=Path(self.paths["output_dir"], 'figures','discharge'),
-                                plot_var = 'Q'
-                                )
+
             
             
     # %%the function to call the resession curves
@@ -448,15 +416,9 @@ class Model:
         #rearrange the gauge_meta
         self.gauges_meta = self.gauges_meta.reset_index().set_index('gauge')
         
-        if self.config['file_io']['output']['plot_results']:
-            logger.info('plot_results')
-            plot_recession_results(meta_data = self.gauges_meta,
-                                   limb_data = self.recession_limbs_ts,
-                                   input_ts = Q,
-                                   mrc_curve = self.master_recession_curves,
-                                   parameters_to_plot=['rec_Q0', 'rec_n', 'pearson_r'],
-                                   output_dir=Path(self.paths["output_dir"], 'figures','recession')
-                                   )
+        #save the recession time series
+        self.recession_ts = Q.copy()
+        
 
         logger.info('Recession Curve Analysis Finished')
 
@@ -513,15 +475,14 @@ class Model:
             #write lower case
             network_geometry['reach_name'] = network_geometry['reach_name'].apply(lambda x: x.lower())
             # get the properties
-            self.gauges_meta = get_hydrogeo_properties(gauge_data=self.gauges_meta,
+            
+            self.gauges_meta, self.hydrogeo_parameter_names = get_hydrogeo_properties(gauge_data=self.gauges_meta,
                                                               basins = basins,
                                                               basin_id_col =self.config['waterbalance'][
                                                                   'basin_id_col'],
                                                               gw_surface = gw_surface,
                                                               network=network_geometry,
                                                               conceptual_model=conceptual_model,
-                                                              plot = self.config['file_io']['output']['plot_results'],
-                                                              plot_dir = Path(self.paths["output_dir"], 'figures','subsurface_properties'),
                                                               )
         
         if self.output:
@@ -579,6 +540,10 @@ class Model:
         else:
             flow_type = self.config['waterbalance']['flow_type']
             
+        #if baseflow we activate the baseflow control
+        #if flow_type == 'baseflow':
+            #self.config['baseflow']['activate'] = True
+            
         #%%process the flow data
         if self.config['waterbalance']['bayesian_updating']['activate']:
             logger.info('Generate discharge from discharge with uncertainty')
@@ -588,16 +553,13 @@ class Model:
                                                              self.config['waterbalance']['bayesian_updating'],
                                                              )
             gauge_uncertainty.add_uncertainty()
-            data_ts = gauge_uncertainty.generate_samples().set_index('date')
+            self.data_ts_uncertain = gauge_uncertainty.generate_samples().set_index('date')
             
-            data_ts_monthly=data_ts.groupby(['gauge','sample_id']).resample('m').mean(numeric_only=True).drop(columns='sample_id')
-
             if flow_type == 'baseflow':
-                
                 logger.info('Use baseflow time series')           
                 balance_value_var = 'BF'
                 
-                self.get_baseflow(data_ts=data_ts,data_var='Q*')
+                self.get_baseflow(data_ts=self.data_ts_uncertain,data_var='Q*')
                     
                 
         
@@ -605,30 +567,25 @@ class Model:
                 # prove whether explicitely daily values should be calculate otherwise we take monthly
                 if self.config['waterbalance']['time_series_analysis_option'] == 'daily' and 'bf_' + \
                         self.config['waterbalance']['time_series_analysis_option'] in self.bf_output.keys():
-                    data_ts = self.bf_output['bf_daily'].copy()
+                    self.q_parameter ='bf_daily'
+                    self.data_ts_uncertain = self.bf_output[self.q_parameter].copy()
                 else:
                     logger.info('Monthly Averaged values are used')
-                    data_ts = self.bf_output['bf_monthly'].copy()
+                    self.q_parameter ='bf_monthly'
+                    self.data_ts_uncertain = self.bf_output[self.q_parameter].copy()
             
             else:
                 balance_value_var = 'Q*'
-                q_parameter ='q_daily'
+                self.q_parameter ='q_daily'
                 logger.info('For Discharge with uncertainty we just need to adapt the time')
                 if self.config['waterbalance']['time_series_analysis_option'] =='monthly':
-                    q_parameter ='q_monthly'
-                    data_ts = data_ts_monthly.copy()
-                    data_ts['bf_method'] = 'discharge'
-                logger.info('Plot Discharge results with uncertainty')
-                if self.config['file_io']['output']['plot_results']:
-                    plot_bf_results(ts_data=data_ts.reset_index(), meta_data=self.gauges_meta,
-                                    parameter_name=q_parameter,
-                                    plot_along_streams=True,
-                                    output_dir=Path(self.paths["output_dir"], 'figures','discharge'),
-                                    plot_var = 'Q*'
-                                    )
-                    
-                
-                    
+                    self.q_parameter ='q_monthly'
+                    self.data_ts_uncertain = self.data_ts_uncertain.groupby(['gauge','sample_id']).resample('m').mean(numeric_only=True).drop(columns='sample_id')
+                    self.data_ts_uncertain['bf_method'] = 'discharge'
+
+            #copy back
+            data_ts = self.data_ts_uncertain.copy()
+            
         else:
             logger.info('Calculate water balance without uncertainty incooporation')
             data_value_var_name = 'Q'
@@ -754,6 +711,10 @@ def main(config_file=None, output=True):
     logger.info(f'water balance computation activation is set to {sbat.config["recession"]["activate"]}')
     if not hasattr(sbat, 'section_meta') and sbat.config['waterbalance']['activate'] :
         sbat.get_water_balance()
+        
+    # the plotting
+    if sbat.config['file_io']['output']['plot_results']:
+        Plotter(sbat)
 
     logging.shutdown()
     return sbat
