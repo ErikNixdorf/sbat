@@ -25,7 +25,8 @@ class Plotter:
                                    parameters_to_plot=['rec_Q0', 'rec_n', 'pearson_r'],
                                    output_dir=Path(self.source_class.paths["output_dir"], 'figures','recession')
                                    )
-            
+
+
         if self.source_class.config['baseflow']['activate']:
             plot_logger.info('Plot results of baseflow computation')
             
@@ -42,7 +43,8 @@ class Plotter:
                                 output_dir=Path(self.source_class.paths["output_dir"], 'figures','baseflow'),
                                 plot_var = plot_var,
                                 )
-        
+
+
         if self.source_class.config['discharge']['activate']:
              plot_logger.info('plot_results daily and monthly results of discharge computation')
              discharge_ts_melt_daily = self.source_class.gauge_ts.melt(ignore_index=False,var_name='gauge',value_name='Q')
@@ -61,6 +63,34 @@ class Plotter:
                                  output_dir=Path(self.source_class.paths["output_dir"], 'figures','discharge'),
                                  plot_var = 'Q'
                                  )
+
+
+        if self.source_class.config['recession']['hydrogeo_parameter_estimation']['activate']:
+            plot_logger.info('plot inferred aquifer properties along streamline')
+            # first we generate the output dir
+
+            #generate a stream_ts dataset
+            stream_ts=gauge_data[gauge_data['decade']!=-9999].reset_index().drop(columns=['stream','distance_to_mouth'])
+            #extract the meta data
+            gauge_data_meta = gauge_data[gauge_data['decade']==-9999].reset_index()
+            #add stream info and distance to tmout
+            stream_ts = pd.merge(stream_ts,gauge_data_meta[['gauge','stream','distance_to_mouth']],how='left',on='gauge')
+            
+            
+            for stream,stream_gauges in stream_ts.groupby('stream'):        
+                #get river km
+                stream_gauges['river_km'] = stream_gauges['distance_to_mouth'].max() - stream_gauges[
+                    'distance_to_mouth']
+                stream_gauges = stream_gauges.sort_values('river_km')
+                gauge_ticklabels = [label.split('_')[0] for label in stream_gauges['gauge'].unique()]        
+                #plot for each parameter
+                for para_col in parameters_to_plot:
+                    plot_along_streamlines(stream_ts = stream_gauges,
+                                               stream_name = stream+'_mrc_',
+                                               sort_column = 'river_km',
+                                               para_column = para_col,
+                                               gauge_ticklabels = gauge_ticklabels,
+                                               output_dir = plot_dir)
             
 def plot_bf_results(ts_data: pd.DataFrame = pd.DataFrame(),
                      meta_data: pd.DataFrame = pd.DataFrame(),
@@ -283,6 +313,8 @@ def plot_along_streamlines(stream_ts : pd.DataFrame(),
             
             
     #%%first we check whether there is actually data to plot
+    # first we generate the output dir
+    output_dir.mkdir(parents=True, exist_ok=True)
     if all([np.isnan(entry) for entry in stream_ts[para_column].unique()]):
         plot_logger.info(f'No estimates for parameter{para_column} in dataset, skip plotting')
         return
@@ -306,6 +338,7 @@ def plot_along_streamlines(stream_ts : pd.DataFrame(),
         
     #define the subset columns which are the only relevant together with groupby cols
     subset_cols = [para_column,sort_column]
+    
         
     #%%plot over time and generate certain differences of spreading
     groupby_cols = ['gauge']

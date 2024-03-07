@@ -475,15 +475,14 @@ class Model:
             #write lower case
             network_geometry['reach_name'] = network_geometry['reach_name'].apply(lambda x: x.lower())
             # get the properties
-            self.gauges_meta = get_hydrogeo_properties(gauge_data=self.gauges_meta,
+            
+            self.gauges_meta, self.hydrogeo_parameter_names = get_hydrogeo_properties(gauge_data=self.gauges_meta,
                                                               basins = basins,
                                                               basin_id_col =self.config['waterbalance'][
                                                                   'basin_id_col'],
                                                               gw_surface = gw_surface,
                                                               network=network_geometry,
                                                               conceptual_model=conceptual_model,
-                                                              plot = self.config['file_io']['output']['plot_results'],
-                                                              plot_dir = Path(self.paths["output_dir"], 'figures','subsurface_properties'),
                                                               )
         
         if self.output:

@@ -9,12 +9,9 @@ import logging
 from pathlib import Path
 
 import baseflow as bf_package
-from matplotlib import pyplot as plt
 import numpy as np
 import pandas as pd
-import seaborn as sns
 from typing import Optional, Tuple, Union, List
-from postprocess.plot import plot_along_streamlines
 bflow_logger = logging.getLogger('sbat.bflow')
 
 def clean_gauge_ts(Q: pd.Series) -> Optional[pd.Series]:
