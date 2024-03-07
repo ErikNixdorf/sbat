@@ -8,8 +8,25 @@ from typing import List, Tuple, Union, Optional
 from pathlib import Path
 import numpy as np
 import logging
+from copy import copy
 plot_logger = logging.getLogger('sbat.postprocess')
-
+class Plotter:
+    def __init__(self,sbat_instance):
+        self.source_class = sbat_instance
+        
+        #depending on what is activated we initialize different plotting schemes
+        if self.source_class.config['recession']['activate']:
+            plot_logger.info('Plot recession results')
+            
+            plot_recession_results(meta_data = self.source_class.gauges_meta,
+                                   limb_data = self.source_class.recession_limbs_ts,
+                                   input_ts = self.source_class.recession_ts,
+                                   mrc_curve = self.source_class.master_recession_curves,
+                                   parameters_to_plot=['rec_Q0', 'rec_n', 'pearson_r'],
+                                   output_dir=Path(self.source_class.paths["output_dir"], 'figures','recession')
+                                   )
+            
+        
 def plot_along_streamlines(stream_ts : pd.DataFrame(),
                            stream_name: str = 'river',
                            sort_column: str = 'river_km',
@@ -214,5 +231,148 @@ def plot_along_streamlines(stream_ts : pd.DataFrame(),
     plt.tight_layout()
     fig.savefig(Path(output_dir, f'{stream_name}_{para_column.replace("*","")}_decadal_along_streamlines.png'), dpi=300)
     plt.close()
+    
+    return None
+
+
+
+
+def plot_recession_results(meta_data: pd.DataFrame, 
+                           limb_data: pd.DataFrame, 
+                           input_ts: pd.DataFrame,
+                           mrc_curve: pd.DataFrame, 
+                           parameters_to_plot: list[str] = ['Q0', 'pearson_r', 'n'],
+                           output_dir: Path = Path(Path.cwd(), 'bf_analysis', 'figures')
+                           )-> None:
+    """
+    Plot the results of the baseflow calculation.
+
+    Parameters
+    ----------
+    meta_data : pandas.DataFrame
+        Metadata for each gauge station, with columns 'gauge', 'lat', 'lon', 'stream', 'distance_to_mouth', and 'altitude'.
+    limb_data : pandas.DataFrame
+        Dataframe containing recession limb parameters for each gauge station and limb, with columns 'gauge', 'section_id',
+        'decade', 'Q0', 'pearson_r', 'n', 'a', 'b', 'k', and 'Q_interp'.
+    input_ts : pandas.DataFrame
+        Time series of water flow for each gauge station, with columns representing dates and rows representing water flow values.
+    mrc_curve : pandas.DataFrame
+        Master recession curve for each gauge station, with columns 'gauge', 'section_id', 'decade', 'section_time', and 'q_rec'.
+    parameters_to_plot : list of str, optional
+        List of the names of the parameters to plot along the streamlines. Default is ['Q0', 'pearson_r', 'n'].
+    output_dir : pathlib.Path, optional
+        Output directory to save the generated figures. Default is 'bf_analysis/figures' in the current working directory.
+
+    Returns
+    -------
+    None
+    """
+    #set up
+    # first we generate the output dir
+    output_dir.mkdir(parents=True, exist_ok=True)
+    #default seaborn setting
+    sns.set_context('paper')
+    
+    #convert the time series data
+    
+    #%% lets plot the parameters along the streamline
+    #convert time series data
+    streams_ts=input_ts.drop(columns='decade').reset_index().melt(id_vars='date',var_name='gauge').set_index('date')
+    #add the relevant columns
+    streams_ts['decade'] = [x[0:3] + '5' for x in streams_ts.index.strftime('%Y')]
+    plot_logger.info('Plotting the mrc recession parameters along the streamline')
+    for stream,stream_gauges in meta_data.reset_index().groupby('stream'):        
+        #get river km
+        stream_gauges['river_km'] = stream_gauges['distance_to_mouth'].max() - stream_gauges[
+            'distance_to_mouth']
+        stream_gauges = stream_gauges.sort_values('river_km')
+        gauge_ticklabels = [label.split('_')[0] for label in stream_gauges['gauge'].unique()]
+        
+        #merge all properties of stream_gauges on stream_ts
+        transfer_props=copy(parameters_to_plot)
+        transfer_props.extend(['river_km','gauge'])
+        stream_ts = streams_ts[streams_ts['gauge'].isin(stream_gauges['gauge'])]
+        stream_ts = pd.merge(stream_ts,stream_gauges[transfer_props],on='gauge',how='left')
+
+        for para_col in parameters_to_plot:
+            
+            #check whether data on the parameter exists otherwise
+
+            plot_along_streamlines(stream_ts = stream_ts,
+                                       stream_name = stream+'_mrc_',
+                                       sort_column = 'river_km',
+                                       para_column = para_col,
+                                       gauge_ticklabels = gauge_ticklabels,
+                                       output_dir = output_dir)
+
+    #%% We provide a boxplot to get the individual limbs
+    plot_logger.info('Plotting the recession parameters of the individual limbs')
+    for gauge_name,subset in limb_data.groupby('gauge'):
+        for parameter_to_plot in parameters_to_plot:
+            #check whether we have more than 1, e.g by using multiple reservoirs
+            para_cols =[col for col in subset.columns if parameter_to_plot in col]
+            if len(para_cols)==0:                
+                continue
+            else:
+                for parameter_name in para_cols:                    
+                    fig, ax = plt.subplots()
+                    sns.boxplot(data=subset, x='gauge', y=parameter_name)
+                    plt.xticks(rotation=90)
+                    plt.xlabel('gauge')
+                    plt.ylabel(parameter_name)
+                    plt.title(f'{parameter_name} boxplot at {gauge_name}')
+                    plt.tight_layout()
+                    fig.savefig(Path(output_dir, f'{gauge_name}_boxplot_{parameter_name}.png'), dpi=300)
+                    plt.close()
+                    #across all decades
+                    fig, ax = plt.subplots()
+                    sns.boxplot(data=subset.reset_index(), x=parameter_name,y='decade')
+                    plt.title(f'{parameter_name} decade boxplot at {gauge_name}')
+                    plt.tight_layout()
+                    fig.savefig(Path(output_dir, f'{gauge_name}_decade_boxplot_{parameter_name}.png'), dpi=300)
+                    plt.close()
+    #%% plot the time series and the location of the limbs
+
+    plot_logger.info('Plotting the time series of input data and recession limbs')
+    if 'decade' in input_ts.columns:
+        input_ts=input_ts.drop(columns=['decade'])
+    
+    for gauge_name,limb_subset in limb_data.groupby('gauge'):
+        input_ts_subset=input_ts.loc[:,gauge_name]
+        fig,p1=plt.subplots()
+        input_ts_subset.plot(linewidth=2,ax=p1)
+        
+        for grouper,section in limb_subset.groupby(['section_id','decade']):
+            section=section.set_index('date')['Q_interp']
+            section.plot(ax=p1.axes,linestyle='--',color='k',linewidth=0.5)
+            p1.axes.axvline(x=section.index[0],color='grey',linewidth=0.2, alpha = 0.5)
+            p1.axes.axvline(x=section.index[-1],color='grey',linewidth=0.2, alpha = 0.5)
+            p1.axes.text(x=section.index.mean(),
+                         y=section.max(),
+                         s=str(grouper[0]),
+                         horizontalalignment='center',
+                         )
+        
+        plt.ylabel('water flow')
+        plt.xlabel('date')
+        plt.title(f'Time_series with recession limbs at {gauge_name}')
+        h,l = p1.get_legend_handles_labels()
+        plt.legend(h[:2], l[:2])
+        plt.tight_layout()
+        fig=p1.figure        
+        fig.savefig(Path(output_dir, f'{gauge_name}_flow_timeseries_with_recession_limbs.png'), dpi=300)
+        plt.close()
+
+    
+    #%% plot the master curve per decade
+    for gauge_name,subset in mrc_curve.groupby('gauge'):
+        fig, ax = plt.subplots()
+        sns.lineplot(data=subset,x='section_time',y='q_rec',hue='decade')
+        plt.xlabel('timestep_from_peak')
+        plt.ylabel('water flow')
+        plt.title(f'MRC Curve per decade at gauge {gauge_name}')
+        plt.tight_layout()
+        fig.savefig(Path(output_dir, f'{gauge_name}_mrc_decadal_curves.png'), dpi=300)
+        plt.close()
     
     return None

@@ -309,19 +309,6 @@ def plot_bf_results(ts_data: pd.DataFrame = pd.DataFrame(),
         fig.savefig(Path(output_dir, f'{gauge_name}_decade_boxplot_{parameter_name}.png'), dpi=300)
         plt.close()
         
-        
-        
-        #also for plot along the line --> too time consuming
-        """
-        subset=subset.dropna()
-        fig, ax = plt.subplots(figsize=(fig_size,0.70744 *fig_size))
-        sns.lineplot(data=subset,x='date',y=plot_var)
-        plt.title(f'TS of{parameter_name} at {gauge_name} with {subset["sample_id"].max()} samples')
-        plt.tight_layout()
-        plt.xlabel(f'{plot_var} [$m^{3}$/s]')
-        fig.savefig(Path(output_dir, f'TS_{parameter_name}_{gauge_name}_sample_size_{subset["sample_id"].max()}.png'), dpi=300)
-        """
-
     
     #%% if we have daily dataset our calculation ends here
     if 'daily' in parameter_name:

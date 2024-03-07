@@ -12,9 +12,9 @@ import geopandas as gpd
 import pandas as pd
 import rasterio
 from shapely import Point
-
+from postprocess.plot import Plotter
 from bflow.bflow import compute_baseflow, add_gauge_stats, plot_bf_results
-from recession.recession import analyse_recession_curves, plot_recession_results
+from recession.recession import analyse_recession_curves
 from recession.aquifer_parameter import get_hydrogeo_properties
 from waterbalance.waterbalance import get_section_waterbalance, map_time_dependent_cols_to_gdf, uncertainty_data_generation
 
@@ -448,15 +448,9 @@ class Model:
         #rearrange the gauge_meta
         self.gauges_meta = self.gauges_meta.reset_index().set_index('gauge')
         
-        if self.config['file_io']['output']['plot_results']:
-            logger.info('plot_results')
-            plot_recession_results(meta_data = self.gauges_meta,
-                                   limb_data = self.recession_limbs_ts,
-                                   input_ts = Q,
-                                   mrc_curve = self.master_recession_curves,
-                                   parameters_to_plot=['rec_Q0', 'rec_n', 'pearson_r'],
-                                   output_dir=Path(self.paths["output_dir"], 'figures','recession')
-                                   )
+        #save the recession time series
+        self.recession_ts = Q.copy()
+        
 
         logger.info('Recession Curve Analysis Finished')
 
@@ -754,6 +748,10 @@ def main(config_file=None, output=True):
     logger.info(f'water balance computation activation is set to {sbat.config["recession"]["activate"]}')
     if not hasattr(sbat, 'section_meta') and sbat.config['waterbalance']['activate'] :
         sbat.get_water_balance()
+        
+    # the plotting
+    if sbat.config['file_io']['output']['plot_results']:
+        Plotter(sbat)
 
     logging.shutdown()
     return sbat
