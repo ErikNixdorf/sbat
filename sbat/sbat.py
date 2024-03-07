@@ -541,8 +541,8 @@ class Model:
             flow_type = self.config['waterbalance']['flow_type']
             
         #if baseflow we activate the baseflow control
-        if flow_type == 'baseflow':
-            self.config['baseflow']['activate'] = True
+        #if flow_type == 'baseflow':
+            #self.config['baseflow']['activate'] = True
             
         #%%process the flow data
         if self.config['waterbalance']['bayesian_updating']['activate']:
