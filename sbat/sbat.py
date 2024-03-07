@@ -553,15 +553,13 @@ class Model:
                                                              self.config['waterbalance']['bayesian_updating'],
                                                              )
             gauge_uncertainty.add_uncertainty()
-            data_ts = gauge_uncertainty.generate_samples().set_index('date')
+            self.data_ts_uncertain = gauge_uncertainty.generate_samples().set_index('date')
             
-            data_ts_monthly=data_ts.groupby(['gauge','sample_id']).resample('m').mean(numeric_only=True).drop(columns='sample_id')
-
             if flow_type == 'baseflow':
                 logger.info('Use baseflow time series')           
                 balance_value_var = 'BF'
                 
-                self.get_baseflow(data_ts=data_ts,data_var='Q*')
+                self.get_baseflow(data_ts=self.data_ts_uncertain,data_var='Q*')
                     
                 
         
@@ -569,30 +567,25 @@ class Model:
                 # prove whether explicitely daily values should be calculate otherwise we take monthly
                 if self.config['waterbalance']['time_series_analysis_option'] == 'daily' and 'bf_' + \
                         self.config['waterbalance']['time_series_analysis_option'] in self.bf_output.keys():
-                    data_ts = self.bf_output['bf_daily'].copy()
+                    self.q_parameter ='bf_daily'
+                    self.data_ts_uncertain = self.bf_output[self.q_parameter].copy()
                 else:
                     logger.info('Monthly Averaged values are used')
-                    data_ts = self.bf_output['bf_monthly'].copy()
+                    self.q_parameter ='bf_monthly'
+                    self.data_ts_uncertain = self.bf_output[self.q_parameter].copy()
             
             else:
                 balance_value_var = 'Q*'
-                q_parameter ='q_daily'
+                self.q_parameter ='q_daily'
                 logger.info('For Discharge with uncertainty we just need to adapt the time')
                 if self.config['waterbalance']['time_series_analysis_option'] =='monthly':
-                    q_parameter ='q_monthly'
-                    data_ts = data_ts_monthly.copy()
-                    data_ts['bf_method'] = 'discharge'
-                logger.info('Plot Discharge results with uncertainty')
-                if self.config['file_io']['output']['plot_results']:
-                    plot_bf_results(ts_data=data_ts.reset_index(), meta_data=self.gauges_meta,
-                                    parameter_name=q_parameter,
-                                    plot_along_streams=True,
-                                    output_dir=Path(self.paths["output_dir"], 'figures','discharge'),
-                                    plot_var = 'Q*'
-                                    )
-                    
-                
-                    
+                    self.q_parameter ='q_monthly'
+                    self.data_ts_uncertain = self.data_ts_uncertain.groupby(['gauge','sample_id']).resample('m').mean(numeric_only=True).drop(columns='sample_id')
+                    self.data_ts_uncertain['bf_method'] = 'discharge'
+
+            #copy back
+            data_ts = self.data_ts_uncertain.copy()
+            
         else:
             logger.info('Calculate water balance without uncertainty incooporation')
             data_value_var_name = 'Q'

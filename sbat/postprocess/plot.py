@@ -65,6 +65,31 @@ class Plotter:
                                  )
 
 
+        if 'bayesian_updating' in self.source_class.config['waterbalance'].keys() and self.source_class.config['waterbalance']['bayesian_updating']['activate']:
+            plot_logger.info('plot_stream_gauge estimates with uncertainty range')
+            #plot parameter depends whether we have discharge or baseflow 
+            if not self.source_class.bf_output:
+                subdir = 'discharge'
+                plot_data = dict({self.source_class.q_parameter:self.source_class.data_ts_uncertain})
+            else:
+                subdir = 'baseflow'
+                plot_data = self.source_class.bf_output
+            #plot
+            plot_vars={'bf_daily':'BF',
+                    'bf_monthly':'BF',
+                    'bfis_monthly':'BFI',
+                    'q_monthly': 'Q*',
+                    'q_daily': 'Q*'}
+            for parameter_name,ts_data in plot_data.items():
+                plot_bf_results(ts_data=ts_data.reset_index(), meta_data=self.source_class.gauges_meta,
+                                parameter_name=parameter_name,
+                                plot_along_streams=True,
+                                output_dir=Path(self.source_class.paths["output_dir"], 'figures',subdir),
+                                plot_var = plot_vars[parameter_name]
+                                )
+        
+
+
         if self.source_class.config['recession']['hydrogeo_parameter_estimation']['activate']:
             plot_logger.info('plot inferred aquifer properties along streamline')
             #generate a stream_ts dataset
@@ -88,7 +113,8 @@ class Plotter:
                                                para_column = para_col,
                                                gauge_ticklabels = gauge_ticklabels,
                                                output_dir = Path(self.source_class.paths["output_dir"], 'figures','subsurface_properties'))
-            
+
+
 def plot_bf_results(ts_data: pd.DataFrame = pd.DataFrame(),
                      meta_data: pd.DataFrame = pd.DataFrame(),
                      parameter_name: str = 'bf_monthly',
@@ -141,7 +167,7 @@ def plot_bf_results(ts_data: pd.DataFrame = pd.DataFrame(),
                 for bf_method in bf_methods:
                     mean_col = f'kge_{bf_method}_mean'
                     std_col = f'kge_{bf_method}_std'
-                    perfor_str = f'{bf_method}: {np.round(meta_data.loc[gauge_name,mean_col],2)} ± {np.round(meta_data.loc[gauge_name,std_col],3)}'
+                    perfor_str = f'{bf_method}: {np.round(meta_data.loc[gauge_name,mean_col].values[0],2)} ± {np.round(meta_data.loc[gauge_name,std_col].values[0],3)}'
                     performance_string += '\n' + perfor_str
                 
                 performance_string = r"$\bf{Performance [KGE]}$"+ performance_string            
