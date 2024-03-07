@@ -13,7 +13,7 @@ import pandas as pd
 import rasterio
 from shapely import Point
 from postprocess.plot import Plotter
-from bflow.bflow import compute_baseflow, add_gauge_stats, plot_bf_results
+from bflow.bflow import compute_baseflow, add_gauge_stats
 from recession.recession import analyse_recession_curves
 from recession.aquifer_parameter import get_hydrogeo_properties
 from waterbalance.waterbalance import get_section_waterbalance, map_time_dependent_cols_to_gdf, uncertainty_data_generation
@@ -252,21 +252,6 @@ class Model:
             self.gauges_meta=pd.concat([self.gauges_meta,std_stats],axis=1)
             self.gauges_meta=pd.concat([self.gauges_meta,cv_stats],axis=1)
         
-        if self.config['file_io']['output']['plot_results']:
-            logger.info('plot_results of baseflow computation')
-            for bf_parameter in self.bf_output.keys():
-                if bf_parameter == 'bfis_monthly':
-                    plot_var = 'BFI'
-                else:
-                    plot_var = 'BF'
-                    
-                plot_bf_results(ts_data=self.bf_output[bf_parameter], meta_data=self.gauges_meta,
-                                parameter_name=bf_parameter,
-                                plot_along_streams=True,
-                                output_dir=Path(self.paths["output_dir"], 'figures','baseflow'),
-                                plot_var = plot_var,
-                                )
-                    
         if self.output:
             #the meta data
             self.gauges_meta.to_csv(Path(self.paths["output_dir"], 'data', 'gauges_meta.csv'))
@@ -299,24 +284,7 @@ class Model:
         #the meta data
             self.gauges_meta.to_csv(Path(self.paths["output_dir"], 'data', 'gauges_meta.csv'))
             
-        if self.config['file_io']['output']['plot_results']:
-            logger.info('plot_results daily and monthly results of discharge computation')
-            discharge_ts_melt_daily = self.gauge_ts.melt(ignore_index=False,var_name='gauge',value_name='Q')
-            discharge_ts_melt_daily['variable']='q_daily'
-            q_dict={'q_daily':discharge_ts_melt_daily}
-            #append monthly if existing
-            if self.config['discharge']['compute_monthly']:
-                discharge_ts_melt_monthly = discharge_ts_melt_daily.groupby('gauge').resample('M').mean(numeric_only=True).reset_index().set_index('date')
-                discharge_ts_melt_monthly['variable']='q_monthly'
-                q_dict={'q_monthly':discharge_ts_melt_monthly}
-            # we run the plotting algorithm from bf_flow
-            for q_parameter in q_dict.keys():
-                plot_bf_results(ts_data=q_dict[q_parameter].reset_index(), meta_data=self.gauges_meta,
-                                parameter_name=q_parameter,
-                                plot_along_streams=True,
-                                output_dir=Path(self.paths["output_dir"], 'figures','discharge'),
-                                plot_var = 'Q'
-                                )
+
             
             
     # %%the function to call the resession curves
@@ -573,6 +541,10 @@ class Model:
         else:
             flow_type = self.config['waterbalance']['flow_type']
             
+        #if baseflow we activate the baseflow control
+        if flow_type == 'baseflow':
+            self.config['baseflow']['activate'] = True
+            
         #%%process the flow data
         if self.config['waterbalance']['bayesian_updating']['activate']:
             logger.info('Generate discharge from discharge with uncertainty')
@@ -587,7 +559,6 @@ class Model:
             data_ts_monthly=data_ts.groupby(['gauge','sample_id']).resample('m').mean(numeric_only=True).drop(columns='sample_id')
 
             if flow_type == 'baseflow':
-                
                 logger.info('Use baseflow time series')           
                 balance_value_var = 'BF'
                 

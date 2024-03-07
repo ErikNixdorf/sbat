@@ -26,6 +26,204 @@ class Plotter:
                                    output_dir=Path(self.source_class.paths["output_dir"], 'figures','recession')
                                    )
             
+        if self.source_class.config['baseflow']['activate']:
+            plot_logger.info('Plot results of baseflow computation')
+            
+            for bf_parameter in self.source_class.bf_output.keys():
+                if bf_parameter == 'bfis_monthly':
+                    plot_var = 'BFI'
+                else:
+                    plot_var = 'BF'
+                    
+                plot_bf_results(ts_data=self.source_class.bf_output[bf_parameter], 
+                                meta_data=self.source_class.gauges_meta,
+                                parameter_name=bf_parameter,
+                                plot_along_streams=True,
+                                output_dir=Path(self.source_class.paths["output_dir"], 'figures','baseflow'),
+                                plot_var = plot_var,
+                                )
+        
+        if self.source_class.config['discharge']['activate']:
+             plot_logger.info('plot_results daily and monthly results of discharge computation')
+             discharge_ts_melt_daily = self.source_class.gauge_ts.melt(ignore_index=False,var_name='gauge',value_name='Q')
+             discharge_ts_melt_daily['variable']='q_daily'
+             q_dict={'q_daily':discharge_ts_melt_daily}
+             #append monthly if existing
+             if self.source_class.config['discharge']['compute_monthly']:
+                 discharge_ts_melt_monthly = discharge_ts_melt_daily.groupby('gauge').resample('M').mean(numeric_only=True).reset_index().set_index('date')
+                 discharge_ts_melt_monthly['variable']='q_monthly'
+                 q_dict={'q_monthly':discharge_ts_melt_monthly}
+             # we run the plotting algorithm from bf_flow
+             for q_parameter in q_dict.keys():
+                 plot_bf_results(ts_data=q_dict[q_parameter].reset_index(), meta_data=self.source_class.gauges_meta,
+                                 parameter_name=q_parameter,
+                                 plot_along_streams=True,
+                                 output_dir=Path(self.source_class.paths["output_dir"], 'figures','discharge'),
+                                 plot_var = 'Q'
+                                 )
+            
+def plot_bf_results(ts_data: pd.DataFrame = pd.DataFrame(),
+                     meta_data: pd.DataFrame = pd.DataFrame(),
+                     parameter_name: str = 'bf_monthly',
+                     plot_along_streams: bool = True,
+                     output_dir: Union[str, Path] = Path.cwd() / 'bf_analysis' / 'figures',
+                     fig_size=10,
+                     plot_context='poster',
+                     plot_var = 'BF',
+                     ) -> None:
+    """
+    Plot the results of the baseflow calculation.
+
+    Parameters
+    ----------
+    ts_data : pandas.DataFrame, optional
+        A pandas DataFrame containing the timeseries data. The default is an empty DataFrame.
+    meta_data : pandas.DataFrame, optional
+        A pandas DataFrame containing metadata for the timeseries data. The default is an empty DataFrame.
+    parameter_name : str, optional
+        The name of the parameter to plot. The default is 'bf_monthly'.
+    plot_along_streams : bool, optional
+        Whether to plot the results along each stream in separate subplots. The default is True.
+    output_dir : str or Path, optional
+        The directory in which to save the output plots. The default is './bf_analysis/figures'.
+
+    Returns
+    -------
+    None
+    """
+
+    # first we generate the output dir
+    output_dir.mkdir(parents=True, exist_ok=True)
+    #default seaborn setting
+    sns.set_context(plot_context)
+    
+    parameter_titles={'bf_daily':'daily baseflow',
+            'bf_monthly':'monthly baseflow',
+            'bfis_monthly':'baseflow index',
+            'q_monthly': 'monthly discharge',
+            'q_daily': 'daily discharge'}
+    # Loop over each station
+    for gauge_name, subset in ts_data.groupby('gauge'):
+        subset = subset.reset_index()
+            
+        # Extract the performance column and format it
+        performance_string = ""
+        if 'bf_method' in subset.columns:
+            if 'discharge' not in subset['bf_method'].unique():
+                bf_methods= ts_data.bf_method.unique()
+                for bf_method in bf_methods:
+                    mean_col = f'kge_{bf_method}_mean'
+                    std_col = f'kge_{bf_method}_std'
+                    perfor_str = f'{bf_method}: {np.round(meta_data.loc[gauge_name,mean_col],2)} ± {np.round(meta_data.loc[gauge_name,std_col],3)}'
+                    performance_string += '\n' + perfor_str
+                
+                performance_string = r"$\bf{Performance [KGE]}$"+ performance_string            
+                
+        else:
+            subset['bf_method'] = 'discharge'
+            
+            
+
+        
+        # Plot histogram over all data
+        fig, ax = plt.subplots(figsize=(fig_size, fig_size))
+        sns.histplot(data=subset, x=plot_var, kde=True)
+        plt.title(f'{parameter_titles[parameter_name]} at {gauge_name}')
+        plt.tight_layout()
+        plt.xlabel(f'{plot_var} [$m^3/s$]')
+        fig.savefig(Path(output_dir, f'{gauge_name}_histplot_{parameter_name}.png'), dpi=300)
+        plt.close()
+        
+        # Plot histogram for each method
+        if 'discharge' not in subset['bf_method']:
+            subset_merge=subset.groupby(['bf_method','date']).mean(numeric_only=True).reset_index()
+            fig, ax = plt.subplots(figsize=(fig_size, fig_size))
+            sns.histplot(data=subset_merge, x=plot_var, hue='bf_method', kde=True)
+            plt.legend(title='bf_method', loc='upper right', labels=subset['bf_method'].unique())
+            txt1=ax.text(ax.get_xlim()[1]*0.5,
+                    ax.get_ylim()[1]*0.6,
+                    performance_string,
+                    bbox=dict(facecolor='white', alpha=0.5),
+                    )
+            txt1.set_fontsize(txt1.get_fontsize()*0.75)
+            plt.title(f'{parameter_titles[parameter_name]} at {gauge_name}')            
+            plt.xlabel(f'{plot_var} [$m^{3}$/s]')
+            fig.savefig(Path(output_dir, f'{gauge_name}_method_histplot_{parameter_name}.png'), dpi=300)
+            plt.close()
+            
+            # Plot boxplots for each method
+            fig, ax = plt.subplots(figsize=(fig_size, fig_size))
+            sns.boxplot(data=subset_merge, x='bf_method', y=plot_var)
+            plt.xticks(rotation=90)
+            plt.xlabel(gauge_name)
+            plt.ylabel(f'{plot_var} [$m^3/s$]')
+            plt.title(f'{parameter_titles[parameter_name]} at {gauge_name}')
+            plt.tight_layout()
+            fig.savefig(Path(output_dir, f'{gauge_name}_method_boxplot_{parameter_name}.png'), dpi=300)
+            plt.close()
+        
+        #across all decades
+        fig, ax = plt.subplots(figsize=(fig_size, fig_size))
+        subset['decade'] = [x[0:3] + '5' for x in subset['date'].dt.strftime('%Y')]
+        sns.boxplot(data=subset, x=plot_var,y='decade',hue='bf_method')
+        plt.title(f'{parameter_titles[parameter_name]} at {gauge_name}')
+        plt.tight_layout()
+        plt.xlabel(f'{plot_var} [$m^{3}$/s]')
+        fig.savefig(Path(output_dir, f'{gauge_name}_decade_boxplot_{parameter_name}.png'), dpi=300)
+        plt.close()
+        
+    
+    #%% if we have daily dataset our calculation ends here
+    if 'daily' in parameter_name:
+        return
+
+    #%% next we plot the top 15 gauges with the largest deviations
+    if len(meta_data) < 15:
+        index_max = len(meta_data)
+    else:
+        index_max = 15
+
+    # Calculate coefficient of variation (CV)
+    cv_df = ts_data.groupby('gauge').std(numeric_only=True)[plot_var] / ts_data.groupby('gauge').mean(numeric_only=True)[plot_var]
+    cv_col = f'{parameter_name}_cv'
+    cv_df.name = cv_col
+    
+    # Plot barplot for gauges with largest CV
+    fig, ax = plt.subplots(figsize=(fig_size, fig_size))
+    sns.barplot(data=cv_df.reset_index().sort_values(cv_col, ascending=False)[0:index_max], x=cv_col,
+                y='gauge').set(title=cv_col)
+    fig.savefig(Path(output_dir, f'Gauges_with_largest_{cv_col}.png'), dpi=300, bbox_inches="tight")
+    plt.close()
+    
+
+    #%% we make lineplots along all river systems
+    meta_data.index.name='gauge'
+    
+    #create a subset for each stream
+    for stream,stream_gauges in meta_data.reset_index().groupby('stream'):        
+        #get river km
+        stream_gauges['river_km'] = stream_gauges['distance_to_mouth'].max() - stream_gauges[
+            'distance_to_mouth']
+        stream_gauges = stream_gauges.sort_values('river_km')
+        gauge_ticklabels = stream_gauges['gauge'].unique()
+        #gauge_ticklabels = None
+        stream_ts=ts_data[ts_data.gauge.isin(stream_gauges.gauge)].copy()
+        #add the relevant columns
+        stream_ts['decade'] = [x[0:3] + '5' for x in stream_ts['date'].dt.strftime('%Y')]
+
+        #plot for each parameter
+        transfer_props=['river_km','gauge']
+        stream_ts = pd.merge(stream_ts,stream_gauges[transfer_props],on='gauge',how='left')
+
+        plot_along_streamlines(stream_ts = stream_ts,
+                                stream_name = stream,
+                                sort_column = 'river_km',
+                                para_column = plot_var,
+                                gauge_ticklabels = gauge_ticklabels,
+                                output_dir = output_dir)
+
+    return None
+
         
 def plot_along_streamlines(stream_ts : pd.DataFrame(),
                            stream_name: str = 'river',
