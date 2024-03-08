@@ -6,3 +6,4 @@ build/
 /hooks/
 apply_sbat.py
 sbat_pyenv/
+test_tests.py
