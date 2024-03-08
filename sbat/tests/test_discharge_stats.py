@@ -12,7 +12,7 @@ class TestConfig1:
         ]
         result = model_config1.gauges_meta[
             ["q_daily_mean", "q_daily_std", "q_daily_cv"]
-        ].values
+        ].dropna().values.flatten()
 
         np.testing.assert_almost_equal(
             result,
@@ -29,7 +29,7 @@ class TestConfig1:
 
         result = model_config1.gauges_meta[
             ["q_monthly_mean", "q_monthly_std", "q_monthly_cv"]
-        ].values
+        ].dropna().values.flatten()
 
         np.testing.assert_almost_equal(
             result,

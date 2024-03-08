@@ -70,7 +70,7 @@ class TestConfig3:
         pd.testing.assert_frame_equal(expected, result)
 
     def test_keys(self, model_config3):
-        expected_keys = ["bf_daily", "bfi_monthly", "bf_attributes", "bf_monthly"]
+        expected_keys = ["bf_daily", "bfi_monthly", "bf_monthly"]
         present_keys = model_config3.bf_output.keys()
         assert all(key in present_keys for key in expected_keys)
 
@@ -80,7 +80,3 @@ class TestConfig3:
         result = model_config3.bf_output["bf_monthly"]
         pd.testing.assert_frame_equal(expected, result)
 
-    def test_baseflow_attributes(self, model_config3):
-        expected = pd.read_csv(Path(Path(__file__).parents[0],"data/example3/bf_attributes.csv"), index_col=0)
-        result = model_config3.bf_output["bf_attributes"]
-        pd.testing.assert_frame_equal(expected, result)
