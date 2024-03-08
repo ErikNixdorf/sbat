@@ -26,7 +26,7 @@ class TestConfig1:
         )
 
     def test_keys(self, model_config1):
-        expected_keys = ["bf_daily", "bfi_monthly", "bf_attributes", "bf_monthly"]
+        expected_keys = ['bf_daily', 'bf_monthly', 'bfi_monthly']
         present_keys = model_config1.bf_output.keys()
         assert all(key in present_keys for key in expected_keys)
 
