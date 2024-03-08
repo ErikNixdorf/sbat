@@ -31,8 +31,8 @@ class TestConfig1:
         assert all(key in present_keys for key in expected_keys)
 
     def test_baseflow_monthly(self, model_config1):
-        expected = pd.read_csv(Path(Path(__file__).parents[0],"data/example1/bf_monthly.csv"), index_col=0, parse_dates=True
-        )
+        expected = pd.read_csv(Path(Path(__file__).parents[0],"data/example1/bf_monthly.csv"), index_col=0)
+        expected['date']=pd.to_datetime(expected['date'])
         result = model_config1.bf_output["bf_monthly"]
         pd.testing.assert_frame_equal(expected, result)
 

@@ -246,8 +246,10 @@ class Model:
                     std_stats = bf_data.groupby('gauge')[bf_metrics_cols].std().rename(columns=std_cols)                    
                     mean_stats_extend = pd.concat([mean_stats]*int(len(self.gauges_meta)/len(mean_stats)))
                     std_stats_extend = pd.concat([std_stats]*int(len(self.gauges_meta)/len(std_stats)))
-                    self.gauges_meta=pd.concat([self.gauges_meta,mean_stats_extend],axis=1)
-                    self.gauges_meta=pd.concat([self.gauges_meta,std_stats_extend],axis=1)
+                    self.gauges_meta=pd.concat([self.gauges_meta.reset_index(),mean_stats_extend.reset_index(drop=True)],axis=1)
+                    self.gauges_meta=pd.concat([self.gauges_meta,std_stats_extend.reset_index(drop=True)],axis=1)
+                    
+                    self.gauges_meta=self.gauges_meta.set_index('gauge')
                 
 
         
