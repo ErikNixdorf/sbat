@@ -132,40 +132,23 @@ class Model:
         #we add a new column called decade
         
         # if we want to compute for each decade we do this here
-        # todo: I think there is a better way to solve this
-        """
+
         if self.config['time']['compute_each_decade']:
+            no_of_gauges = len(self.gauges_meta)
             logger.info('Statistics for each gauge will be computed for each decade')
-            #get information how many decades with data we have per gauge
-            gauge_stats_decade = self.gauge_ts.copy()
-            gauge_stats_decade['decade'] = [x[0:3] + '5' for x in gauge_stats_decade.index.strftime('%Y')]
-            gauge_stats_decade = gauge_stats_decade.groupby('decade').mean().unstack().dropna()
-            # we reorganize the data so that we get all decades with measurements per gauge
-            gauge_stats_decade=gauge_stats_decade.reset_index().drop(columns=0)
-            decades_per_gauge=gauge_stats_decade.groupby('level_0').size()
-            gauge_stats_decade=gauge_stats_decade.set_index('level_0')
-            #we extend gauge_meta in order to
-            gauge_meta_extend_list=list()
-            for i in decades_per_gauge.keys():
-                #extend the lines
-                gauge_extend=pd.concat([self.gauges_meta.loc[i].to_frame().T] * decades_per_gauge[i])
-                #add information on decades
-                gauge_stat_decade = gauge_stats_decade.loc[i,:]                
-                if isinstance(gauge_stat_decade,pd.Series):
-                    gauge_stat_decade = gauge_stat_decade.to_frame().T
-                gauge_extend=pd.concat([gauge_extend,gauge_stat_decade],axis=1)
-                gauge_meta_extend_list.append(gauge_extend)
+            start_decade = self.config['time']['start_date'].strftime('%Y')[0:3] + '5'
+            end_decade = self.config['time']['end_date'].strftime('%Y')[0:3] + '5'
+            decades = list(map(str,range(int(start_decade),int(end_decade)+1,10)))
             
-            #overwrite 
-            self.gauges_meta=pd.concat(gauge_meta_extend_list)
+            #extend dataset
+            self.gauges_meta = pd.concat([self.gauges_meta]*len(decades))
+            self.gauges_meta.loc[:,'decade'] = no_of_gauges * decades
             
-            self.gauges_meta_decadal = pd.DataFrame()
         else:
             logger.info('Statistics for each gauge will be computed over the entire time series')
             self.gauges_meta.loc[:,'decade']=-9999
-        """
-        logger.info('Statistics for each gauge will be computed over the entire time series')
-        self.gauges_meta.loc[:,'decade']=-9999
+
+
 
     #new baseflow function
     def get_baseflow(self,data_ts=pd.DataFrame(),data_var = 'Q*'):
@@ -182,6 +165,9 @@ class Model:
         None.
 
         """
+        # first we melt the time series to long version
+        if 'gauge' not in data_ts.columns:
+            data_ts=pd.melt(data_ts,ignore_index=False,value_name='Q*',var_name='gauge')
     
         #first we check whether data_ts has a column sample id
         if 'sample_id' not in data_ts.columns:
@@ -232,25 +218,38 @@ class Model:
         # Add results to class instance
         self.bf_output.update({'bf_daily': bf_daily, 
                                'bf_monthly': bf_monthly, 
-                               'bfis_monthly': bfi_monthly})
+                               'bfi_monthly': bfi_monthly})
         
         
         if self.config['baseflow']['compute_statistics']:
-            
             logger.info('Compute baseflow statistics')
-            bf_metrics_cols.append('BF')
-            
-            mean_cols = {k: f'{v}_mean' for k, v in zip(bf_metrics_cols, bf_metrics_cols)}
-            mean_stats = bf_daily.groupby('gauge')[bf_metrics_cols].mean().rename(columns=mean_cols)
-            std_cols = {k: f'{v}_std' for k, v in zip(bf_metrics_cols, bf_metrics_cols)}
-            std_stats = bf_daily.groupby('gauge')[bf_metrics_cols].std().rename(columns=std_cols)
-            
-            cv_stats=(bf_daily.groupby('gauge')[bf_metrics_cols].std().rename(columns=mean_cols) / mean_stats)['BF_mean'].rename('BF_cv').to_frame()
-            
-            #append
-            self.gauges_meta=pd.concat([self.gauges_meta,mean_stats],axis=1)
-            self.gauges_meta=pd.concat([self.gauges_meta,std_stats],axis=1)
-            self.gauges_meta=pd.concat([self.gauges_meta,cv_stats],axis=1)
+            logger.info('We calculate the mean over all methods and sample_ids')
+
+            #add KGE data
+            col_names={'bf_daily': 'BF', 
+            'bf_monthly': 'BF', 
+            'bfi_monthly': 'BFI'}
+            for bf_type,bf_data in self.bf_output.items():
+                #mean over method and sample_id
+                bf_data_av = bf_data.groupby(['date','gauge']).mean(numeric_only=True)
+                # pivot time series
+                bf_data_pv = bf_data_av.reset_index().pivot(index='date',columns='gauge',values=col_names[bf_type])
+                self.gauges_meta = self.gauges_meta.apply(lambda x:add_gauge_stats(x,bf_data_pv,
+                                                                    col_name=bf_type,
+                                                                    ),axis=1)
+                
+                if bf_type=='bf_daily':
+                    #we add the KGE data
+                    mean_cols = {k: f'{v}_mean' for k, v in zip(bf_metrics_cols, bf_metrics_cols)}
+                    mean_stats = bf_data.groupby('gauge')[bf_metrics_cols].mean().rename(columns=mean_cols)
+                    std_cols = {k: f'{v}_std' for k, v in zip(bf_metrics_cols, bf_metrics_cols)}
+                    std_stats = bf_data.groupby('gauge')[bf_metrics_cols].std().rename(columns=std_cols)                    
+                    mean_stats_extend = pd.concat([mean_stats]*int(len(self.gauges_meta)/len(mean_stats)))
+                    std_stats_extend = pd.concat([std_stats]*int(len(self.gauges_meta)/len(std_stats)))
+                    self.gauges_meta=pd.concat([self.gauges_meta,mean_stats_extend],axis=1)
+                    self.gauges_meta=pd.concat([self.gauges_meta,std_stats_extend],axis=1)
+                
+
         
         if self.output:
             #the meta data
@@ -412,9 +411,12 @@ class Model:
         # append the metrics data to the metadata
         self.gauges_meta.index.name = 'gauge'
         df_metrics = pd.concat(metrics, axis=0)        
-        self.gauges_meta = pd.concat([self.gauges_meta.reset_index().set_index(['gauge','decade']), df_metrics], axis=1)
+        self.gauges_meta = pd.merge(self.gauges_meta.reset_index(), 
+                                     df_metrics.reset_index(),
+                                     how='left',
+                                     on=['gauge','decade'])
         #rearrange the gauge_meta
-        self.gauges_meta = self.gauges_meta.reset_index().set_index('gauge')
+        self.gauges_meta = self.gauges_meta.reset_index(drop=True).set_index('gauge')
         
         #save the recession time series
         self.recession_ts = Q.copy()
@@ -643,8 +645,12 @@ class Model:
         #reorganize self_gauges_meta and add gauges_mean
         self.gauges_meta = self.gauges_meta.reset_index().set_index(['gauge','decade'])
         balance_mean.index.names = self.gauges_meta.index.names        
-        self.gauges_meta = pd.concat([self.gauges_meta,balance_mean],axis=1)
-        self.gauges_meta = self.gauges_meta.reindex(balance_mean.index, axis=0)
+        self.gauges_meta = pd.merge(self.gauges_meta.reset_index(),
+                                    balance_mean.reset_index(),
+                                    how='left',
+                                    on=['gauge','decade'])
+        self.gauges_meta=self.gauges_meta.set_index(['gauge', 'decade'])
+
 
         # map results of analysis to geodataframes
         logger.info('Map statistics on stream network geodata')
@@ -696,10 +702,9 @@ def main(config_file=None, output=True):
     # get baseflow        
     logger.info(f'baseflow computation activation is set to {sbat.config["baseflow"]["activate"]}')
     if sbat.config['baseflow']['activate']:
-        #melt to long version
-        data_ts=pd.melt(sbat.gauge_ts,ignore_index=False,value_name='Q*',var_name='gauge')
         
-        sbat.get_baseflow(data_ts=data_ts)
+        
+        sbat.get_baseflow(data_ts=sbat.gauge_ts)
         
     # do the recession analysis
     logger.info(f'recession computation activation is set to {sbat.config["recession"]["activate"]}')

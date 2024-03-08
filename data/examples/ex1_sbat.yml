@@ -65,4 +65,8 @@ waterbalance:
     activate: false
     flow_type: baseflow
     time_series_analysis_option: daily
+    confidence_acceptance_level: 0.01
     basin_id_col: basin
+    # the controll for Baysian Updating for gw_exchange
+    bayesian_updating:
+        activate: false        

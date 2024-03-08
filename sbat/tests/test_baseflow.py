@@ -20,7 +20,7 @@ class TestConfig1:
                 "bf_monthly_std",
                 "bf_monthly_cv",
             ]
-        ].values
+        ].dropna().values
         np.testing.assert_almost_equal(
             result,
             expected,

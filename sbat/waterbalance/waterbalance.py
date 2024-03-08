@@ -461,15 +461,11 @@ def map_time_dependent_cols_to_gdf(
     expanded_df=expanded_df.reset_index().set_index([time_dep_df_index_col,time_dep_df_time_col])
     
     #merge with the time dependend statistics
-    df_merged = pd.concat([expanded_df,
-                           time_dep_df,
-                           ],
-                          axis=1
-                          )
-    
-    #reset the index in order to save it as a geodataframe
-    df_merged = df_merged.reset_index()
-    
+    df_merged = pd.merge(expanded_df.reset_index(),
+                                time_dep_df.reset_index(),
+                                how='left',
+                                on=['gauge','decade'])
+
     # we clean the data
     df_merged = df_merged.loc[~df_merged[time_dep_df_time_col].isna(),:]
     
@@ -648,7 +644,7 @@ def calculate_network_balance(
     if get_decadal_stats:
         if sections_meta['date'].dtype =='<M8[ns]':
             sections_meta['date'] = sections_meta['date'].astype(str)
-        sections_meta['decade']=sections_meta['date'].apply(lambda x: x[0][:3]+'5')
+        sections_meta['decade']=sections_meta['date'].apply(lambda x: x[:3]+'5')
     else:
         sections_meta['decade']=-9999
 

@@ -14,7 +14,7 @@ def model_config1():
     )
     model = sbat.Model(conf=config, output=False)
     model.get_discharge_stats()
-    model.get_baseflow()
+    model.get_baseflow(data_ts=model.gauge_ts)
     model.get_recession_curve()
     model.get_water_balance()
     return model
@@ -37,6 +37,6 @@ def model_config3():
     )
     model = sbat.Model(conf=config, output=False)
     model.get_discharge_stats()
-    model.get_baseflow()
+    model.get_baseflow(data_ts=model.gauge_ts)
     model.get_water_balance()
     return model

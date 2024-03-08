@@ -31,7 +31,7 @@ class Plotter:
             plot_logger.info('Plot results of baseflow computation')
             
             for bf_parameter in self.source_class.bf_output.keys():
-                if bf_parameter == 'bfis_monthly':
+                if bf_parameter == 'bfi_monthly':
                     plot_var = 'BFI'
                 else:
                     plot_var = 'BF'
@@ -77,7 +77,7 @@ class Plotter:
             #plot
             plot_vars={'bf_daily':'BF',
                     'bf_monthly':'BF',
-                    'bfis_monthly':'BFI',
+                    'bfi_monthly':'BFI',
                     'q_monthly': 'Q*',
                     'q_daily': 'Q*'}
             for parameter_name,ts_data in plot_data.items():
@@ -152,7 +152,7 @@ def plot_bf_results(ts_data: pd.DataFrame = pd.DataFrame(),
     
     parameter_titles={'bf_daily':'daily baseflow',
             'bf_monthly':'monthly baseflow',
-            'bfis_monthly':'baseflow index',
+            'bfi_monthly':'baseflow index',
             'q_monthly': 'monthly discharge',
             'q_daily': 'daily discharge'}
     # Loop over each station
