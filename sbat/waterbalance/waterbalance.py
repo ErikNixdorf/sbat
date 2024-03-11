@@ -139,8 +139,10 @@ class uncertainty_data_generation:
         self.q_ts_samples['Q*'] = self.q_ts_samples['Q'] + self.q_ts_samples['sample_error'] * self.q_ts_samples['Q']
         
         #finally we map the data on the prior information on the dataset
-        self.q_ts_samples=pd.merge(self.q_ts_samples, self.gauges_meta[[ 'prior_q_diff_mean[m2/s]',
-                                                                        'prior_q_diff_std[m2/s]']], on='gauge', how='left')
+        gauge_meta_sel = self.gauges_meta.groupby('gauge').first().reset_index()
+        
+        self.q_ts_samples=pd.merge(self.q_ts_samples, gauge_meta_sel[[ 'prior_q_diff_mean[m2/s]',
+                                                                        'prior_q_diff_std[m2/s]','gauge']], on='gauge', how='left')
         
         return self.q_ts_samples
 
@@ -1053,6 +1055,7 @@ def get_section_waterbalance(gauge_data: pd.DataFrame = pd.DataFrame(),
     
     #in any case we calculate the balance per length of the section
     gauge_index=gauge_data.reset_index().rename(columns={'gauge':'downstream_point'})[['downstream_point','waterway_length']]
+    gauge_index=gauge_index.groupby('downstream_point').first().reset_index()
     #merge with section meta and q_diff to get the values per section length
     q_diff = pd.merge(q_diff.reset_index(), gauge_index, on='downstream_point', suffixes=('_df1', '_df2'))
     

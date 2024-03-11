@@ -90,10 +90,11 @@ class Plotter:
         
 
 
-        if self.source_class.config['recession']['hydrogeo_parameter_estimation']['activate']:
+        if self.source_class.config['recession']['hydrogeo_parameter_estimation']['activate'] and self.source_class.config['recession']['activate']:
             plot_logger.info('plot inferred aquifer properties along streamline')
             #generate a stream_ts dataset
-            stream_ts=self.source_class.gauges_meta[self.source_class.gauges_meta['decade']!=-9999].reset_index().drop(columns=['stream','distance_to_mouth'])
+            self.source_class.gauges_meta = self.source_class.gauges_meta.reset_index()
+            stream_ts=self.source_class.gauges_meta.reset_index()[self.source_class.gauges_meta['decade']!=-9999].drop(columns=['stream','distance_to_mouth'])
             #extract the meta data
             gauge_data_meta = self.source_class.gauges_meta[self.source_class.gauges_meta['decade']==-9999].reset_index()
             #add stream info and distance to tmout
@@ -286,8 +287,8 @@ def plot_along_streamlines(stream_ts : pd.DataFrame(),
                            plot_context='talk',
                            fig_width=10,                           
                            output_dir: Union[str, Path] = Path.cwd() / 'bf_analysis' / 'figures',
-                           yaxis_labels=dict({'BF':'BF [$m^{3}$/s]',
-                                          'BFI': 'BFI [-]',
+                           yaxis_labels=dict({'BF':'Base flow [$m^{3}$/s]',
+                                          'BFI': 'Base flow index [-]',
                                           'Q': 'Q [$m^{3}$/s]',
                                           'Q*': 'Q* [$m^{3}$/s]'}),
                            ) -> Tuple:
@@ -330,7 +331,7 @@ def plot_along_streamlines(stream_ts : pd.DataFrame(),
         plt.xlabel(xlabel)
         plt.ylabel(ylabel)
         ax.set_xticks(xticks)
-        plt.xticks(rotation=90)
+        plt.xticks(rotation=45)
         if gauge_ticklabels is not None:
             ax.set_xticklabels(gauge_ticklabels)
             
