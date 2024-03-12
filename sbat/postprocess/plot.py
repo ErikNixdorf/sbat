@@ -157,6 +157,7 @@ def plot_bf_results(ts_data: pd.DataFrame = pd.DataFrame(),
             'q_monthly': 'monthly discharge',
             'q_daily': 'daily discharge'}
     # Loop over each station
+    meta_data = meta_data.sort_index()
     for gauge_name, subset in ts_data.groupby('gauge'):
         subset = subset.reset_index()
             
@@ -167,7 +168,7 @@ def plot_bf_results(ts_data: pd.DataFrame = pd.DataFrame(),
                 bf_methods= ts_data.bf_method.unique()
                 for bf_method in bf_methods:
                     mean_col = f'kge_{bf_method}_mean'
-                    std_col = f'kge_{bf_method}_std'
+                    std_col = f'kge_{bf_method}_std'                    
                     perfor_str = f'{bf_method}: {np.round(meta_data.loc[gauge_name,mean_col].values[0],2)} ± {np.round(meta_data.loc[gauge_name,std_col].values[0],3)}'
                     performance_string += '\n' + perfor_str
                 
@@ -195,7 +196,7 @@ def plot_bf_results(ts_data: pd.DataFrame = pd.DataFrame(),
             sns.histplot(data=subset_merge, x=plot_var, hue='bf_method', kde=True)
             plt.legend(title='bf_method', loc='upper right', labels=subset['bf_method'].unique())
             txt1=ax.text(ax.get_xlim()[1]*0.5,
-                    ax.get_ylim()[1]*0.6,
+                    ax.get_ylim()[1]*0.5,
                     performance_string,
                     bbox=dict(facecolor='white', alpha=0.5),
                     )
@@ -337,6 +338,8 @@ def plot_along_streamlines(stream_ts : pd.DataFrame(),
             
             
     #%%first we check whether there is actually data to plot
+    #first we sort
+    stream_ts=stream_ts.sort_values(sort_column)
     # first we generate the output dir
     output_dir.mkdir(parents=True, exist_ok=True)
     if all([np.isnan(entry) for entry in stream_ts[para_column].unique()]):
@@ -405,7 +408,7 @@ def plot_along_streamlines(stream_ts : pd.DataFrame(),
 
     _set_title_label(xlabel=sort_label[sort_column],
                          ylabel=cv_col_name+ ' [-]',
-                         xticks=xticks,
+                         xticks=xticks.copy(),
                          gauge_ticklabels=gauge_ticklabels,
                          title=f'{cv_col_name} at {stream_name}')
 
@@ -482,7 +485,6 @@ def plot_along_streamlines(stream_ts : pd.DataFrame(),
                      xticks=xticks,
                      gauge_ticklabels=gauge_ticklabels,
                      title=f'{para_column} at {stream_name} and decade')
-    
     plt.tight_layout()
     fig.savefig(Path(output_dir, f'{stream_name}_{para_column.replace("*","")}_decadal_along_streamlines.png'), dpi=300)
     plt.close()
