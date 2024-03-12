@@ -14,7 +14,7 @@ class TestConfig1:
         result = model_config1.sections_meta
         result["decade"] = result["decade"].astype(np.int64)
         result = result.set_index(['date', 'sample_id', 'downstream_point', 'decade'])
-        pd.testing.assert_frame_equal(expected, result)
+        pd.testing.assert_frame_equal(expected.sort_index(), result.sort_index())
 
 
 class TestConfig3:
