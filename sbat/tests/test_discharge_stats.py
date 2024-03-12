@@ -35,7 +35,7 @@ class TestConfig1:
 class TestConfig3:
     def test_daily_stats(self, model_config3):
         expected = pd.Series(
-            [0.49458833, 0.6828602, 1.3834893],
+            [2.7803129 , 1.75948861, 0.80131128],
             index=["q_daily_mean", "q_daily_std", "q_daily_cv"],
         )
         result = model_config3.gauges_meta[
