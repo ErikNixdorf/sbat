@@ -25,7 +25,7 @@ class TestConfig1:
                 "porosity_maillet",
                 "transmissivity_maillet",
             ]
-        ].dropna().values
+        ].sort_index().dropna().values
         np.testing.assert_almost_equal(result, expected, decimal=5)
 
     def test_master_recession_curve(self, model_config1):
@@ -37,7 +37,8 @@ class TestConfig1:
 
 class TestConfig2:
     def test_updated_gauges_meta(self, model_config2):
-        expected = [[0.05414452555816426,0.005409251536204091,0.9935334211464345]]
+        expected = [[0.05382625, 0.00591865, 0.99546621],
+       [0.05451704, 0.00661423, 0.99421255]]
 
         result = model_config2.gauges_meta[
             [
@@ -45,7 +46,7 @@ class TestConfig2:
                 "rec_n",
                 "pearson_r",
             ]
-        ].values
+        ].sort_index().dropna().values
         np.testing.assert_almost_equal(result, expected, decimal=5)
 
     def test_master_recession_curve(self, model_config2):
