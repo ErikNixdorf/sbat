@@ -501,6 +501,11 @@ class Model:
         """Calculate water balance per section"""
         
         logger.info('We analyse the Water Balance per Section')
+        
+        # check whether network data is available
+        if self.config['file_io']['input']['geospatial']['river_network'] is None:
+            logger.warning('No Geofile for stream network data provided, water balance wont be calculated')
+            return
 
         # %% First we load the data
         self.gauges_meta.index.name = 'gauge'
