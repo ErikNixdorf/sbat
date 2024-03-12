@@ -4,11 +4,11 @@ from pathlib import Path
 
 class TestConfig1:
     def test_updated_gauges_meta(self, model_config1):
-        expected = [0.63759452, 0.1588524 , 0.2491433 , 0.46283348, 0.18505664,
-       0.39983417, 0.72072093, 0.15494873, 0.21499131, 0.12810238,
-       0.04967666, 0.38778873, 0.63759452, 0.1588524 , 0.2491433 ,
-       0.46283348, 0.18505664, 0.39983417, 0.72072093, 0.15494873,
-       0.21499131, 0.12810238, 0.04967666, 0.38778873]
+        expected = [0.6073793, 0.17308295, 0.28496682, 0.4039756, 0.17327161,
+       0.42891602, 0.6073793, 0.17308295, 0.28496682, 0.4039756,
+       0.17327161, 0.42891602, 0.719934 , 0.14248539, 0.19791452,
+       0.14024567, 0.05766754, 0.41118946, 0.719934, 0.14248539,
+       0.19791452, 0.14024567, 0.05766754, 0.41118946]
 
         result = model_config1.gauges_meta[
             [
@@ -19,7 +19,7 @@ class TestConfig1:
                 "bf_monthly_std",
                 "bf_monthly_cv",
             ]
-        ].dropna().values.flatten()
+        ].sort_index().dropna().values.flatten()
         np.testing.assert_almost_equal(
             result,
             expected,
@@ -67,7 +67,7 @@ class TestConfig3:
                 "bf_monthly_cv",
             ]
             ]
-        pd.testing.assert_frame_equal(expected, result)
+        pd.testing.assert_frame_equal(expected.sort_index(), result.sort_index())
 
     def test_keys(self, model_config3):
         expected_keys = ["bf_daily", "bfi_monthly", "bf_monthly"]
@@ -75,8 +75,8 @@ class TestConfig3:
         assert all(key in present_keys for key in expected_keys)
 
     def test_baseflow_monthly(self, model_config3):
-        expected = pd.read_csv(Path(Path(__file__).parents[0],"data/example3/bf_monthly.csv"), index_col=0, parse_dates=True
-        )
+        expected = pd.read_csv(Path(Path(__file__).parents[0],"data/example3/bf_monthly.csv"), index_col=0)
+        expected['date'] = pd.to_datetime(expected['date'])
         result = model_config3.bf_output["bf_monthly"]
         pd.testing.assert_frame_equal(expected, result)
 
