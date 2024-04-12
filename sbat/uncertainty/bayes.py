@@ -7,20 +7,24 @@ Parameters
 observed_data: 
     NetCDF containing the gauge name and uncertainity measurements for each day. Each day should contain at least 50 values.  
 bayes_options:
-    Dictionary containing Bayesian updating information (sbat.yml file)
+    Dictionary containing Bayesian updating information (sbat.yaml file)
     Necessary entries: 
         - mu_prior (int): Prior knowledge about possible outcome of waterbalance values. Default: 0
         - sigma_prior (int): Estimation of uncertainity within prior. Default: 0.1
-        - sample_num (int): Samples drawn from the posterior distribution. Default: 2000,
-        - tune_num (int): Number of iterations used for tuning the parameters. Default: 1000, 
+        - number_of_samples (int): Samples drawn from the posterior distribution. Default: 2000,
+        - number_of_tunes (int): Number of iterations used for tuning the parameters. Default: 1000, 
         - target_accept (int):  Represents the target acceptance probability for proposed steps in the MCMC algorithm. 
                                 It is usually set between 0.5 and 0.95. Default: 0.8, 
-        - cores_num (int): Chose number of cores for calculation. Note that higher values than 1 might lead to an error. Default: 1, 
+        - number_of_cores (int): Chose number of cores for calculation. Note that higher values than 1 might lead to an error. Default: 1, 
         - positive_percentage (str): Can be set as 'inactive' or 'active' (default)
         - gauge (lst): Select specific gauge by name e.g. ['boxberg']. Minimum one entry has to be given or the option "all" can be chosen.
-        - date_select (lst): Select subset of measurements for calaculation based on datum. 
-                    Most be given in string as "YYYY-MM-DD" with first entry being the first day and next entry being the last. 
-                    Example: ['2020-01-01','2020-12-31'] #TODO Can more dates than two be included? A: At the moment not -> Should be included
+        - start_date (str): Select subset of measurements for calaculation based on datum. 
+                    Most be given in string as "YYYY-MM-DD". 
+                    Example: '2020-01-01' #TODO Can more dates than two be included? A: At the moment not -> Should be included
+                    Default: 'None' 
+        - end_date (str): Select subset of measurements for calaculation based on datum. 
+                    Most be given in string as "YYYY-MM-DD". 
+                    Example: '2020-12-31' 
                     Default: 'None' 
 
 Returns
@@ -64,42 +68,55 @@ class waterbalance_uncertainity():
     def is_netdcf(self, obj):
         ''' Check if passed data is a xarray file'''
         return isinstance(obj, (xr.Dataset, xr.DataArray))
+###
 
+    def is_valid_date_string(self,date_str):
+        # Define a regular expression pattern for YYYY-MM-DD format
+        pattern = r'^\d{4}-\d{2}-\d{2}$'
+        
+        # Check if the string matches the pattern
+        if re.match(pattern, date_str):
+            return True
+        else:
+            return False
 
 ###    
     def prepare_data(self):
         ''' Save information from yaml file internally'''
         
-        self.mu_prior = self.bayes_options['mu_prior']
-        self.sigma_prior = self.bayes_options['sigma_prior']
-        self.target_accept = self.bayes_options['target_accept']
-        self.tune_num = self.bayes_options['tune_num']
-        self.sample_num  = self.bayes_options['sample_num']
-        self.cores_num = self.bayes_options['cores_num']
+        self.mu_prior = self.bayes_options['prior_gaussian_parameters']['mu_prior']
+        self.sigma_prior = self.bayes_options['prior_gaussian_parameters']['sigma_prior']
+        self.target_accept = self.bayes_options['monte_carlo_parameters']['target_accept']
+        self.tune_num = self.bayes_options['monte_carlo_parameters']['number_of_tunes']
+        self.sample_num  = self.bayes_options['monte_carlo_parameters']['number_of_samples']
+        self.cores_num = self.bayes_options['monte_carlo_parameters']['number_of_cores']
+        self.start_date = self.bayes_options['data_extraction']['start_date']
+        self.end_date = self.bayes_options['data_extraction']['end_date']
+        self.gauge_stations = self.bayes_options['data_extraction']['gauge']
 
 ###
     def select_date(self):
         ''' Use the specified dates from the yaml file to slice the dataset.'''
 
-        if self.bayes_options['date_select'] == 'None': #No specific selection of dates
+        if self.start_date == 'None': #No specific selection of dates
             None
         else: 
-            if (isinstance(self.bayes_options['date_select'], list) and #test if a list was given
-                len(self.bayes_options['date_select']) == 2 and #test if it has two entries
-                all(isinstance(item, str) for item in self.bayes_options['date_select'])): #test if entries are strings
+            if (self.is_valid_date_string(self.start_date) and
+                self.is_valid_date_string(self.end_date)): #test start and end date are in the correct format
+        
 
-                self.observed_data = self.observed_data.sel(date = slice(self.bayes_options['date_select'][0],self.bayes_options['date_select'][1]))
+                self.observed_data = self.observed_data.sel(date = slice(self.start_date,self.end_date))
             else:
-                print('''To select a specific date set the parameter "date_select" to a list of strings in the format "YYYY-MM-DD". 
+                print('''To select a specific date set the parameter "start_date" and "end_date" to a string in the format "YYYY-MM-DD". 
                       'Please check the yaml file.''')
     
     def select_loc(self):
         ''' Create gauge vriable based on the specified gauges in the yaml file or select all gauges from the dataset.'''
 
-        if self.bayes_options['gauge'] == 'all':
-            self.gauge = list(self.observed_data.data_vars.keys())
-        else:
-            self.gauge = self.bayes_options['gauge']
+        if self.gauge_stations == 'all':
+            self.gauge_stations = list(self.observed_data.data_vars.keys())
+        else: #keep list passed in yaml file
+            None
 
 ###
     def update(self): 
@@ -156,7 +173,7 @@ class waterbalance_uncertainity():
             print(pm.summary(trace))
             summary_bayes = pm.summary(trace)
             
-            if self.bayes_options['positive_percentage'] == True:
+            if self.bayes_options['positive_percentage']:
                 summary_bayes['positive_perc'] = self.probability_positive(trace)
 
 

@@ -19,6 +19,7 @@ import pandas as pd
 from shapely.geometry import Point, LineString, MultiLineString, MultiPolygon
 from shapely.ops import nearest_points, unary_union
 
+
 waterbalance_logger = logging.getLogger('sbat.waterbalance')
 
 
@@ -1070,7 +1071,7 @@ def get_section_waterbalance(gauge_data: pd.DataFrame = pd.DataFrame(),
     sections_meta=sections_meta.rename(columns={'balance':'balance[m³/s]'})
     
     
-    #%% if Bayesian Updating is activated we generate an dataarray which can be handled by the class
+    # if Bayesian Updating is activated we generate an dataarray which can be handled by the class
     xds_bayes = xr.Dataset()
     if bayesian_options['activate']:
         scale_factor = bayesian_options['bayesian_parameters']['monte_carlo_parameters']['data_scaling_factor']
@@ -1085,9 +1086,18 @@ def get_section_waterbalance(gauge_data: pd.DataFrame = pd.DataFrame(),
             xa.attrs['bayes_data_scale_factor'] = scale_factor
             xa.attrs['original_dataname'] = 'q_diff[m2/s]'
             xds_bayes[gauge_name] = xa
+        
+        #Add Bayesian updating
+        #need to parse bayes_option in module init
+        init_bayes = bayesian_options['bayesian_parameters']
+        sbat_bayes = waterbalance_uncertainty(bayes_options=init_bayes, 
+                                          observed_data= xds_bayes) #!!! Where do I call the module? 
+        bayes_summary_mean, bayes_summary_std = sbat_bayes.bayes_update_xarray()
+
             
         xds_bayes.to_netcdf('C:\\Users\\Nixdorf.E\\data_for_elli.nc')
             
 
     # return the results
-    return sections_meta, q_diff, gdf_network_map, section_basins,data_ts
+    #!!! Should be xds_bayes be part of the output? 
+    return sections_meta, q_diff, gdf_network_map, section_basins,data_ts, bayes_summary_mean, bayes_summary_std
